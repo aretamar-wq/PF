@@ -12,9 +12,9 @@ public partial class ProfileDialog : Window
         InitializeComponent();
 
         EditedProfile = profile;
-        DataContext = EditedProfile;
 
         AuthTypeCombo.ItemsSource = Enum.GetValues(typeof(AuthType));
+        DataContext = EditedProfile;
         TokenBox.Password = EditedProfile.ApiKeyOrToken;
     }
 

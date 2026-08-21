@@ -13,13 +13,19 @@ public enum StepStatus
 public class StepLogEntry : ObservableObjectBase
 {
     private StepStatus _status = StepStatus.Pending;
+    private string? _requestSummary;
     private string? _responseSummary;
     private string? _errorMessage;
     private int? _httpStatusCode;
     private long _durationMs;
 
     public string Name { get; set; } = string.Empty;
-    public string? RequestSummary { get; set; }
+
+    public string? RequestSummary
+    {
+        get => _requestSummary;
+        set => SetField(ref _requestSummary, value);
+    }
 
     public StepStatus Status
     {

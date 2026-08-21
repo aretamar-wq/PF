@@ -35,7 +35,7 @@ public static class JsonPathExtractor
                 {
                     return null;
                 }
-                current = current[index];
+                current = current.EnumerateArray().ElementAt(index);
             }
         }
 
