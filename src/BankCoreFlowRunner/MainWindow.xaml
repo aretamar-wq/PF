@@ -1,0 +1,108 @@
+<Window x:Class="BankCoreFlowRunner.MainWindow"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:conv="clr-namespace:BankCoreFlowRunner.Converters"
+        Title="BankCoreFlowRunner" Height="720" Width="1150" MinHeight="560" MinWidth="900">
+
+    <Window.Resources>
+        <conv:StatusToBrushConverter x:Key="StatusToBrushConverter"/>
+    </Window.Resources>
+
+    <Grid Margin="10">
+        <Grid.RowDefinitions>
+            <RowDefinition Height="Auto"/>
+            <RowDefinition Height="*"/>
+            <RowDefinition Height="Auto"/>
+        </Grid.RowDefinitions>
+
+        <!-- Toolbar: perfil de conexión -->
+        <Border Grid.Row="0" BorderBrush="#CCCCCC" BorderThickness="0,0,0,1" Padding="0,0,0,8" Margin="0,0,0,8">
+            <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
+                <TextBlock Text="Perfil:" VerticalAlignment="Center" Margin="0,0,6,0" FontWeight="Bold"/>
+                <ComboBox Width="260" ItemsSource="{Binding Profiles}" DisplayMemberPath="Name"
+                          SelectedItem="{Binding SelectedProfile}" Margin="0,0,8,0"/>
+                <Button Content="Nuevo..." Command="{Binding AddProfileCommand}" Padding="10,4" Margin="0,0,4,0"/>
+                <Button Content="Editar..." Command="{Binding EditProfileCommand}" Padding="10,4" Margin="0,0,4,0"/>
+                <Button Content="Eliminar" Command="{Binding DeleteProfileCommand}" Padding="10,4"/>
+            </StackPanel>
+        </Border>
+
+        <!-- Contenido principal -->
+        <Grid Grid.Row="1">
+            <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="280"/>
+                <ColumnDefinition Width="10"/>
+                <ColumnDefinition Width="*"/>
+            </Grid.ColumnDefinitions>
+
+            <!-- Lista de flows -->
+            <DockPanel Grid.Column="0">
+                <DockPanel.Resources>
+                    <Style TargetType="TextBlock" x:Key="HeaderStyle">
+                        <Setter Property="FontWeight" Value="Bold"/>
+                        <Setter Property="Margin" Value="0,0,0,4"/>
+                    </Style>
+                </DockPanel.Resources>
+                <TextBlock DockPanel.Dock="Top" Text="Flows disponibles" Style="{StaticResource HeaderStyle}"/>
+                <Button DockPanel.Dock="Bottom" Content="Recargar flows" Command="{Binding ReloadFlowsCommand}" Margin="0,8,0,0" Padding="6"/>
+                <ListBox ItemsSource="{Binding Flows}" DisplayMemberPath="Name" SelectedItem="{Binding SelectedFlow}"/>
+            </DockPanel>
+
+            <!-- Detalle, inputs, ejecución y log -->
+            <Grid Grid.Column="2">
+                <Grid.RowDefinitions>
+                    <RowDefinition Height="Auto"/>
+                    <RowDefinition Height="Auto"/>
+                    <RowDefinition Height="Auto"/>
+                    <RowDefinition Height="*"/>
+                    <RowDefinition Height="Auto"/>
+                </Grid.RowDefinitions>
+
+                <TextBlock Grid.Row="0" Text="{Binding SelectedFlow.Description}" TextWrapping="Wrap" Margin="0,0,0,8" FontStyle="Italic"/>
+
+                <ItemsControl Grid.Row="1" ItemsSource="{Binding CurrentInputs}" Margin="0,0,0,8">
+                    <ItemsControl.ItemTemplate>
+                        <DataTemplate>
+                            <Grid Margin="0,0,0,4">
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="180"/>
+                                    <ColumnDefinition Width="*"/>
+                                </Grid.ColumnDefinitions>
+                                <TextBlock Text="{Binding Label}" VerticalAlignment="Center"/>
+                                <TextBox Grid.Column="1" Text="{Binding Value, UpdateSourceTrigger=PropertyChanged}" Padding="4"/>
+                            </Grid>
+                        </DataTemplate>
+                    </ItemsControl.ItemTemplate>
+                </ItemsControl>
+
+                <StackPanel Grid.Row="2" Orientation="Horizontal" Margin="0,0,0,8">
+                    <Button Content="Ejecutar flow" Command="{Binding RunFlowCommand}" Padding="14,6" FontWeight="Bold"/>
+                    <Button Content="Guardar log..." Command="{Binding SaveLogCommand}" Padding="10,6" Margin="8,0,0,0"/>
+                </StackPanel>
+
+                <DataGrid Grid.Row="3" ItemsSource="{Binding Log}" AutoGenerateColumns="False" IsReadOnly="True"
+                          CanUserAddRows="False" HeadersVisibility="Column" GridLinesVisibility="Horizontal">
+                    <DataGrid.Columns>
+                        <DataGridTextColumn Header="Paso" Binding="{Binding Name}" Width="180"/>
+                        <DataGridTemplateColumn Header="Estado" Width="90">
+                            <DataGridTemplateColumn.CellTemplate>
+                                <DataTemplate>
+                                    <TextBlock Text="{Binding Status}" Foreground="{Binding Status, Converter={StaticResource StatusToBrushConverter}}" FontWeight="Bold" VerticalAlignment="Center"/>
+                                </DataTemplate>
+                            </DataGridTemplateColumn.CellTemplate>
+                        </DataGridTemplateColumn>
+                        <DataGridTextColumn Header="HTTP" Binding="{Binding HttpStatusCode}" Width="60"/>
+                        <DataGridTextColumn Header="ms" Binding="{Binding DurationMs}" Width="60"/>
+                        <DataGridTextColumn Header="Request" Binding="{Binding RequestSummary}" Width="220"/>
+                        <DataGridTextColumn Header="Respuesta / Error" Binding="{Binding ResponseSummary}" Width="*"/>
+                    </DataGrid.Columns>
+                </DataGrid>
+            </Grid>
+        </Grid>
+
+        <!-- Status bar -->
+        <Border Grid.Row="2" BorderBrush="#CCCCCC" BorderThickness="0,1,0,0" Padding="0,6,0,0" Margin="0,8,0,0">
+            <TextBlock Text="{Binding StatusMessage}"/>
+        </Border>
+    </Grid>
+</Window>

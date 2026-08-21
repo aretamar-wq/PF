@@ -1,0 +1,20 @@
+{
+  "name": "Consulta de saldo",
+  "description": "Consulta el saldo de una cuenta. AJUSTAR pathTemplate y extractVariables a la API real del core bancario.",
+  "inputs": [
+    { "variableName": "accountNumber", "label": "Número de cuenta" }
+  ],
+  "steps": [
+    {
+      "name": "Consultar saldo",
+      "method": "GET",
+      "pathTemplate": "/accounts/{{accountNumber}}/balance",
+      "headers": { "Accept": "application/json" },
+      "extractVariables": {
+        "balance": "data.balance",
+        "currency": "data.currency"
+      },
+      "expectedStatusCode": 200
+    }
+  ]
+}

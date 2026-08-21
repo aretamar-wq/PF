@@ -1,0 +1,9 @@
+[
+  {
+    "Name": "Sandbox",
+    "BaseUrl": "https://sandbox.coreapi.example.com/v1",
+    "AuthType": "Bearer",
+    "ApiKeyHeaderName": "X-Api-Key",
+    "ApiKeyOrToken": ""
+  }
+]
