@@ -5,5 +5,13 @@
     "AuthType": "Bearer",
     "ApiKeyHeaderName": "X-Api-Key",
     "ApiKeyOrToken": ""
+  },
+  {
+    "Name": "IBS",
+    "BaseUrl": "https://ibs-twapi03.voii.com.ar/ibsapi",
+    "AuthType": "OAuth2ClientCredentials",
+    "TokenUrl": "https://ibs-twapi03.voii.com.ar/ibsapi/Token",
+    "ClientId": "",
+    "ClientSecret": ""
   }
 ]

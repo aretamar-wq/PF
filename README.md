@@ -15,13 +15,16 @@ llamados HTTP, pasando datos de la respuesta de un paso como entrada del siguien
 
 ## Qué resuelve
 
-- Autenticación por **API Key** (header configurable) o **Bearer token**.
+- Autenticación por **API Key** (header configurable), **Bearer token estático**
+  u **OAuth2 client_credentials** (obtiene y cachea el `access_token`
+  automáticamente antes de cada request, sin pasos manuales).
 - Flows multi-paso: cada paso es un request HTTP cuyo path, headers y body pueden
   usar variables (`{{variable}}`) provenientes de los inputs ingresados por el
   usuario o extraídas de la respuesta de un paso anterior.
 - Log de ejecución paso a paso (estado, HTTP status, duración, respuesta/error),
   exportable a `.txt`.
-- Gestión de "perfiles" de conexión (URL base + credenciales) desde la propia UI.
+- Gestión de "perfiles" de conexión (URL base + credenciales), configurados por
+  archivo (`profiles.local.json`) — ver más abajo.
 - Los flows y perfiles viven en archivos JSON junto al `.exe`: se pueden editar,
   agregar o distribuir sin volver a compilar.
 
@@ -72,17 +75,61 @@ Para distribuir la app de forma portable (USB, carpeta compartida, etc.), copiá
 la carpeta `publish` completa — el exe necesita la carpeta `Flows` al lado para
 poder leer los flows en tiempo de ejecución.
 
-## Primer uso
+## Configurar perfiles de conexión (por archivo)
 
-1. Copiá `profiles.sample.json` a `profiles.local.json` (este archivo **no se
-   versiona**, queda ignorado por git — ver `.gitignore`) o simplemente creá un
-   perfil nuevo desde la UI con el botón **Nuevo...**.
-2. Completá URL base, tipo de autenticación (API Key o Bearer) y el token/API key
-   real. El token se pide en un campo de contraseña y se guarda en
-   `profiles.local.json`, en texto plano en disco — si el core bancario lo exige,
-   considerá cifrar ese archivo o usar un vault en un futuro incremento.
-3. Elegí un flow de la lista de la izquierda, completá los inputs y tocá
-   **Ejecutar flow**. El log de la derecha muestra cada paso con su estado.
+Los perfiles se configuran editando directamente `profiles.local.json` — este
+archivo **no se versiona** (está en `.gitignore`) porque contiene credenciales
+reales. Para crearlo, copiá la plantilla:
+
+```powershell
+copy src\BankCoreFlowRunner\profiles.sample.json src\BankCoreFlowRunner\profiles.local.json
+```
+
+(o, en la carpeta ya publicada, `copy profiles.sample.json profiles.local.json`)
+y completá los datos. La plantilla trae dos ejemplos:
+
+```json
+[
+  {
+    "Name": "Sandbox",
+    "BaseUrl": "https://sandbox.coreapi.example.com/v1",
+    "AuthType": "Bearer",
+    "ApiKeyHeaderName": "X-Api-Key",
+    "ApiKeyOrToken": ""
+  },
+  {
+    "Name": "IBS",
+    "BaseUrl": "https://ibs-twapi03.voii.com.ar/ibsapi",
+    "AuthType": "OAuth2ClientCredentials",
+    "TokenUrl": "https://ibs-twapi03.voii.com.ar/ibsapi/Token",
+    "ClientId": "",
+    "ClientSecret": ""
+  }
+]
+```
+
+`AuthType` acepta:
+
+- `"ApiKey"` — usa `ApiKeyHeaderName` + `ApiKeyOrToken` como header fijo.
+- `"Bearer"` — usa `ApiKeyOrToken` como `Authorization: Bearer <valor>` fijo.
+- `"OAuth2ClientCredentials"` — antes de cada request, la app hace
+  `POST {TokenUrl}` con body `grant_type=client_credentials&client_id={ClientId}&client_secret={ClientSecret}`
+  (form-urlencoded), toma `access_token`/`expires_in` de la respuesta y lo
+  cachea en memoria (nunca en disco) hasta ~30s antes de que venza, renovándolo
+  solo cuando corresponde. Este es el caso del core **IBS**
+  (`https://ibs-twapi03.voii.com.ar/ibsapi/Token`).
+
+Completá `ClientId` y `ClientSecret` reales directamente en `profiles.local.json`
+con un editor de texto — **nunca los pegues en un archivo que se vaya a commitear**
+(ni en `Flows/*.json`, ni en `profiles.sample.json`). El diálogo "Nuevo.../Editar..."
+de la UI sirve hoy para Nombre, URL base, tipo de autenticación y el token/API key
+estático; los campos de OAuth2 (`TokenUrl`/`ClientId`/`ClientSecret`) se completan
+solo por archivo por ahora.
+
+Una vez configurado el perfil, elegí un flow de la lista de la izquierda, completá
+los inputs y tocá **Ejecutar flow**. El log de la derecha muestra cada paso con su
+estado (la obtención del token OAuth2, si aplica, ocurre de forma transparente,
+no aparece como un paso propio en el log).
 
 ## Cómo definir un flow nuevo
 
@@ -123,9 +170,13 @@ Cada archivo en `Flows/*.json` sigue esta forma:
 
 ## Limitaciones conocidas (v1)
 
-- Solo soporta REST con autenticación por API Key (header) o Bearer token. No
-  soporta OAuth2/mTLS ni SOAP — si el core bancario real los requiere, hay que
+- Soporta REST con API Key, Bearer estático u OAuth2 client_credentials. No
+  soporta mTLS ni SOAP — si el core bancario real los requiere, hay que
   extender `FlowEngine`/`Profile`.
-- El token se guarda en texto plano en `profiles.local.json`. Evaluar cifrado
-  (DPAPI de Windows, por ejemplo) antes de manejar credenciales de producción.
+- Las credenciales (`ApiKeyOrToken`, `ClientSecret`) se guardan en texto plano en
+  `profiles.local.json`. Evaluar cifrado (DPAPI de Windows, por ejemplo) antes de
+  manejar credenciales de producción.
+- El diálogo de edición de perfiles de la UI todavía no expone los campos de
+  OAuth2 (`TokenUrl`/`ClientId`/`ClientSecret`) — se completan editando
+  `profiles.local.json` directamente.
 - La extracción de variables de la respuesta asume JSON; no soporta XML/SOAP.

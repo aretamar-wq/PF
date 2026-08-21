@@ -74,7 +74,7 @@ public class FlowEngine
         var url = CombineUrl(profile.BaseUrl, path);
 
         using var request = new HttpRequestMessage(new HttpMethod(step.Method), url);
-        ApplyAuth(request, profile);
+        await ApplyAuthAsync(request, profile, ct);
 
         foreach (var header in step.Headers)
         {
@@ -88,7 +88,7 @@ public class FlowEngine
         if (!string.IsNullOrEmpty(step.BodyTemplate))
         {
             var body = VariableSubstitution.Substitute(step.BodyTemplate, variables);
-            request.Content = new StringContent(body, Encoding.UTF8, "application/json");
+            request.Content = new StringContent(body, Encoding.UTF8, step.BodyContentType);
         }
 
         entry.RequestSummary = $"{step.Method} {url}";
@@ -122,7 +122,7 @@ public class FlowEngine
         entry.Status = StepStatus.Success;
     }
 
-    private static void ApplyAuth(HttpRequestMessage request, Profile profile)
+    private async Task ApplyAuthAsync(HttpRequestMessage request, Profile profile, CancellationToken ct)
     {
         switch (profile.AuthType)
         {
@@ -132,10 +132,60 @@ public class FlowEngine
             case AuthType.Bearer:
                 request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", profile.ApiKeyOrToken);
                 break;
+            case AuthType.OAuth2ClientCredentials:
+                var accessToken = await GetOrRefreshAccessTokenAsync(profile, ct);
+                request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", accessToken);
+                break;
             case AuthType.None:
             default:
                 break;
         }
+    }
+
+    /// <summary>
+    /// Obtiene un access_token vía OAuth2 client_credentials y lo cachea en el propio Profile
+    /// (en memoria, nunca en disco) hasta 30s antes de su expiración declarada.
+    /// </summary>
+    private async Task<string> GetOrRefreshAccessTokenAsync(Profile profile, CancellationToken ct)
+    {
+        if (!string.IsNullOrEmpty(profile.CachedAccessToken) && DateTime.UtcNow < profile.CachedAccessTokenExpiresAtUtc)
+        {
+            return profile.CachedAccessToken;
+        }
+
+        using var request = new HttpRequestMessage(HttpMethod.Post, profile.TokenUrl)
+        {
+            Content = new FormUrlEncodedContent(new[]
+            {
+                new KeyValuePair<string, string>("grant_type", "client_credentials"),
+                new KeyValuePair<string, string>("client_id", profile.ClientId),
+                new KeyValuePair<string, string>("client_secret", profile.ClientSecret)
+            })
+        };
+
+        using var response = await _httpClient.SendAsync(request, ct);
+        var body = await response.Content.ReadAsStringAsync(ct);
+
+        if (!response.IsSuccessStatusCode)
+        {
+            throw new InvalidOperationException(
+                $"No se pudo obtener el token OAuth2 en '{profile.TokenUrl}' (HTTP {(int)response.StatusCode}): {Truncate(body, 300)}");
+        }
+
+        using var document = JsonDocument.Parse(body);
+        var accessToken = JsonPathExtractor.Extract(document.RootElement, "access_token");
+        if (string.IsNullOrEmpty(accessToken))
+        {
+            throw new InvalidOperationException("La respuesta del endpoint de token no contiene 'access_token'.");
+        }
+
+        var expiresInRaw = JsonPathExtractor.Extract(document.RootElement, "expires_in");
+        var expiresInSeconds = int.TryParse(expiresInRaw, out var parsed) ? parsed : 300;
+
+        profile.CachedAccessToken = accessToken;
+        profile.CachedAccessTokenExpiresAtUtc = DateTime.UtcNow.AddSeconds(Math.Max(30, expiresInSeconds - 30));
+
+        return accessToken;
     }
 
     private static string CombineUrl(string baseUrl, string path)
