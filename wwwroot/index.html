@@ -1,0 +1,78 @@
+<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="utf-8" />
+  <title>BankCoreFlowRunner</title>
+  <link rel="stylesheet" href="/styles.css" />
+</head>
+<body>
+  <header>
+    <h1>BankCoreFlowRunner</h1>
+    <div class="profile-bar">
+      <label for="profileSelect">Perfil:</label>
+      <select id="profileSelect"></select>
+      <button id="newProfileBtn">Nuevo...</button>
+      <button id="editProfileBtn">Editar...</button>
+      <button id="deleteProfileBtn">Eliminar</button>
+    </div>
+  </header>
+
+  <main>
+    <aside>
+      <h2>Flows</h2>
+      <ul id="flowList"></ul>
+    </aside>
+
+    <section id="flowDetail">
+      <p id="flowDescription" class="muted">Elegí un flow de la lista.</p>
+      <form id="inputsForm"></form>
+      <div class="actions">
+        <button id="runBtn" disabled>Ejecutar flow</button>
+        <button id="saveLogBtn" disabled>Guardar log...</button>
+      </div>
+
+      <table id="logTable">
+        <thead>
+          <tr>
+            <th>Paso</th><th>Estado</th><th>HTTP</th><th>ms</th><th>Request</th><th>Respuesta / Error</th>
+          </tr>
+        </thead>
+        <tbody id="logBody"></tbody>
+      </table>
+    </section>
+  </main>
+
+  <dialog id="profileDialog">
+    <form id="profileForm">
+      <h2 id="profileDialogTitle">Perfil de conexión</h2>
+      <label>Nombre <input name="name" required /></label>
+      <label>URL base <input name="baseUrl" required placeholder="https://host/api" /></label>
+      <label>Tipo de autenticación
+        <select name="authType">
+          <option value="None">None</option>
+          <option value="ApiKey">ApiKey</option>
+          <option value="Bearer">Bearer</option>
+          <option value="OAuth2ClientCredentials">OAuth2ClientCredentials</option>
+        </select>
+      </label>
+      <fieldset>
+        <legend>ApiKey / Bearer</legend>
+        <label>Nombre del header (ApiKey) <input name="apiKeyHeaderName" placeholder="X-Api-Key" /></label>
+        <label>API Key / Token <input name="apiKeyOrToken" type="password" placeholder="(sin cambios si se deja vacío)" /></label>
+      </fieldset>
+      <fieldset>
+        <legend>OAuth2 client_credentials</legend>
+        <label>Token URL <input name="tokenUrl" placeholder="https://host/Token" /></label>
+        <label>Client ID <input name="clientId" /></label>
+        <label>Client Secret <input name="clientSecret" type="password" placeholder="(sin cambios si se deja vacío)" /></label>
+      </fieldset>
+      <div class="dialog-actions">
+        <button type="button" id="cancelProfileBtn">Cancelar</button>
+        <button type="submit">Guardar</button>
+      </div>
+    </form>
+  </dialog>
+
+  <script src="/app.js"></script>
+</body>
+</html>

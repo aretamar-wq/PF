@@ -1,0 +1,17 @@
+[
+  {
+    "name": "Sandbox",
+    "baseUrl": "https://sandbox.coreapi.example.com/v1",
+    "authType": "Bearer",
+    "apiKeyHeaderName": "X-Api-Key",
+    "apiKeyOrToken": ""
+  },
+  {
+    "name": "IBS",
+    "baseUrl": "https://ibs-twapi03.voii.com.ar/ibsapi",
+    "authType": "OAuth2ClientCredentials",
+    "tokenUrl": "https://ibs-twapi03.voii.com.ar/ibsapi/Token",
+    "clientId": "",
+    "clientSecret": ""
+  }
+]

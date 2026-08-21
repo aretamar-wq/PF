@@ -1,8 +1,2 @@
-bin/
-obj/
-publish/
-*.user
-.vs/
-
-# Perfiles locales: contienen tokens/API keys reales, nunca se versionan
-src/BankCoreFlowRunner/profiles.local.json
+# Perfiles locales: contienen tokens/API keys/client secrets reales, nunca se versionan
+profiles.local.json
