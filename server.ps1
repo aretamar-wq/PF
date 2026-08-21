@@ -104,7 +104,11 @@ try {
 }
 
 Write-Host "BankCoreFlowRunner corriendo en $prefix (Ctrl+C para detener)" -ForegroundColor Green
-Start-Process $prefix
+try {
+    Start-Process $prefix
+} catch {
+    Write-Warning "No se pudo abrir el navegador automáticamente. Abrí $prefix manualmente."
+}
 
 try {
     while ($listener.IsListening) {
@@ -156,7 +160,7 @@ try {
             }
             elseif ($method -eq 'DELETE' -and $path -eq '/api/profiles') {
                 $name = $request.QueryString['name']
-                $profiles = @(Get-Profiles -RootDir $scriptRoot) | Where-Object { $_.name -ne $name }
+                $profiles = @(@(Get-Profiles -RootDir $scriptRoot) | Where-Object { $_.name -ne $name })
                 Save-Profiles -RootDir $scriptRoot -Profiles $profiles
                 Write-JsonResponse -Response $response -StatusCode 200 -Body ([pscustomobject]@{ ok = $true })
             }
@@ -193,7 +197,7 @@ try {
                         }
                     }
 
-                    $log = Invoke-Flow -Profile $selectedProfile -Flow $selectedFlow -InputValues $inputValues
+                    $log = @(Invoke-Flow -Profile $selectedProfile -Flow $selectedFlow -InputValues $inputValues)
                     Write-JsonResponse -Response $response -StatusCode 200 -Body $log
                 }
             }
@@ -202,8 +206,9 @@ try {
                 $filePath = Join-Path $wwwRoot $relative
                 $fullWwwRoot = [System.IO.Path]::GetFullPath($wwwRoot)
                 $fullFilePath = [System.IO.Path]::GetFullPath($filePath)
+                $wwwRootPrefix = $fullWwwRoot.TrimEnd([System.IO.Path]::DirectorySeparatorChar, [System.IO.Path]::AltDirectorySeparatorChar) + [System.IO.Path]::DirectorySeparatorChar
 
-                if ($fullFilePath.StartsWith($fullWwwRoot) -and (Test-Path $fullFilePath -PathType Leaf)) {
+                if ($fullFilePath.StartsWith($wwwRootPrefix, [System.StringComparison]::OrdinalIgnoreCase) -and (Test-Path $fullFilePath -PathType Leaf)) {
                     $ext = [System.IO.Path]::GetExtension($fullFilePath)
                     Write-FileResponse -Response $response -FilePath $fullFilePath -ContentType (Get-ContentType -Extension $ext)
                 } else {

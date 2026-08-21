@@ -19,7 +19,7 @@ function Get-OrRefreshAccessToken {
     $pairs.Add([System.Collections.Generic.KeyValuePair[string,string]]::new('grant_type', 'client_credentials'))
     $pairs.Add([System.Collections.Generic.KeyValuePair[string,string]]::new('client_id', [string]$Profile.clientId))
     $pairs.Add([System.Collections.Generic.KeyValuePair[string,string]]::new('client_secret', [string]$Profile.clientSecret))
-    $content = New-Object System.Net.Http.FormUrlEncodedContent($pairs)
+    $content = [System.Net.Http.FormUrlEncodedContent]::new($pairs)
 
     $response = $HttpClient.PostAsync($Profile.tokenUrl, $content).GetAwaiter().GetResult()
     $bodyText = $response.Content.ReadAsStringAsync().GetAwaiter().GetResult()
@@ -111,9 +111,13 @@ function Invoke-Flow {
                 $request = New-Object System.Net.Http.HttpRequestMessage([System.Net.Http.HttpMethod]::new($step.method), $url)
                 Add-AuthHeader -Request $request -Profile $Profile -HttpClient $httpClient
 
+                $contentTypeFromHeaders = $null
                 if ($step.headers) {
                     foreach ($headerProp in $step.headers.PSObject.Properties) {
-                        if ($headerProp.Name -ieq 'Content-Type') { continue }
+                        if ($headerProp.Name -ieq 'Content-Type') {
+                            $contentTypeFromHeaders = [string]$headerProp.Value
+                            continue
+                        }
                         $headerValue = Expand-Template -Template ([string]$headerProp.Value) -Variables $variables
                         [void]$request.Headers.TryAddWithoutValidation($headerProp.Name, $headerValue)
                     }
@@ -122,6 +126,7 @@ function Invoke-Flow {
                 if (-not [string]::IsNullOrEmpty($step.bodyTemplate)) {
                     $bodyText = Expand-Template -Template $step.bodyTemplate -Variables $variables
                     $contentType = 'application/json'
+                    if ($contentTypeFromHeaders) { $contentType = $contentTypeFromHeaders }
                     if ($step.bodyContentType) { $contentType = [string]$step.bodyContentType }
                     $request.Content = New-Object System.Net.Http.StringContent($bodyText, [System.Text.Encoding]::UTF8, $contentType)
                 }
