@@ -42,6 +42,23 @@ src/BankCoreFlowRunner/
   profiles.sample.json  plantilla de perfil (sin secretos)
 ```
 
+## Descargar el .exe sin instalar nada
+
+Este repo incluye un workflow de GitHub Actions (`.github/workflows/build-portable.yml`)
+que compila la app en una máquina Windows en la nube y deja el ejecutable listo
+para descargar — no hace falta instalar .NET, Visual Studio ni nada en tu PC:
+
+1. En GitHub, entrá a la pestaña **Actions** del repositorio.
+2. Elegí el workflow **"Build portable exe"** (se dispara solo con cada push,
+   o corrélo manualmente con **Run workflow**).
+3. Abrí la ejecución más reciente y descargá el artefacto
+   **`BankCoreFlowRunner-portable`** (es un `.zip`).
+4. Descomprimilo en cualquier carpeta — adentro está `BankCoreFlowRunner.exe`
+   junto a `Flows/` y `profiles.sample.json`. Copiá `profiles.sample.json` a
+   `profiles.local.json`, completá tus credenciales (ver más abajo) y ejecutá
+   el `.exe` directamente. Es autocontenido: corre en cualquier Windows sin
+   necesitar el runtime de .NET instalado.
+
 ## Requisitos para compilar
 
 - Windows con **.NET 8 SDK** (`dotnet --version` ≥ 8.0) y el workload de
