@@ -1,0 +1,19 @@
+{
+  "name": "Consulta de plazos fijos",
+  "description": "Recupera las cuentas/operaciones del cliente en el core IBS (incluye plazos fijos) a partir del número de documento. Requiere un perfil con BaseUrl 'https://ibs-twapi03.voii.com.ar/ibsapi' y AuthType Bearer u OAuth2ClientCredentials (ver perfil 'IBS' en profiles.sample.json). CodigoProceso, TipoDocumento, CodigoSucursal e IdMensaje quedan fijos; el único input es el número de documento.",
+  "inputs": [
+    { "variableName": "numeroDocumento", "label": "Número de documento" }
+  ],
+  "steps": [
+    {
+      "name": "Recuperar cliente/cuenta/operación",
+      "method": "GET",
+      "pathTemplate": "/api/ClienteCuentaOperacion/RecuperarClienteCuentaOperacion?CodigoProceso=1&TipoDocumento=1&NumeroDocumento={{numeroDocumento}}&CodigoSucursal=1&IdMensaje=123",
+      "headers": { "Accept": "application/json" },
+      "bodyContentType": "application/json",
+      "bodyTemplate": "{\r\n\"codigoSucursal\": \"1\",\r\n\"codigoSistema\": \"3\",\r\n\"codigoSubSistema\": \"0\",\r\n\"codigoMoneda\": \"0\",\r\n\"codigoCuenta\": \"11000168\",\r\n\"NumeroOperacion\": \"1\",\r\n\"Concepto\": \"17\",\r\n\"SubConcepto\": \"3\",\r\n\"Sistema\": \"3\",\r\n\"Transaccion\": \"14063\",\r\n\"FechaMovimiento\": \"2024-03-18\",\r\n\"FechayHoraMensaje\": \"2024-03-18 10:39:19\",\r\n\"FechaNegocio\": \"2024-03-18\",\r\n\"Importe\": \"17.00\",\r\n\"NumeroComprobante\": \"1714\",\r\n\"CodigoContrasiento\": \"\",\r\n\"Libre\": \"\",\r\n\"Renglon1\": \"Prueba renglon 1\",\r\n\"Renglon2\": \"Prueba renglon 2\",\r\n\"Renglon3\": \"PD4RO172VM0X5YK2KJ3QE6\",\r\n\"forzada\": 1,\r\n\"IdMensaje\": \"GC17156\"\r\n}",
+      "extractVariables": {},
+      "expectedStatusCode": 200
+    }
+  ]
+}
