@@ -296,26 +296,28 @@ function Invoke-Flow {
                 $logTimestamp = (Get-Date).ToString('yyyy-MM-dd HH:mm:ss.fff')
                 $requestHeaderLines = Get-LoggableHeaderLines -Headers $request.Headers -ApiKeyHeaderName ([string]$Profile.apiKeyHeaderName)
                 $requestLogText = (
-                    "[$logTimestamp] Flow=$($Flow.name) | Step=$($step.name)",
+                    ">>> REQUEST [$logTimestamp] Flow=$($Flow.name) | Step=$($step.name)",
                     "$($step.method) $url",
                     $requestHeaderLines,
                     'Body:',
                     $(if ($request.Content) { $bodyText } else { '(sin body)' }),
                     '---'
                 ) -join "`n"
-                Write-HttpLog -LogsDir $LogsDir -FileName 'requests.log' -Content $requestLogText
+                # Se loguea antes de mandar el request: así queda un registro aunque la
+                # respuesta nunca llegue (timeout, host inalcanzable, etc.).
+                Write-HttpLog -LogsDir $LogsDir -FileName 'http.log' -Content $requestLogText
 
                 $response = $httpClient.SendAsync($request).GetAwaiter().GetResult()
                 $responseBody = $response.Content.ReadAsStringAsync().GetAwaiter().GetResult()
 
                 $responseLogTimestamp = (Get-Date).ToString('yyyy-MM-dd HH:mm:ss.fff')
                 $responseLogText = (
-                    "[$responseLogTimestamp] Flow=$($Flow.name) | Step=$($step.name) | HTTP $([int]$response.StatusCode) ($($stopwatch.ElapsedMilliseconds) ms)",
+                    "<<< RESPONSE [$responseLogTimestamp] Flow=$($Flow.name) | Step=$($step.name) | HTTP $([int]$response.StatusCode) ($($stopwatch.ElapsedMilliseconds) ms)",
                     'Body:',
                     $responseBody,
                     '---'
                 ) -join "`n"
-                Write-HttpLog -LogsDir $LogsDir -FileName 'responses.log' -Content $responseLogText
+                Write-HttpLog -LogsDir $LogsDir -FileName 'http.log' -Content $responseLogText
 
                 $entry.httpStatusCode = [int]$response.StatusCode
                 $entry.responseSummary = if ($responseBody.Length -gt 800) { $responseBody.Substring(0, 800) + '...' } else { $responseBody }

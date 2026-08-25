@@ -291,18 +291,19 @@ siempre, una caja de texto.
 ## Logs en disco
 
 Cada paso de un flow que llega a mandar un request (no la obtención interna
-del token OAuth2, para no loguear `client_secret`) se registra en dos
-archivos de texto, creados junto al script:
+del token OAuth2, para no loguear `client_secret`) se registra en
+`logs/http.log`, creado junto al script: primero el bloque `>>> REQUEST`
+(método, URL, headers, body) y después, cuando llega, el bloque
+`<<< RESPONSE` (HTTP status, duración, body completo sin el corte a 800
+caracteres que sí tiene la UI) — en ese orden cronológico, aunque el request
+se escribe antes de mandarse, así queda registrado igual si la respuesta
+nunca llega (timeout, host inalcanzable).
 
-- `logs/requests.log` — método, URL, headers y body de cada request.
-- `logs/responses.log` — HTTP status, duración y body completo de cada
-  respuesta (sin el corte a 800 caracteres que sí tiene la UI).
-
-Ambos son append-only (crecen con cada ejecución, nunca se rotan ni se
-limpian solos) y **no se versionan** (`logs/` está en `.gitignore`) porque
-van a contener datos bancarios reales — números de cuenta, DNIs, importes.
-El header `Authorization` (y el header de ApiKey, si el perfil usa ese tipo
-de autenticación) se guarda como `***REDACTED***`, nunca el valor real.
+Es append-only (crece con cada ejecución, nunca se rota ni se limpia solo) y
+**no se versiona** (`logs/` está en `.gitignore`) porque va a contener datos
+bancarios reales — números de cuenta, DNIs, importes. El header
+`Authorization` (y el header de ApiKey, si el perfil usa ese tipo de
+autenticación) se guarda como `***REDACTED***`, nunca el valor real.
 
 ## Limitaciones conocidas
 
