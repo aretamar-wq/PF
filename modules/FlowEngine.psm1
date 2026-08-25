@@ -123,7 +123,7 @@ function Add-AuthHeader {
         [Parameter(Mandatory = $true)] [System.Net.Http.HttpClient]$HttpClient
     )
 
-    switch ([string]$Profile.authType) {
+    switch (([string]$Profile.authType).Trim()) {
         'ApiKey' {
             [void]$Request.Headers.TryAddWithoutValidation([string]$Profile.apiKeyHeaderName, [string]$Profile.apiKeyOrToken)
         }
@@ -197,7 +197,13 @@ function Invoke-Flow {
                     }
                 }
 
-                if (-not [string]::IsNullOrEmpty($step.bodyTemplate)) {
+                # GET/HEAD nunca llevan body: en Windows PowerShell 5.1 (.NET Framework), HttpClient
+                # delega en HttpWebRequest, que tira "Cannot send a content-body with this verb-type"
+                # si se le asigna Content en esos métodos (PowerShell 7 / .NET moderno no tiene esta
+                # restricción, por eso no aparecía en pruebas hechas con pwsh).
+                $methodAllowsBody = ($step.method -ine 'GET') -and ($step.method -ine 'HEAD')
+
+                if ($methodAllowsBody -and -not [string]::IsNullOrEmpty($step.bodyTemplate)) {
                     $bodyText = Expand-Template -Template $step.bodyTemplate -Variables $variables
                     $contentType = 'application/json'
                     if ($contentTypeFromHeaders) { $contentType = $contentTypeFromHeaders }
@@ -260,7 +266,7 @@ function Invoke-Flow {
 function Test-TokenAcquisition {
     param([Parameter(Mandatory = $true)] $Profile)
 
-    if ([string]$Profile.authType -ne 'OAuth2ClientCredentials') {
+    if (([string]$Profile.authType).Trim() -ne 'OAuth2ClientCredentials') {
         return [pscustomobject][ordered]@{
             ok      = $false
             message = "El perfil '$($Profile.name)' no usa OAuth2ClientCredentials (authType actual: '$($Profile.authType)')."

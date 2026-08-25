@@ -31,7 +31,8 @@ async function loadProfiles() {
 function updateTestTokenButtonState() {
   const profileName = document.getElementById('profileSelect').value;
   const profile = state.profiles.find((p) => p.name === profileName);
-  document.getElementById('testTokenBtn').disabled = !profile || profile.authType !== 'OAuth2ClientCredentials';
+  const authType = (profile && profile.authType) || '';
+  document.getElementById('testTokenBtn').disabled = authType.trim().toLowerCase() !== 'oauth2clientcredentials';
   document.getElementById('tokenTestResult').textContent = '';
 }
 

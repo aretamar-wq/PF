@@ -42,8 +42,13 @@ runtime adicional.
 - Log de ejecución paso a paso (estado, HTTP status, duración,
   respuesta/error) en la propia página, exportable a `.txt` desde el
   navegador.
-- Gestión de "perfiles" de conexión desde la UI web (salvo los tres campos de
-  OAuth2, que hoy se completan editando `profiles.local.json` — ver abajo).
+- Gestión de "perfiles" de conexión desde la UI web (nombre, URL base, tipo de
+  autenticación, ApiKey/Bearer estático y los campos básicos de OAuth2 —
+  `tokenUrl`/`clientId`/`clientSecret`). Los campos de OAuth2 más avanzados
+  (`tokenParams`, `tokenHeaders`, etc., ver más abajo) se completan editando
+  `profiles.local.json`.
+- Botón **"Probar token"** para verificar la obtención del token OAuth2 sin
+  ejecutar ningún flow de negocio.
 - Los flows y perfiles viven en archivos JSON junto al script: se pueden
   editar, agregar o distribuir sin tocar código. Los cambios en `Flows/` se
   ven apenas se recarga la página (no hace falta reiniciar el servidor).
@@ -106,11 +111,14 @@ La plantilla trae dos ejemplos:
   servidor) hasta ~30s antes de que venza. Todo el proceso de obtención del
   token es **parametrizable por perfil** — ver la próxima sección.
 
-Completá `clientId`/`clientSecret` reales directamente en `profiles.local.json`
-con un editor de texto — **nunca los pegues en un archivo que se vaya a
-commitear** (ni en `Flows/*.json`, ni en `profiles.sample.json`). La UI web
-hoy edita nombre/URL base/tipo de auth/ApiKey-Bearer; los campos de OAuth2 se
-completan por archivo.
+Podés completar `tokenUrl`/`clientId`/`clientSecret` desde el diálogo
+"Nuevo.../Editar..." de la UI (elegí `OAuth2ClientCredentials` en "Tipo de
+autenticación"), o editando `profiles.local.json` directamente con un editor
+de texto. En cualquier caso, **nunca pegues un secreto real en un archivo que
+se vaya a commitear** (ni en `Flows/*.json`, ni en `profiles.sample.json`) —
+`profiles.local.json` está en `.gitignore` justamente para esto. Los campos
+más avanzados (`tokenParams`, `tokenHeaders`, `tokenAccessTokenPath`, etc.)
+todavía no tienen UI propia y se completan por archivo.
 
 ### Parametrizar cómo se obtiene el token OAuth2
 
@@ -213,7 +221,11 @@ los flows de ejemplo):
 - El servidor atiende un request HTTP a la vez (`HttpListener.GetContext()`
   sincrónico) — pensado para un solo usuario ejecutando flows manualmente,
   no para uso concurrente ni como servicio productivo expuesto a la red.
-- El diálogo de perfiles de la UI todavía no expone los campos de OAuth2
-  (`tokenUrl`/`clientId`/`clientSecret`) — se completan editando
-  `profiles.local.json` directamente.
+- El diálogo de perfiles de la UI no expone los campos de OAuth2 más
+  avanzados (`tokenParams`, `tokenHeaders`, `tokenAccessTokenPath`, etc.) —
+  se completan editando `profiles.local.json` directamente.
+- Ningún step de un flow debe llevar body en un método `GET`/`HEAD`: el
+  motor lo ignora aunque `bodyTemplate` esté definido, porque en Windows
+  PowerShell 5.1 (.NET Framework) `HttpClient` tira una excepción si se le
+  asigna body en esos métodos.
 - La extracción de variables de la respuesta asume JSON; no soporta XML/SOAP.
