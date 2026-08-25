@@ -164,6 +164,7 @@ function Invoke-Flow {
         nowDate     = $now.ToString('yyyy-MM-dd')
         nowDateTime = $now.ToString('yyyy-MM-dd HH:mm:ss')
         nowTime     = $now.ToString('HH:mm:ss')
+        nowCompact  = $now.ToString('yyyyMMddHHmm')
     }
     foreach ($key in $InputValues.Keys) {
         $variables[$key] = $InputValues[$key]

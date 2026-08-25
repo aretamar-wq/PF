@@ -221,6 +221,8 @@ todo flow tiene disponibles automáticamente:
 - `{{nowDate}}` — fecha actual, `yyyy-MM-dd`.
 - `{{nowDateTime}}` — fecha y hora actual, `yyyy-MM-dd HH:mm:ss`.
 - `{{nowTime}}` — hora actual, `HH:mm:ss`.
+- `{{nowCompact}}` — fecha y hora actual sin separadores, `yyyyMMddHHmm`
+  (útil para IDs de mensaje tipo `202608251243`).
 
 Útil para campos como `FechaMovimiento`/`FechaNegocio`/`FechayHoraMensaje`
 que el sistema debe completar solo, sin que el usuario los tenga que tipear
