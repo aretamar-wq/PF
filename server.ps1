@@ -25,6 +25,7 @@ Import-Module (Join-Path $scriptRoot 'modules\FlowEngine.psm1') -Force
 $Global:TokenCache = @{}
 $flowsDir = Join-Path $scriptRoot 'Flows'
 $wwwRoot = Join-Path $scriptRoot 'wwwroot'
+$logsDir = Join-Path $scriptRoot 'logs'
 
 function ConvertTo-JsonArraySafe {
     param($Items, [int]$Depth = 10)
@@ -202,7 +203,7 @@ try {
                         }
                     }
 
-                    $log = @(Invoke-Flow -Profile $selectedProfile -Flow $selectedFlow -InputValues $inputValues)
+                    $log = @(Invoke-Flow -Profile $selectedProfile -Flow $selectedFlow -InputValues $inputValues -LogsDir $logsDir)
                     Write-JsonResponse -Response $response -StatusCode 200 -Body $log
                 }
             }

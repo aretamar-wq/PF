@@ -41,7 +41,10 @@ runtime adicional.
   ingresados por el usuario o extraídas de la respuesta de un paso anterior.
 - Log de ejecución paso a paso (estado, HTTP status, duración,
   respuesta/error) en la propia página, exportable a `.txt` desde el
-  navegador.
+  navegador. La respuesta que la página muestra corta a los 800
+  caracteres; el detalle completo de cada request/response de negocio
+  (no de la obtención de token) queda en `logs/requests.log` y
+  `logs/responses.log` — ver "Logs en disco" más abajo.
 - Gestión de "perfiles" de conexión desde la UI web (nombre, URL base, tipo de
   autenticación, ApiKey/Bearer estático y los campos básicos de OAuth2 —
   `tokenUrl`/`clientId`/`clientSecret`). Los campos de OAuth2 más avanzados
@@ -249,6 +252,22 @@ Un input puede declararse como selector en lugar de caja de texto libre,
 
 Sin `"type": "select"` (o sin `"options"`), el input se renderiza como
 siempre, una caja de texto.
+
+## Logs en disco
+
+Cada paso de un flow que llega a mandar un request (no la obtención interna
+del token OAuth2, para no loguear `client_secret`) se registra en dos
+archivos de texto, creados junto al script:
+
+- `logs/requests.log` — método, URL, headers y body de cada request.
+- `logs/responses.log` — HTTP status, duración y body completo de cada
+  respuesta (sin el corte a 800 caracteres que sí tiene la UI).
+
+Ambos son append-only (crecen con cada ejecución, nunca se rotan ni se
+limpian solos) y **no se versionan** (`logs/` está en `.gitignore`) porque
+van a contener datos bancarios reales — números de cuenta, DNIs, importes.
+El header `Authorization` (y el header de ApiKey, si el perfil usa ese tipo
+de autenticación) se guarda como `***REDACTED***`, nunca el valor real.
 
 ## Limitaciones conocidas
 

@@ -26,6 +26,43 @@ function Build-TokenRequestContent {
     return New-Object System.Net.Http.StringContent($raw, [System.Text.Encoding]::UTF8, $ContentType)
 }
 
+function Write-HttpLog {
+    param(
+        [string]$LogsDir,
+        [string]$FileName,
+        [string]$Content
+    )
+
+    if ([string]::IsNullOrEmpty($LogsDir)) { return }
+
+    try {
+        if (-not (Test-Path $LogsDir)) {
+            New-Item -ItemType Directory -Path $LogsDir -Force | Out-Null
+        }
+        $path = Join-Path $LogsDir $FileName
+        Add-Content -Path $path -Value $Content -Encoding UTF8
+    } catch {
+        # Un problema de logging (disco lleno, permisos) nunca debe romper la ejecución del flow.
+    }
+}
+
+function Get-LoggableHeaderLines {
+    param(
+        [Parameter(Mandatory = $true)] $Headers,
+        [string]$ApiKeyHeaderName
+    )
+
+    $lines = foreach ($header in $Headers) {
+        $name = $header.Key
+        if ($name -ieq 'Authorization' -or ($ApiKeyHeaderName -and $name -ieq $ApiKeyHeaderName)) {
+            "$name`: ***REDACTED***"
+        } else {
+            "$name`: $(@($header.Value) -join ', ')"
+        }
+    }
+    return ($lines -join "`n")
+}
+
 function Get-ProfileStringOrDefault {
     param($Profile, [string]$PropertyName, [string]$Default)
     $value = $Profile.$PropertyName
@@ -149,7 +186,8 @@ function Invoke-Flow {
     param(
         [Parameter(Mandatory = $true)] $Profile,
         [Parameter(Mandatory = $true)] $Flow,
-        [Parameter(Mandatory = $true)] [hashtable]$InputValues
+        [Parameter(Mandatory = $true)] [hashtable]$InputValues,
+        [string]$LogsDir
     )
 
     $handler = New-Object System.Net.Http.HttpClientHandler
@@ -222,8 +260,29 @@ function Invoke-Flow {
 
                 $entry.requestSummary = "$($step.method) $url"
 
+                $logTimestamp = (Get-Date).ToString('yyyy-MM-dd HH:mm:ss.fff')
+                $requestHeaderLines = Get-LoggableHeaderLines -Headers $request.Headers -ApiKeyHeaderName ([string]$Profile.apiKeyHeaderName)
+                $requestLogText = (
+                    "[$logTimestamp] Flow=$($Flow.name) | Step=$($step.name)",
+                    "$($step.method) $url",
+                    $requestHeaderLines,
+                    'Body:',
+                    $(if ($request.Content) { $bodyText } else { '(sin body)' }),
+                    '---'
+                ) -join "`n"
+                Write-HttpLog -LogsDir $LogsDir -FileName 'requests.log' -Content $requestLogText
+
                 $response = $httpClient.SendAsync($request).GetAwaiter().GetResult()
                 $responseBody = $response.Content.ReadAsStringAsync().GetAwaiter().GetResult()
+
+                $responseLogTimestamp = (Get-Date).ToString('yyyy-MM-dd HH:mm:ss.fff')
+                $responseLogText = (
+                    "[$responseLogTimestamp] Flow=$($Flow.name) | Step=$($step.name) | HTTP $([int]$response.StatusCode) ($($stopwatch.ElapsedMilliseconds) ms)",
+                    'Body:',
+                    $responseBody,
+                    '---'
+                ) -join "`n"
+                Write-HttpLog -LogsDir $LogsDir -FileName 'responses.log' -Content $responseLogText
 
                 $entry.httpStatusCode = [int]$response.StatusCode
                 $entry.responseSummary = if ($responseBody.Length -gt 800) { $responseBody.Substring(0, 800) + '...' } else { $responseBody }

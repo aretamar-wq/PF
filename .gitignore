@@ -1,2 +1,5 @@
 # Perfiles locales: contienen tokens/API keys/client secrets reales, nunca se versionan
 profiles.local.json
+
+# Logs de requests/responses: contienen datos bancarios reales (cuentas, montos, DNIs), nunca se versionan
+logs/
