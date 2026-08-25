@@ -175,6 +175,13 @@ function parseCsvText(text) {
     .map((line) => line.split(',').map((cell) => cell.trim().replace(/^"(.*)"$/, '$1')));
 }
 
+function formatDurationShort(ms) {
+  const totalSeconds = Math.max(0, Math.round(ms / 1000));
+  const minutes = Math.floor(totalSeconds / 60);
+  const seconds = totalSeconds % 60;
+  return minutes > 0 ? `${minutes}m ${seconds}s` : `${seconds}s`;
+}
+
 function hideCsvSummary() {
   const summaryEl = document.getElementById('csvSummary');
   summaryEl.style.display = 'none';
@@ -320,9 +327,21 @@ async function runFlowFromCsv() {
       return;
     }
 
+    const startedAt = Date.now();
+
     for (let i = 0; i < rows.length; i++) {
       const rowNumber = i + 1;
-      progressEl.textContent = `Procesando fila ${rowNumber} de ${rows.length}...`;
+      const elapsedMs = Date.now() - startedAt;
+      // Cada fila hace varias llamadas reales a la API del banco (no algo que
+      // dependa de nuestro código): el ETA es solo un promedio de lo que ya
+      // tardaron las filas anteriores, no una estimación exacta.
+      let etaText = '';
+      if (rowNumber > 1) {
+        const avgMsPerRow = elapsedMs / (rowNumber - 1);
+        const remainingMs = avgMsPerRow * (rows.length - rowNumber + 1);
+        etaText = ` (transcurrido ${formatDurationShort(elapsedMs)}, restante estimado ~${formatDurationShort(remainingMs)})`;
+      }
+      progressEl.textContent = `Procesando fila ${rowNumber} de ${rows.length}...${etaText}`;
 
       const row = rows[i];
       let rowEntries;
@@ -378,7 +397,7 @@ async function runFlowFromCsv() {
       document.getElementById('saveLogBtn').disabled = state.lastLog.length === 0;
     }
 
-    progressEl.textContent = `Listo: ${rows.length} fila(s) procesada(s).`;
+    progressEl.textContent = `Listo: ${rows.length} fila(s) procesada(s) en ${formatDurationShort(Date.now() - startedAt)}.`;
   } catch (err) {
     alert('Error leyendo el CSV: ' + err.message);
   } finally {
