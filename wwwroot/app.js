@@ -403,11 +403,12 @@ async function runFlowFromCsv() {
       renderCsvSummary(flow, rows.length, stepCounts);
 
       // El último paso de este flow es el alta del plazo fijo; si terminó
-      // bien, su respuesta trae un array "output" con el detalle real de la
-      // colocación (operación, monto, vencimiento, tasas). Se junta en
-      // state.pfDetailRows para poder descargarlo aparte como CSV — la
-      // tabla de log paso a paso ya no se muestra en pantalla para flows
-      // CSV (ver selectFlow), el detalle completo de cada request/response
+      // bien, su respuesta trae un array "output" con 2 items por plazo fijo
+      // (función 1 = capital, función 3 = interés) que comparten operación/
+      // vencimiento/tem/tna/importeNeto — se unifican en UNA sola fila por
+      // plazo fijo en state.pfDetailRows para descargar aparte como CSV. La
+      // tabla de log paso a paso ya no se muestra en pantalla para flows CSV
+      // (ver selectFlow); el detalle completo de cada request/response
       // sigue en logs/http.log.
       if (stepEntries) {
         const lastEntry = stepEntries[stepEntries.length - 1];
@@ -415,17 +416,26 @@ async function runFlowFromCsv() {
           try {
             const parsed = JSON.parse(lastEntry.responseSummary);
             const output = Array.isArray(parsed.output) ? parsed.output : [];
-            for (const item of output) {
+            if (output.length > 0) {
+              const capital = output.find((item) => item.funcion === 1);
+              const interes = output.find((item) => item.funcion === 3);
+              // Items con una función distinta de 1 (capital) o 3 (interés) no
+              // deberían aparecer en la práctica, pero por si el banco agrega
+              // otro concepto en el futuro, no se pierden en silencio.
+              const otros = output.filter((item) => item.funcion !== 1 && item.funcion !== 3);
+              const first = output[0];
               state.pfDetailRows.push({
                 fila: rowNumber,
-                operacion: item.operacion,
-                funcion: item.funcion,
-                accesorio: item.accesorio,
-                monto: item.monto,
-                vencimiento: item.vencimiento,
-                tem: item.tem,
-                tna: item.tna,
-                importeNeto: item.importeNeto,
+                operacion: first.operacion,
+                vencimiento: first.vencimiento,
+                tem: first.tem,
+                tna: first.tna,
+                importeNeto: first.importeNeto,
+                montoCapital: capital ? capital.monto : '',
+                montoInteres: interes ? interes.monto : '',
+                otros: otros.length > 0
+                  ? otros.map((item) => `función ${item.funcion}: ${item.monto} (${item.accesorio})`).join(' | ')
+                  : '',
               });
             }
           } catch (err) {
@@ -481,7 +491,7 @@ function csvEscape(value) {
 function downloadPfDetail() {
   if (state.pfDetailRows.length === 0) return;
 
-  const headers = ['fila', 'operacion', 'funcion', 'accesorio', 'monto', 'vencimiento', 'tem', 'tna', 'importeNeto'];
+  const headers = ['fila', 'operacion', 'vencimiento', 'tem', 'tna', 'importeNeto', 'montoCapital', 'montoInteres', 'otros'];
   const lines = [headers.join(',')];
   for (const row of state.pfDetailRows) {
     lines.push(headers.map((h) => csvEscape(row[h])).join(','));

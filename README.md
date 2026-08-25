@@ -298,15 +298,21 @@ vez por cada fila (ej. `Flows/plazo-fijo-cocos-files.json`, copia de
   ok+error de cada paso siempre coincide con la cantidad de filas procesadas
   hasta ese momento.
 - Botón **"Descargar detalle de Plazos Fijos..."**: al terminar de procesar
-  (o incluso a mitad de proceso), descarga un `.csv` con una fila por cada
-  elemento del array `output` que devuelve la respuesta del **último paso**
-  del flow (para `Plazo Fijo Cocos Files`, la alta del plazo fijo) en cada
-  fila que llegó a completarse con éxito — columnas `fila` (la fila del CSV
-  de origen), `operacion`, `funcion`, `accesorio`, `monto`, `vencimiento`,
-  `tem`, `tna`, `importeNeto`. Una fila del CSV de origen que falló (en
-  cualquier paso) no agrega nada a este archivo. Asume que el último step
-  del flow es el que da de alta el plazo fijo y devuelve ese formato — no es
-  genérico para cualquier otro flow CSV que se agregue en el futuro.
+  (o incluso a mitad de proceso), descarga un `.csv` con **una fila por cada
+  plazo fijo dado de alta** (no una fila por cada item que devuelve la API),
+  tomando la respuesta del **último paso** del flow (para
+  `Plazo Fijo Cocos Files`, la alta del plazo fijo) de cada fila del CSV de
+  origen que llegó a completarse con éxito. La respuesta trae un array
+  `output` con 2 items por plazo fijo (función 1 = capital, función 3 =
+  interés) que comparten `operacion`/`vencimiento`/`tem`/`tna`/`importeNeto`
+  — se unifican en una sola fila con columnas `fila` (la fila del CSV de
+  origen), `operacion`, `vencimiento`, `tem`, `tna`, `importeNeto`,
+  `montoCapital`, `montoInteres` y `otros` (si algún item viene con una
+  función distinta de 1 o 3, no se pierde: queda listado ahí en vez de en
+  una columna propia). Una fila del CSV de origen que falló (en cualquier
+  paso) no agrega nada a este archivo. Asume que el último step del flow es
+  el que da de alta el plazo fijo y devuelve ese formato — no es genérico
+  para cualquier otro flow CSV que se agregue en el futuro.
 
 ### Variables de sistema (fecha/hora sin pedirlas al usuario)
 
