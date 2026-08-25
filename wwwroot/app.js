@@ -137,6 +137,16 @@ function escapeHtml(text) {
   return div.innerHTML;
 }
 
+function formatResultCell(entry) {
+  const parts = [];
+  if (entry.errorMessage) parts.push(escapeHtml(entry.errorMessage));
+  if (entry.responseSummary) {
+    const prefix = entry.errorMessage ? 'Respuesta del servidor: ' : '';
+    parts.push(prefix + escapeHtml(entry.responseSummary));
+  }
+  return parts.join('<br>');
+}
+
 function renderLog(entries) {
   const logBody = document.getElementById('logBody');
   logBody.innerHTML = '';
@@ -148,7 +158,7 @@ function renderLog(entries) {
       <td>${entry.httpStatusCode == null ? '' : entry.httpStatusCode}</td>
       <td>${entry.durationMs}</td>
       <td>${escapeHtml(entry.requestSummary)}</td>
-      <td>${escapeHtml(entry.errorMessage || entry.responseSummary)}</td>
+      <td>${formatResultCell(entry)}</td>
     `;
     logBody.appendChild(tr);
   }
