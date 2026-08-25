@@ -111,6 +111,7 @@ function selectFlow(name) {
   form.innerHTML = '';
   csvFileInput.value = '';
   document.getElementById('csvProgress').textContent = '';
+  hideCsvSummary();
 
   if (isCsvFlow(state.selectedFlow)) {
     form.style.display = 'none';
@@ -172,6 +173,31 @@ function parseCsvText(text) {
     .map((line) => line.trim())
     .filter((line) => line.length > 0)
     .map((line) => line.split(',').map((cell) => cell.trim().replace(/^"(.*)"$/, '$1')));
+}
+
+function hideCsvSummary() {
+  const summaryEl = document.getElementById('csvSummary');
+  summaryEl.style.display = 'none';
+  summaryEl.innerHTML = '';
+}
+
+// stepCounts es un array paralelo a flow.steps: stepCounts[i] = { ok, error }
+// contando, por cada fila del CSV, si ese paso terminó en 'Success' o no
+// (no ejecutado por una fila mal formada, por una falla de red, o porque un
+// paso anterior de la misma fila falló, cuenta como error de ese paso).
+function renderCsvSummary(flow, totalRows, stepCounts) {
+  const summaryEl = document.getElementById('csvSummary');
+  const lines = [`<div><strong>Total de registros: ${totalRows}</strong></div>`];
+  flow.steps.forEach((step, idx) => {
+    const { ok, error } = stepCounts[idx];
+    lines.push(
+      `<div>${escapeHtml(step.name)}: ` +
+        `<span class="status-Success">${ok} correcto(s)</span> / ` +
+        `<span class="status-Error">${error} con error</span></div>`
+    );
+  });
+  summaryEl.innerHTML = lines.join('');
+  summaryEl.style.display = '';
 }
 
 function readFileAsText(file) {
@@ -275,7 +301,15 @@ async function runFlowFromCsv() {
   const runBtn = document.getElementById('runBtn');
   runBtn.disabled = true;
   document.getElementById('logBody').innerHTML = '';
+  hideCsvSummary();
   state.lastLog = [];
+
+  // stepCounts[i] cuenta, para el paso flow.steps[i], cuántas filas lo
+  // completaron con éxito ('ok') y cuántas no ('error') — ya sea porque ese
+  // paso falló, porque no llegó a ejecutarse (un paso anterior de la misma
+  // fila falló), o porque la fila entera no se pudo correr (columnas de
+  // más/menos, o un error de red/servidor antes de tener respuesta).
+  const stepCounts = flow.steps.map(() => ({ ok: 0, error: 0 }));
 
   try {
     const text = await readFileAsText(file);
@@ -292,6 +326,7 @@ async function runFlowFromCsv() {
 
       const row = rows[i];
       let rowEntries;
+      let stepEntries = null; // solo se llena con la respuesta real de /api/run, alineada 1:1 con flow.steps
 
       if (row.length !== flow.inputs.length) {
         rowEntries = [
@@ -313,6 +348,7 @@ async function runFlowFromCsv() {
 
         try {
           rowEntries = await runOnce(inputs);
+          stepEntries = rowEntries;
         } catch (err) {
           rowEntries = [
             {
@@ -327,6 +363,14 @@ async function runFlowFromCsv() {
           ];
         }
       }
+
+      for (let s = 0; s < flow.steps.length; s++) {
+        const entry = stepEntries ? stepEntries[s] : null;
+        const ok = !!entry && entry.status === 'Success';
+        if (ok) stepCounts[s].ok++;
+        else stepCounts[s].error++;
+      }
+      renderCsvSummary(flow, rows.length, stepCounts);
 
       const prefixed = rowEntries.map((entry) => ({ ...entry, name: `Fila ${rowNumber} — ${entry.name}` }));
       state.lastLog = state.lastLog.concat(prefixed);

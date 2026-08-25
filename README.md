@@ -284,6 +284,15 @@ vez por cada fila (ej. `Flows/plazo-fijo-cocos-files.json`, copia de
 - El parser de CSV de la UI es simple: separa por comas y sólo entiende
   comillas envolventes tipo `"texto"` (las que agrega Excel al exportar) —
   no soporta comas dentro de un campo entrecomillado.
+- Mientras procesa el CSV (y al terminar), la UI muestra un resumen con el
+  **total de registros** y, por cada paso del flow (ej. Débito en Cuenta
+  Corriente, Crédito en Caja de Ahorro, Alta de Plazo Fijo), cuántas filas lo
+  completaron bien (en verde) y cuántas no (en rojo). Un paso cuenta como "no"
+  tanto si ese paso específico falló como si no llegó a ejecutarse (porque un
+  paso anterior de la misma fila falló, la fila tenía mal la cantidad de
+  columnas, o hubo un error de red antes de tener respuesta) — así el total
+  ok+error de cada paso siempre coincide con la cantidad de filas procesadas
+  hasta ese momento.
 
 ### Variables de sistema (fecha/hora sin pedirlas al usuario)
 

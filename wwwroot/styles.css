@@ -90,6 +90,17 @@ th { background: #f0f0f2; }
 .status-Error { color: var(--error); font-weight: 600; }
 .status-Running { color: var(--running); font-weight: 600; }
 
+.csv-summary {
+  margin: 8px 0;
+  padding: 8px 10px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: white;
+  font-size: 0.9rem;
+}
+.csv-summary div { margin-bottom: 2px; }
+.csv-summary div:last-child { margin-bottom: 0; }
+
 dialog {
   border: none;
   border-radius: 8px;
