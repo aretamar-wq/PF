@@ -1,4 +1,4 @@
-# Lee/escribe profiles.local.json (perfiles de conexión con sus credenciales).
+﻿# Lee/escribe profiles.local.json (perfiles de conexión con sus credenciales).
 # Este archivo nunca se versiona: contiene client secrets / tokens en texto plano.
 
 function Get-ProfilesFilePath {

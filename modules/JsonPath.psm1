@@ -1,4 +1,4 @@
-# Navegación simple de JSON por notación de puntos con índices de array opcionales,
+﻿# Navegación simple de JSON por notación de puntos con índices de array opcionales,
 # ej: "data.accounts[0].balance". Equivalente al JsonPathExtractor de la versión WPF.
 
 function Get-JsonPathValue {

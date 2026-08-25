@@ -1,4 +1,4 @@
-# Reemplaza placeholders {{variable}} dentro de un template usando un hashtable de variables.
+﻿# Reemplaza placeholders {{variable}} dentro de un template usando un hashtable de variables.
 # Recorre los matches en orden inverso para poder empalmar el string sin invalidar índices.
 
 function Expand-Template {

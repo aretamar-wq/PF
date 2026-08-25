@@ -1,4 +1,4 @@
-#Requires -Version 5.1
+﻿#Requires -Version 5.1
 <#
 BankCoreFlowRunner - servidor web local para ejecutar flows contra APIs de un core
 bancario. No requiere instalar nada: corre con el PowerShell que ya trae Windows.

@@ -1,4 +1,4 @@
-# Ejecuta un flow: encadena requests HTTP sustituyendo variables ({{var}}) entre pasos.
+﻿# Ejecuta un flow: encadena requests HTTP sustituyendo variables ({{var}}) entre pasos.
 # Requiere que JsonPath.psm1 y VariableSubstitution.psm1 ya estén importados en la sesión.
 
 function Build-TokenRequestContent {

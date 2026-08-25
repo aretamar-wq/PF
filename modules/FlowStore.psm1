@@ -1,4 +1,4 @@
-# Lee todos los flows (*.json) de la carpeta Flows/. Cada archivo se lee de forma
+﻿# Lee todos los flows (*.json) de la carpeta Flows/. Cada archivo se lee de forma
 # independiente: si uno tiene un JSON inválido, se ignora y se avisa por consola en
 # vez de tirar abajo el resto de los flows.
 
