@@ -151,6 +151,17 @@ y espera el token en un header `X-Access-Token` sin el prefijo `Bearer`:
 }
 ```
 
+### Probar la obtención del token sin ejecutar un flow
+
+Con un perfil de tipo `OAuth2ClientCredentials` seleccionado, el botón
+**"Probar token"** (al lado del selector de perfil) llama solo al paso de
+obtención del token — ignora cualquier token cacheado, pide uno nuevo, y
+muestra si funcionó (con un preview parcial del token y cuándo vence) o el
+error exacto devuelto por el banco, sin depender de que ningún otro endpoint
+de negocio esté disponible. Es la forma más rápida de confirmar que
+`tokenUrl`/`clientId`/`clientSecret` (y el resto de los campos de la sección
+anterior, si los personalizaste) están bien configurados.
+
 ## Cómo definir un flow nuevo
 
 Cada archivo en `Flows/*.json` sigue esta forma (idéntica a la que ya tenían

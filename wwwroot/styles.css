@@ -68,7 +68,7 @@ button {
 }
 button:hover { background: #f0f0f2; }
 #runBtn { background: var(--accent); color: white; border-color: var(--accent); font-weight: 600; }
-#runBtn:disabled, #saveLogBtn:disabled { opacity: 0.5; cursor: default; }
+#runBtn:disabled, #saveLogBtn:disabled, #testTokenBtn:disabled { opacity: 0.5; cursor: default; }
 
 table {
   width: 100%;

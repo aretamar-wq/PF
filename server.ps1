@@ -11,6 +11,11 @@ param(
 $ErrorActionPreference = 'Stop'
 $scriptRoot = Split-Path -Parent $MyInvocation.MyCommand.Path
 
+# En Windows PowerShell 5.1 (a diferencia de PowerShell 7/pwsh) System.Net.Http no
+# se carga por default; sin esto, FlowEngine.psm1 falla con "No se encuentra el tipo
+# [System.Net.Http.HttpClientHandler]" apenas se intenta ejecutar un flow.
+Add-Type -AssemblyName System.Net.Http
+
 Import-Module (Join-Path $scriptRoot 'modules\JsonPath.psm1') -Force
 Import-Module (Join-Path $scriptRoot 'modules\VariableSubstitution.psm1') -Force
 Import-Module (Join-Path $scriptRoot 'modules\ProfileStore.psm1') -Force
@@ -199,6 +204,20 @@ try {
 
                     $log = @(Invoke-Flow -Profile $selectedProfile -Flow $selectedFlow -InputValues $inputValues)
                     Write-JsonResponse -Response $response -StatusCode 200 -Body $log
+                }
+            }
+            elseif ($method -eq 'POST' -and $path -eq '/api/test-token') {
+                $bodyText = Read-RequestBody -Request $request
+                $payload = $bodyText | ConvertFrom-Json
+
+                $profiles = @(Get-Profiles -RootDir $scriptRoot)
+                $selectedProfile = $profiles | Where-Object { $_.name -eq $payload.profileName } | Select-Object -First 1
+
+                if ($null -eq $selectedProfile) {
+                    Write-JsonResponse -Response $response -StatusCode 400 -Body ([pscustomobject]@{ ok = $false; message = "Perfil '$($payload.profileName)' no encontrado." })
+                } else {
+                    $result = Test-TokenAcquisition -Profile $selectedProfile
+                    Write-JsonResponse -Response $response -StatusCode 200 -Body $result
                 }
             }
             elseif ($method -eq 'GET') {

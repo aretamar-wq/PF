@@ -257,4 +257,54 @@ function Invoke-Flow {
     return $log
 }
 
-Export-ModuleMember -Function Invoke-Flow
+function Test-TokenAcquisition {
+    param([Parameter(Mandatory = $true)] $Profile)
+
+    if ([string]$Profile.authType -ne 'OAuth2ClientCredentials') {
+        return [pscustomobject][ordered]@{
+            ok      = $false
+            message = "El perfil '$($Profile.name)' no usa OAuth2ClientCredentials (authType actual: '$($Profile.authType)')."
+        }
+    }
+
+    # Ignora cualquier token cacheado: esto siempre prueba la obtención real, no un valor viejo.
+    if ($Global:TokenCache.ContainsKey($Profile.name)) {
+        $Global:TokenCache.Remove($Profile.name)
+    }
+
+    $handler = New-Object System.Net.Http.HttpClientHandler
+    $httpClient = New-Object System.Net.Http.HttpClient($handler)
+    $httpClient.Timeout = [TimeSpan]::FromSeconds(30)
+
+    $stopwatch = [System.Diagnostics.Stopwatch]::StartNew()
+    try {
+        $token = Get-OrRefreshAccessToken -Profile $Profile -HttpClient $httpClient
+        $stopwatch.Stop()
+
+        $preview = if ($token.Length -gt 10) { $token.Substring(0, 6) + '...' + $token.Substring($token.Length - 4) } else { $token }
+        $expiresAtUtc = $null
+        if ($Global:TokenCache.ContainsKey($Profile.name)) {
+            $expiresAtUtc = $Global:TokenCache[$Profile.name].ExpiresAtUtc.ToString('o')
+        }
+
+        return [pscustomobject][ordered]@{
+            ok           = $true
+            message      = "Token obtenido correctamente en $($stopwatch.ElapsedMilliseconds) ms."
+            tokenPreview = $preview
+            expiresAtUtc = $expiresAtUtc
+            durationMs   = $stopwatch.ElapsedMilliseconds
+        }
+    } catch {
+        $stopwatch.Stop()
+        return [pscustomobject][ordered]@{
+            ok         = $false
+            message    = $_.Exception.Message
+            durationMs = $stopwatch.ElapsedMilliseconds
+        }
+    } finally {
+        $httpClient.Dispose()
+        $handler.Dispose()
+    }
+}
+
+Export-ModuleMember -Function Invoke-Flow, Test-TokenAcquisition
