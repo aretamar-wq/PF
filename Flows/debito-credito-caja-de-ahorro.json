@@ -1,0 +1,23 @@
+{
+  "name": "Débito/Crédito - Caja de Ahorro",
+  "description": "Ejecuta un movimiento de débito o crédito en una Caja de Ahorro (EjecutarCuentaDebitoCredito). codigoSistema (y Sistema), Transaccion y Renglon1 se toman de la Parametría (Caja de Ahorro) — configuralos ahí. codigoCuenta sigue siendo manual porque cambia en cada operación. FechaMovimiento, FechaNegocio y FechayHoraMensaje se completan solas con la fecha/hora del sistema. AJUSTAR si codigoSucursal/codigoSubSistema/codigoMoneda/Concepto/SubConcepto/Renglon2/Renglon3/forzada no son siempre los mismos valores fijos.",
+  "inputs": [
+    { "variableName": "codigoCuenta", "label": "Código de cuenta" },
+    { "variableName": "numeroOperacion", "label": "Número de operación" },
+    { "variableName": "importe", "label": "Importe" },
+    { "variableName": "numeroComprobante", "label": "Número de comprobante" },
+    { "variableName": "codigoContrasiento", "label": "Código de contrasiento", "defaultValue": "C" },
+    { "variableName": "idMensaje", "label": "IdMensaje" }
+  ],
+  "steps": [
+    {
+      "name": "Ejecutar débito/crédito (Caja de Ahorro)",
+      "method": "POST",
+      "pathTemplate": "/api/CuentaDebitoCredito/EjecutarCuentaDebitoCredito",
+      "headers": { "Accept": "application/json" },
+      "bodyTemplate": "{\n  \"codigoSucursal\": \"1\",\n  \"codigoSistema\": \"{{cajaAhorroCodigoSistema}}\",\n  \"codigoSubSistema\": \"0\",\n  \"codigoMoneda\": \"0\",\n  \"codigoCuenta\": \"{{codigoCuenta}}\",\n  \"NumeroOperacion\": \"{{numeroOperacion}}\",\n  \"Concepto\": \"17\",\n  \"SubConcepto\": \"3\",\n  \"Sistema\": \"{{cajaAhorroCodigoSistema}}\",\n  \"Transaccion\": \"{{cajaAhorroTransaccion}}\",\n  \"FechaMovimiento\": \"{{nowDate}}\",\n  \"FechayHoraMensaje\": \"{{nowDateTime}}\",\n  \"FechaNegocio\": \"{{nowDate}}\",\n  \"Importe\": \"{{importe}}\",\n  \"NumeroComprobante\": \"{{numeroComprobante}}\",\n  \"CodigoContrasiento\": \"{{codigoContrasiento}}\",\n  \"Libre\": \" \",\n  \"Renglon1\": \"{{cajaAhorroRenglon1}}\",\n  \"Renglon2\": \"\",\n  \"Renglon3\": \"\",\n  \"IdMensaje\": \"{{idMensaje}}\",\n  \"forzada\": \"0\"\n}",
+      "extractVariables": {},
+      "expectedStatusCode": 200
+    }
+  ]
+}

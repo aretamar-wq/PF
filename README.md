@@ -65,12 +65,14 @@ modules/
   JsonPath.psm1          Navegación de JSON por notación de puntos ("data.balance", "items[0].id")
   VariableSubstitution.psm1  Reemplazo de {{variable}} en templates
   ProfileStore.psm1      Lee/escribe profiles.local.json
+  ParametriaStore.psm1   Lee/escribe parametria.local.json
   FlowStore.psm1         Lee todos los Flows/*.json
   FlowEngine.psm1        Ejecuta un flow paso a paso, incluye el caché de token OAuth2
 wwwroot/
   index.html, app.js, styles.css   Front-end (vanilla JS, sin build step)
 Flows/                   *.json de flows (ver "Cómo definir un flow nuevo")
 profiles.sample.json      Plantilla de perfiles (sin secretos)
+parametria.sample.json   Plantilla de parametría (ver "Módulo de parametría")
 ```
 
 ## Configurar perfiles de conexión
@@ -173,6 +175,37 @@ de negocio esté disponible. Es la forma más rápida de confirmar que
 `tokenUrl`/`clientId`/`clientSecret` (y el resto de los campos de la sección
 anterior, si los personalizaste) están bien configurados.
 
+## Módulo de parametría
+
+El botón **"Parametría..."** (al lado de "Probar token") abre un formulario
+para configurar valores fijos que varios flows necesitan y que casi nunca
+cambian de una ejecución a otra, agrupados por tipo de cuenta:
+
+- **Cuenta Corriente**: código de cuenta, código de sistema, transacción,
+  renglón 1.
+- **Caja de Ahorro**: código de sistema, transacción, renglón 1 (el código de
+  cuenta sigue siendo manual en cada flow, porque cambia por operación).
+- **Plazo Fijo**: código de producto, código de movimiento.
+
+Se guardan en `parametria.local.json` (plantilla en `parametria.sample.json`,
+igual mecánica que los perfiles: el archivo local **no se versiona**, está en
+`.gitignore`, porque va a tener códigos de cuenta reales del banco).
+
+Dentro de un flow, estos valores están disponibles como variables de sistema
+con nombre fijo (no hace falta declararlos como inputs):
+
+- `{{ctaCteCodigoCuenta}}`, `{{ctaCteCodigoSistema}}`, `{{ctaCteTransaccion}}`, `{{ctaCteRenglon1}}`
+- `{{cajaAhorroCodigoSistema}}`, `{{cajaAhorroTransaccion}}`, `{{cajaAhorroRenglon1}}`
+- `{{plazoFijoCodigoProducto}}`, `{{plazoFijoCodigoMovimiento}}`
+
+Por eso "Débito/Crédito" está separado en dos flows —
+`Flows/debito-credito-cuenta-corriente.json` y
+`Flows/debito-credito-caja-de-ahorro.json` — en vez de uno solo con un
+selector: cada uno referencia directamente las variables de su categoría.
+Si necesitás otra combinación de campos parametrizados, agregá una nueva
+categoría a `parametria.local.json`/`parametria.sample.json` y a
+`Get-ParametriaVariables` en `modules/FlowEngine.psm1`.
+
 ## Cómo definir un flow nuevo
 
 Cada archivo en `Flows/*.json` sigue esta forma (idéntica a la que ya tenían
@@ -229,7 +262,9 @@ todo flow tiene disponibles automáticamente:
 
 Útil para campos como `FechaMovimiento`/`FechaNegocio`/`FechayHoraMensaje`
 que el sistema debe completar solo, sin que el usuario los tenga que tipear
-(ver `Flows/debito-credito.json`).
+(ver `Flows/debito-credito-cuenta-corriente.json`). `{{nowCompact}}` no lo usa
+ningún flow por ahora (`idMensaje` es manual en todos), pero queda disponible
+para el que lo necesite.
 
 ### Inputs con opciones fijas (selector en vez de campo de texto)
 

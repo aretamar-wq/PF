@@ -16,6 +16,7 @@
       <button id="deleteProfileBtn">Eliminar</button>
       <button id="testTokenBtn" disabled>Probar token</button>
       <span id="tokenTestResult" class="muted"></span>
+      <button id="parametriaBtn">Parametría...</button>
     </div>
   </header>
 
@@ -70,6 +71,35 @@
       </fieldset>
       <div class="dialog-actions">
         <button type="button" id="cancelProfileBtn">Cancelar</button>
+        <button type="submit">Guardar</button>
+      </div>
+    </form>
+  </dialog>
+
+  <dialog id="parametriaDialog">
+    <form id="parametriaForm">
+      <h2>Parametría</h2>
+      <p class="muted">Valores fijos que usan los flows en vez de pedirlos a mano en cada ejecución.</p>
+      <fieldset>
+        <legend>Cuenta Corriente</legend>
+        <label>Código de cuenta <input name="cuentaCorriente.codigoCuenta" /></label>
+        <label>Código de sistema <input name="cuentaCorriente.codigoSistema" /></label>
+        <label>Transacción <input name="cuentaCorriente.transaccion" /></label>
+        <label>Renglón 1 <input name="cuentaCorriente.renglon1" /></label>
+      </fieldset>
+      <fieldset>
+        <legend>Caja de Ahorro</legend>
+        <label>Código de sistema <input name="cajaDeAhorro.codigoSistema" /></label>
+        <label>Transacción <input name="cajaDeAhorro.transaccion" /></label>
+        <label>Renglón 1 <input name="cajaDeAhorro.renglon1" /></label>
+      </fieldset>
+      <fieldset>
+        <legend>Plazo Fijo</legend>
+        <label>Código de producto <input name="plazoFijo.codigoProducto" /></label>
+        <label>Código de movimiento <input name="plazoFijo.codigoMovimiento" /></label>
+      </fieldset>
+      <div class="dialog-actions">
+        <button type="button" id="cancelParametriaBtn">Cancelar</button>
         <button type="submit">Guardar</button>
       </div>
     </form>

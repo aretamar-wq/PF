@@ -1,5 +1,8 @@
 # Perfiles locales: contienen tokens/API keys/client secrets reales, nunca se versionan
 profiles.local.json
 
+# Parametría local: contiene códigos de cuenta reales del banco, nunca se versiona
+parametria.local.json
+
 # Logs de requests/responses: contienen datos bancarios reales (cuentas, montos, DNIs), nunca se versionan
 logs/

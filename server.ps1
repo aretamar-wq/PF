@@ -19,6 +19,7 @@ Add-Type -AssemblyName System.Net.Http
 Import-Module (Join-Path $scriptRoot 'modules\JsonPath.psm1') -Force
 Import-Module (Join-Path $scriptRoot 'modules\VariableSubstitution.psm1') -Force
 Import-Module (Join-Path $scriptRoot 'modules\ProfileStore.psm1') -Force
+Import-Module (Join-Path $scriptRoot 'modules\ParametriaStore.psm1') -Force
 Import-Module (Join-Path $scriptRoot 'modules\FlowStore.psm1') -Force
 Import-Module (Join-Path $scriptRoot 'modules\FlowEngine.psm1') -Force
 
@@ -203,9 +204,20 @@ try {
                         }
                     }
 
-                    $log = @(Invoke-Flow -Profile $selectedProfile -Flow $selectedFlow -InputValues $inputValues -LogsDir $logsDir)
+                    $parametria = Get-Parametria -RootDir $scriptRoot
+                    $log = @(Invoke-Flow -Profile $selectedProfile -Flow $selectedFlow -InputValues $inputValues -LogsDir $logsDir -Parametria $parametria)
                     Write-JsonResponse -Response $response -StatusCode 200 -Body $log
                 }
+            }
+            elseif ($method -eq 'GET' -and $path -eq '/api/parametria') {
+                $parametria = Get-Parametria -RootDir $scriptRoot
+                Write-JsonResponse -Response $response -StatusCode 200 -Body $parametria
+            }
+            elseif ($method -eq 'POST' -and $path -eq '/api/parametria') {
+                $bodyText = Read-RequestBody -Request $request
+                $incoming = $bodyText | ConvertFrom-Json
+                Save-Parametria -RootDir $scriptRoot -Parametria $incoming
+                Write-JsonResponse -Response $response -StatusCode 200 -Body ([pscustomobject]@{ ok = $true })
             }
             elseif ($method -eq 'POST' -and $path -eq '/api/test-token') {
                 $bodyText = Read-RequestBody -Request $request

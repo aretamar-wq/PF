@@ -288,6 +288,47 @@ document.getElementById('saveLogBtn').addEventListener('click', saveLog);
 document.getElementById('testTokenBtn').addEventListener('click', testToken);
 document.getElementById('profileSelect').addEventListener('change', updateTestTokenButtonState);
 
+const parametriaDialog = document.getElementById('parametriaDialog');
+const parametriaForm = document.getElementById('parametriaForm');
+
+async function openParametriaDialog() {
+  parametriaForm.reset();
+
+  const res = await fetch('/api/parametria');
+  const data = await res.json();
+
+  for (const [category, fields] of Object.entries(data || {})) {
+    for (const [field, value] of Object.entries(fields || {})) {
+      const el = parametriaForm.elements[`${category}.${field}`];
+      if (el) el.value = value || '';
+    }
+  }
+
+  parametriaDialog.showModal();
+}
+
+document.getElementById('parametriaBtn').addEventListener('click', openParametriaDialog);
+document.getElementById('cancelParametriaBtn').addEventListener('click', () => parametriaDialog.close());
+
+parametriaForm.addEventListener('submit', async (event) => {
+  event.preventDefault();
+  const formData = new FormData(parametriaForm);
+  const payload = {};
+  formData.forEach((value, key) => {
+    const [category, field] = key.split('.');
+    if (!payload[category]) payload[category] = {};
+    payload[category][field] = value;
+  });
+
+  await fetch('/api/parametria', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(payload),
+  });
+
+  parametriaDialog.close();
+});
+
 (async function init() {
   await loadProfiles();
   await loadFlows();

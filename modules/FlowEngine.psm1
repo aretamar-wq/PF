@@ -182,12 +182,40 @@ function Add-AuthHeader {
     }
 }
 
+function Get-ParametriaVariables {
+    param($Parametria)
+
+    $variables = @{}
+    if ($null -eq $Parametria) { return $variables }
+
+    if ($Parametria.cuentaCorriente) {
+        $variables['ctaCteCodigoCuenta']  = [string]$Parametria.cuentaCorriente.codigoCuenta
+        $variables['ctaCteCodigoSistema'] = [string]$Parametria.cuentaCorriente.codigoSistema
+        $variables['ctaCteTransaccion']   = [string]$Parametria.cuentaCorriente.transaccion
+        $variables['ctaCteRenglon1']      = [string]$Parametria.cuentaCorriente.renglon1
+    }
+
+    if ($Parametria.cajaDeAhorro) {
+        $variables['cajaAhorroCodigoSistema'] = [string]$Parametria.cajaDeAhorro.codigoSistema
+        $variables['cajaAhorroTransaccion']   = [string]$Parametria.cajaDeAhorro.transaccion
+        $variables['cajaAhorroRenglon1']       = [string]$Parametria.cajaDeAhorro.renglon1
+    }
+
+    if ($Parametria.plazoFijo) {
+        $variables['plazoFijoCodigoProducto']   = [string]$Parametria.plazoFijo.codigoProducto
+        $variables['plazoFijoCodigoMovimiento'] = [string]$Parametria.plazoFijo.codigoMovimiento
+    }
+
+    return $variables
+}
+
 function Invoke-Flow {
     param(
         [Parameter(Mandatory = $true)] $Profile,
         [Parameter(Mandatory = $true)] $Flow,
         [Parameter(Mandatory = $true)] [hashtable]$InputValues,
-        [string]$LogsDir
+        [string]$LogsDir,
+        $Parametria
     )
 
     $handler = New-Object System.Net.Http.HttpClientHandler
@@ -195,14 +223,19 @@ function Invoke-Flow {
     $httpClient.Timeout = [TimeSpan]::FromSeconds(60)
 
     # Variables de sistema disponibles en cualquier flow (ej. {{nowDate}} para
-    # una FechaMovimiento/FechaNegocio que no debe pedirse al usuario). Un input
-    # del usuario con el mismo nombre pisa el valor de sistema.
+    # una FechaMovimiento/FechaNegocio que no debe pedirse al usuario), seguidas
+    # de los valores de parametría (Cuenta Corriente/Caja de Ahorro/Plazo Fijo).
+    # Un input del usuario con el mismo nombre pisa a ambos.
     $now = Get-Date
     $variables = @{
         nowDate     = $now.ToString('yyyy-MM-dd')
         nowDateTime = $now.ToString('yyyy-MM-dd HH:mm:ss')
         nowTime     = $now.ToString('HH:mm:ss')
         nowCompact  = $now.ToString('yyyyMMddHHmm')
+    }
+    $parametriaVariables = Get-ParametriaVariables -Parametria $Parametria
+    foreach ($key in $parametriaVariables.Keys) {
+        $variables[$key] = $parametriaVariables[$key]
     }
     foreach ($key in $InputValues.Keys) {
         $variables[$key] = $InputValues[$key]
