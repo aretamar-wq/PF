@@ -3,6 +3,7 @@ const state = {
   flows: [],
   selectedFlow: null,
   lastLog: [],
+  pfDetailRows: [],
 };
 
 async function loadProfiles() {
@@ -112,16 +113,24 @@ function selectFlow(name) {
   csvFileInput.value = '';
   document.getElementById('csvProgress').textContent = '';
   hideCsvSummary();
+  state.pfDetailRows = [];
+  document.getElementById('downloadPfDetailBtn').disabled = true;
 
   if (isCsvFlow(state.selectedFlow)) {
     form.style.display = 'none';
     csvSection.style.display = '';
+    // Para flows con inputMode: "csv" no se muestra la tabla de log paso a
+    // paso (queda solo el resumen ok/error por paso, en #csvSummary) — el
+    // detalle completo de cada request/response sigue quedando en
+    // logs/http.log si hace falta revisarlo.
+    document.getElementById('logTable').style.display = 'none';
     const columnList = inputs.map((i) => i.label || i.variableName).join(', ');
     document.getElementById('csvColumnsHint').textContent =
       `El CSV no lleva encabezado. Orden de columnas: ${columnList}.`;
   } else {
     form.style.display = '';
     csvSection.style.display = 'none';
+    document.getElementById('logTable').style.display = '';
 
     for (const input of inputs) {
       const label = document.createElement('label');
@@ -310,6 +319,8 @@ async function runFlowFromCsv() {
   document.getElementById('logBody').innerHTML = '';
   hideCsvSummary();
   state.lastLog = [];
+  state.pfDetailRows = [];
+  document.getElementById('downloadPfDetailBtn').disabled = true;
 
   // stepCounts[i] cuenta, para el paso flow.steps[i], cuántas filas lo
   // completaron con éxito ('ok') y cuántas no ('error') — ya sea porque ese
@@ -391,9 +402,43 @@ async function runFlowFromCsv() {
       }
       renderCsvSummary(flow, rows.length, stepCounts);
 
+      // El último paso de este flow es el alta del plazo fijo; si terminó
+      // bien, su respuesta trae un array "output" con el detalle real de la
+      // colocación (operación, monto, vencimiento, tasas). Se junta en
+      // state.pfDetailRows para poder descargarlo aparte como CSV — la
+      // tabla de log paso a paso ya no se muestra en pantalla para flows
+      // CSV (ver selectFlow), el detalle completo de cada request/response
+      // sigue en logs/http.log.
+      if (stepEntries) {
+        const lastEntry = stepEntries[stepEntries.length - 1];
+        if (lastEntry && lastEntry.status === 'Success' && lastEntry.responseSummary) {
+          try {
+            const parsed = JSON.parse(lastEntry.responseSummary);
+            const output = Array.isArray(parsed.output) ? parsed.output : [];
+            for (const item of output) {
+              state.pfDetailRows.push({
+                fila: rowNumber,
+                operacion: item.operacion,
+                funcion: item.funcion,
+                accesorio: item.accesorio,
+                monto: item.monto,
+                vencimiento: item.vencimiento,
+                tem: item.tem,
+                tna: item.tna,
+                importeNeto: item.importeNeto,
+              });
+            }
+          } catch (err) {
+            // La respuesta no vino en el formato esperado (JSON con "output": [...]);
+            // no se agrega detalle de esta fila, pero la fila sigue contando
+            // como éxito en el resumen de arriba.
+          }
+        }
+      }
+      document.getElementById('downloadPfDetailBtn').disabled = state.pfDetailRows.length === 0;
+
       const prefixed = rowEntries.map((entry) => ({ ...entry, name: `Fila ${rowNumber} — ${entry.name}` }));
       state.lastLog = state.lastLog.concat(prefixed);
-      renderLog(state.lastLog);
       document.getElementById('saveLogBtn').disabled = state.lastLog.length === 0;
     }
 
@@ -421,6 +466,32 @@ function saveLog() {
   const a = document.createElement('a');
   a.href = url;
   a.download = `flow-log-${new Date().toISOString().replace(/[:.]/g, '-')}.txt`;
+  a.click();
+  URL.revokeObjectURL(url);
+}
+
+function csvEscape(value) {
+  const str = value == null ? '' : String(value);
+  if (/[",\n]/.test(str)) {
+    return '"' + str.replace(/"/g, '""') + '"';
+  }
+  return str;
+}
+
+function downloadPfDetail() {
+  if (state.pfDetailRows.length === 0) return;
+
+  const headers = ['fila', 'operacion', 'funcion', 'accesorio', 'monto', 'vencimiento', 'tem', 'tna', 'importeNeto'];
+  const lines = [headers.join(',')];
+  for (const row of state.pfDetailRows) {
+    lines.push(headers.map((h) => csvEscape(row[h])).join(','));
+  }
+
+  const blob = new Blob([lines.join('\r\n')], { type: 'text/csv' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = `plazos-fijos-${new Date().toISOString().replace(/[:.]/g, '-')}.csv`;
   a.click();
   URL.revokeObjectURL(url);
 }
@@ -488,6 +559,7 @@ document.getElementById('saveLogBtn').addEventListener('click', saveLog);
 document.getElementById('testTokenBtn').addEventListener('click', testToken);
 document.getElementById('profileSelect').addEventListener('change', updateTestTokenButtonState);
 document.getElementById('csvFileInput').addEventListener('change', updateRunButtonState);
+document.getElementById('downloadPfDetailBtn').addEventListener('click', downloadPfDetail);
 
 const parametriaDialog = document.getElementById('parametriaDialog');
 const parametriaForm = document.getElementById('parametriaForm');

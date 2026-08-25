@@ -276,8 +276,12 @@ vez por cada fila (ej. `Flows/plazo-fijo-cocos-files.json`, copia de
   no se ejecutan los siguientes de esa fila"). El motor de ejecución
   (`Invoke-Flow`) es el mismo que usa cualquier otro flow — no hay un
   endpoint de "batch" separado — así que si una fila falla, se sigue
-  procesando el resto, y el log muestra el resultado fila por fila con el
-  prefijo `Fila N — `.
+  procesando el resto.
+- A diferencia de un flow normal, para `inputMode: "csv"` **no se muestra la
+  tabla de log paso a paso** en pantalla (quedaría enorme con muchas filas) —
+  solo el resumen ok/error por paso (ver más abajo). El detalle completo de
+  cada request/response de cada fila sigue quedando, igual que siempre, en
+  `logs/http.log`.
 - Si `Importe` (u otro campo numérico) viene de un CSV separado por comas,
   los decimales tienen que ir con punto (`1500.50`), no con coma, porque la
   coma es el separador de columnas.
@@ -293,6 +297,16 @@ vez por cada fila (ej. `Flows/plazo-fijo-cocos-files.json`, copia de
   columnas, o hubo un error de red antes de tener respuesta) — así el total
   ok+error de cada paso siempre coincide con la cantidad de filas procesadas
   hasta ese momento.
+- Botón **"Descargar detalle de Plazos Fijos..."**: al terminar de procesar
+  (o incluso a mitad de proceso), descarga un `.csv` con una fila por cada
+  elemento del array `output` que devuelve la respuesta del **último paso**
+  del flow (para `Plazo Fijo Cocos Files`, la alta del plazo fijo) en cada
+  fila que llegó a completarse con éxito — columnas `fila` (la fila del CSV
+  de origen), `operacion`, `funcion`, `accesorio`, `monto`, `vencimiento`,
+  `tem`, `tna`, `importeNeto`. Una fila del CSV de origen que falló (en
+  cualquier paso) no agrega nada a este archivo. Asume que el último step
+  del flow es el que da de alta el plazo fijo y devuelve ese formato — no es
+  genérico para cualquier otro flow CSV que se agregue en el futuro.
 
 ### Variables de sistema (fecha/hora sin pedirlas al usuario)
 
