@@ -88,6 +88,10 @@ async function loadFlows() {
   }
 }
 
+function isCsvFlow(flow) {
+  return !!flow && flow.inputMode === 'csv';
+}
+
 function selectFlow(name) {
   state.selectedFlow = state.flows.find((f) => f.name === name) || null;
 
@@ -99,36 +103,84 @@ function selectFlow(name) {
     ? state.selectedFlow.description
     : 'Elegí un flow de la lista.';
 
-  const form = document.getElementById('inputsForm');
-  form.innerHTML = '';
   const inputs = (state.selectedFlow && state.selectedFlow.inputs) || [];
-  for (const input of inputs) {
-    const label = document.createElement('label');
-    label.textContent = input.label || input.variableName;
+  const form = document.getElementById('inputsForm');
+  const csvSection = document.getElementById('csvInputSection');
+  const csvFileInput = document.getElementById('csvFileInput');
 
-    let field;
-    if (input.type === 'select' && Array.isArray(input.options)) {
-      field = document.createElement('select');
-      field.name = input.variableName;
-      for (const opt of input.options) {
-        const optionEl = document.createElement('option');
-        optionEl.value = opt.value;
-        optionEl.textContent = opt.label;
-        field.appendChild(optionEl);
+  form.innerHTML = '';
+  csvFileInput.value = '';
+  document.getElementById('csvProgress').textContent = '';
+
+  if (isCsvFlow(state.selectedFlow)) {
+    form.style.display = 'none';
+    csvSection.style.display = '';
+    const columnList = inputs.map((i) => i.label || i.variableName).join(', ');
+    document.getElementById('csvColumnsHint').textContent =
+      `El CSV no lleva encabezado. Orden de columnas: ${columnList}.`;
+  } else {
+    form.style.display = '';
+    csvSection.style.display = 'none';
+
+    for (const input of inputs) {
+      const label = document.createElement('label');
+      label.textContent = input.label || input.variableName;
+
+      let field;
+      if (input.type === 'select' && Array.isArray(input.options)) {
+        field = document.createElement('select');
+        field.name = input.variableName;
+        for (const opt of input.options) {
+          const optionEl = document.createElement('option');
+          optionEl.value = opt.value;
+          optionEl.textContent = opt.label;
+          field.appendChild(optionEl);
+        }
+        if (input.defaultValue != null) field.value = input.defaultValue;
+      } else {
+        field = document.createElement('input');
+        field.name = input.variableName;
+        field.value = input.defaultValue || '';
+        if (input.secret) field.type = 'password';
       }
-      if (input.defaultValue != null) field.value = input.defaultValue;
-    } else {
-      field = document.createElement('input');
-      field.name = input.variableName;
-      field.value = input.defaultValue || '';
-      if (input.secret) field.type = 'password';
-    }
 
-    label.appendChild(field);
-    form.appendChild(label);
+      label.appendChild(field);
+      form.appendChild(label);
+    }
   }
 
-  document.getElementById('runBtn').disabled = !state.selectedFlow;
+  updateRunButtonState();
+}
+
+function updateRunButtonState() {
+  const flow = state.selectedFlow;
+  let enabled = !!flow;
+  if (isCsvFlow(flow)) {
+    const csvFileInput = document.getElementById('csvFileInput');
+    enabled = enabled && csvFileInput.files && csvFileInput.files.length > 0;
+  }
+  document.getElementById('runBtn').disabled = !enabled;
+}
+
+// Parser CSV simple: separa por comas, saca comillas envolventes si las hay
+// (ej. las que agrega Excel al guardar), y descarta líneas vacías. No maneja
+// comas dentro de un campo entrecomillado — ninguno de los campos esperados
+// por estos flows debería necesitarlas.
+function parseCsvText(text) {
+  return text
+    .split(/\r\n|\r|\n/)
+    .map((line) => line.trim())
+    .filter((line) => line.length > 0)
+    .map((line) => line.split(',').map((cell) => cell.trim().replace(/^"(.*)"$/, '$1')));
+}
+
+function readFileAsText(file) {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => resolve(reader.result);
+    reader.onerror = () => reject(reader.error || new Error('No se pudo leer el archivo.'));
+    reader.readAsText(file);
+  });
 }
 
 function escapeHtml(text) {
@@ -164,8 +216,33 @@ function renderLog(entries) {
   }
 }
 
+async function runOnce(inputs) {
+  const res = await fetch('/api/run', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      profileName: document.getElementById('profileSelect').value,
+      flowName: state.selectedFlow.name,
+      inputs,
+    }),
+  });
+
+  const data = await res.json();
+
+  if (!res.ok) {
+    throw new Error((data && data.error) || 'Error ejecutando el flow.');
+  }
+
+  return Array.isArray(data) ? data : [data];
+}
+
 async function runFlow() {
   if (!state.selectedFlow) return;
+
+  if (isCsvFlow(state.selectedFlow)) {
+    await runFlowFromCsv();
+    return;
+  }
 
   const runBtn = document.getElementById('runBtn');
   runBtn.disabled = true;
@@ -178,28 +255,88 @@ async function runFlow() {
   });
 
   try {
-    const res = await fetch('/api/run', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        profileName: document.getElementById('profileSelect').value,
-        flowName: state.selectedFlow.name,
-        inputs,
-      }),
-    });
-
-    const data = await res.json();
-
-    if (!res.ok) {
-      alert((data && data.error) || 'Error ejecutando el flow.');
-      return;
-    }
-
-    state.lastLog = Array.isArray(data) ? data : [data];
+    state.lastLog = await runOnce(inputs);
     renderLog(state.lastLog);
     document.getElementById('saveLogBtn').disabled = state.lastLog.length === 0;
   } catch (err) {
-    alert('Error de red: ' + err.message);
+    alert(err.message);
+  } finally {
+    runBtn.disabled = false;
+  }
+}
+
+async function runFlowFromCsv() {
+  const flow = state.selectedFlow;
+  const csvFileInput = document.getElementById('csvFileInput');
+  const progressEl = document.getElementById('csvProgress');
+  const file = csvFileInput.files && csvFileInput.files[0];
+  if (!file) return;
+
+  const runBtn = document.getElementById('runBtn');
+  runBtn.disabled = true;
+  document.getElementById('logBody').innerHTML = '';
+  state.lastLog = [];
+
+  try {
+    const text = await readFileAsText(file);
+    const rows = parseCsvText(text);
+
+    if (rows.length === 0) {
+      alert('El archivo CSV no tiene ninguna fila con datos.');
+      return;
+    }
+
+    for (let i = 0; i < rows.length; i++) {
+      const rowNumber = i + 1;
+      progressEl.textContent = `Procesando fila ${rowNumber} de ${rows.length}...`;
+
+      const row = rows[i];
+      let rowEntries;
+
+      if (row.length !== flow.inputs.length) {
+        rowEntries = [
+          {
+            name: `Fila ${rowNumber}`,
+            status: 'Error',
+            requestSummary: null,
+            responseSummary: null,
+            httpStatusCode: null,
+            durationMs: 0,
+            errorMessage: `La fila tiene ${row.length} columna(s), se esperaban ${flow.inputs.length}.`,
+          },
+        ];
+      } else {
+        const inputs = {};
+        flow.inputs.forEach((inputDef, idx) => {
+          inputs[inputDef.variableName] = row[idx];
+        });
+
+        try {
+          rowEntries = await runOnce(inputs);
+        } catch (err) {
+          rowEntries = [
+            {
+              name: `Fila ${rowNumber}`,
+              status: 'Error',
+              requestSummary: null,
+              responseSummary: null,
+              httpStatusCode: null,
+              durationMs: 0,
+              errorMessage: err.message,
+            },
+          ];
+        }
+      }
+
+      const prefixed = rowEntries.map((entry) => ({ ...entry, name: `Fila ${rowNumber} — ${entry.name}` }));
+      state.lastLog = state.lastLog.concat(prefixed);
+      renderLog(state.lastLog);
+      document.getElementById('saveLogBtn').disabled = state.lastLog.length === 0;
+    }
+
+    progressEl.textContent = `Listo: ${rows.length} fila(s) procesada(s).`;
+  } catch (err) {
+    alert('Error leyendo el CSV: ' + err.message);
   } finally {
     runBtn.disabled = false;
   }
@@ -287,6 +424,7 @@ document.getElementById('runBtn').addEventListener('click', runFlow);
 document.getElementById('saveLogBtn').addEventListener('click', saveLog);
 document.getElementById('testTokenBtn').addEventListener('click', testToken);
 document.getElementById('profileSelect').addEventListener('change', updateTestTokenButtonState);
+document.getElementById('csvFileInput').addEventListener('change', updateRunButtonState);
 
 const parametriaDialog = document.getElementById('parametriaDialog');
 const parametriaForm = document.getElementById('parametriaForm');

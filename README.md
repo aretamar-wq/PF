@@ -249,6 +249,42 @@ los flows de ejemplo):
 - Ningún step con `method` `GET`/`HEAD` debe llevar `bodyTemplate` — el motor
   lo ignora si lo definís (ver "Limitaciones conocidas").
 
+### Flows que cargan sus inputs desde un archivo CSV (carga masiva)
+
+Un flow pensado para tipear a mano puede tener una versión "Files" que, en
+vez de mostrar un formulario, pide un archivo `.csv` y ejecuta el flow una
+vez por cada fila (ej. `Flows/plazo-fijo-cocos-files.json`, copia de
+`Flows/plazo-fijo-cocos.json`). Para esto:
+
+```json
+{
+  "name": "Nombre visible Files",
+  "inputMode": "csv",
+  "inputs": [ /* mismo array que el flow original, en el orden que van las columnas */ ],
+  "steps": [ /* idénticos al flow original */ ]
+}
+```
+
+- `"inputMode": "csv"` es lo único que cambia respecto de un flow normal —
+  hace que la UI muestre un selector de archivo en vez del formulario.
+- El CSV **no lleva fila de encabezado**: la columna 1 de cada fila es el
+  primer elemento de `inputs`, la columna 2 el segundo, y así — el mismo
+  orden en que están declarados en `inputs`. Los valores no necesitan
+  comillas salvo que el campo tenga una coma (no soportado, ver más abajo).
+- Cada fila se ejecuta como una corrida independiente del flow completo (los
+  mismos pasos, en el mismo orden, con la misma lógica de "si un paso falla
+  no se ejecutan los siguientes de esa fila"). El motor de ejecución
+  (`Invoke-Flow`) es el mismo que usa cualquier otro flow — no hay un
+  endpoint de "batch" separado — así que si una fila falla, se sigue
+  procesando el resto, y el log muestra el resultado fila por fila con el
+  prefijo `Fila N — `.
+- Si `Importe` (u otro campo numérico) viene de un CSV separado por comas,
+  los decimales tienen que ir con punto (`1500.50`), no con coma, porque la
+  coma es el separador de columnas.
+- El parser de CSV de la UI es simple: separa por comas y sólo entiende
+  comillas envolventes tipo `"texto"` (las que agrega Excel al exportar) —
+  no soporta comas dentro de un campo entrecomillado.
+
 ### Variables de sistema (fecha/hora sin pedirlas al usuario)
 
 Además de los inputs del usuario y las variables extraídas de pasos previos,

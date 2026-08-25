@@ -177,6 +177,7 @@ try {
                     [pscustomobject][ordered]@{
                         name        = $_.name
                         description = $_.description
+                        inputMode   = $_.inputMode
                         inputs      = $_.inputs
                     }
                 })
