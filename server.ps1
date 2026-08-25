@@ -179,6 +179,7 @@ try {
                         description = $_.description
                         inputMode   = $_.inputMode
                         inputs      = $_.inputs
+                        steps       = @($_.steps | ForEach-Object { [pscustomobject]@{ name = $_.name } })
                     }
                 })
                 Write-JsonResponse -Response $response -StatusCode 200 -Body $summary
