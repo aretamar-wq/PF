@@ -101,17 +101,55 @@ La plantilla trae dos ejemplos:
 
 - `"ApiKey"` — usa `apiKeyHeaderName` + `apiKeyOrToken` como header fijo.
 - `"Bearer"` — usa `apiKeyOrToken` como `Authorization: Bearer <valor>` fijo.
-- `"OAuth2ClientCredentials"` — antes de cada request, el servidor hace
-  `POST {tokenUrl}` con body `grant_type=client_credentials&client_id={clientId}&client_secret={clientSecret}`
-  (form-urlencoded), toma `access_token`/`expires_in` de la respuesta y lo
-  cachea en memoria (nunca en disco, y se pierde si reiniciás el servidor)
-  hasta ~30s antes de que venza. Este es el caso del core **IBS**.
+- `"OAuth2ClientCredentials"` — antes de cada request, el servidor pide un
+  token y lo cachea en memoria (nunca en disco, se pierde si reiniciás el
+  servidor) hasta ~30s antes de que venza. Todo el proceso de obtención del
+  token es **parametrizable por perfil** — ver la próxima sección.
 
 Completá `clientId`/`clientSecret` reales directamente en `profiles.local.json`
 con un editor de texto — **nunca los pegues en un archivo que se vaya a
 commitear** (ni en `Flows/*.json`, ni en `profiles.sample.json`). La UI web
-hoy edita nombre/URL base/tipo de auth/ApiKey-Bearer; los tres campos de
-OAuth2 se completan por archivo.
+hoy edita nombre/URL base/tipo de auth/ApiKey-Bearer; los campos de OAuth2 se
+completan por archivo.
+
+### Parametrizar cómo se obtiene el token OAuth2
+
+Por default (sin agregar nada más al perfil), la obtención de token hace
+exactamente lo que necesita el core **IBS**: `POST {tokenUrl}` con body
+`grant_type=client_credentials&client_id={clientId}&client_secret={clientSecret}`
+(form-urlencoded), lee `access_token`/`expires_in` del root de la respuesta, y
+aplica el token como `Authorization: Bearer <token>` en cada request. Para un
+banco distinto que necesite otro formato, un perfil puede agregar cualquiera
+de estos campos opcionales (todos con ese mismo default si se omiten):
+
+| Campo | Default | Para qué sirve |
+|---|---|---|
+| `tokenMethod` | `"POST"` | Método HTTP del token request. |
+| `tokenParams` | `{ "grant_type": "client_credentials", "client_id": "{{clientId}}", "client_secret": "{{clientSecret}}" }` | Los campos que se mandan en el body del token request. Se puede agregar/renombrar campos (ej. `"scope"`) o cambiar los nombres si el banco espera otros. Los valores admiten `{{clientId}}`/`{{clientSecret}}`. |
+| `tokenBodyContentType` | `"application/x-www-form-urlencoded"` | Formato del body de `tokenParams`. También acepta `"application/json"` (manda un objeto JSON con esos mismos campos). |
+| `tokenHeaders` | *(ninguno)* | Headers extra para el token request (ej. si el banco pide una API key también en el pedido de token). Admite `{{clientId}}`/`{{clientSecret}}`. |
+| `tokenAccessTokenPath` | `"access_token"` | Path (notación de puntos, como en `extractVariables`) al valor del token dentro de la respuesta. |
+| `tokenExpiresInPath` | `"expires_in"` | Path al TTL en segundos dentro de la respuesta. |
+| `tokenAuthHeaderName` | `"Authorization"` | Nombre del header con el que se manda el token en los requests posteriores. |
+| `tokenAuthHeaderFormat` | `"Bearer {{token}}"` | Formato del valor de ese header; admite `{{token}}`. |
+
+Ejemplo de perfil para un banco hipotético que devuelve `{"data":{"token":"...","ttlSeconds":600}}`
+y espera el token en un header `X-Access-Token` sin el prefijo `Bearer`:
+
+```json
+{
+  "name": "OtroBanco",
+  "baseUrl": "https://api.otrobanco.example.com",
+  "authType": "OAuth2ClientCredentials",
+  "tokenUrl": "https://api.otrobanco.example.com/oauth/token",
+  "clientId": "...",
+  "clientSecret": "...",
+  "tokenAccessTokenPath": "data.token",
+  "tokenExpiresInPath": "data.ttlSeconds",
+  "tokenAuthHeaderName": "X-Access-Token",
+  "tokenAuthHeaderFormat": "{{token}}"
+}
+```
 
 ## Cómo definir un flow nuevo
 

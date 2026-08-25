@@ -1,6 +1,38 @@
 # Ejecuta un flow: encadena requests HTTP sustituyendo variables ({{var}}) entre pasos.
 # Requiere que JsonPath.psm1 y VariableSubstitution.psm1 ya estén importados en la sesión.
 
+function Build-TokenRequestContent {
+    param(
+        [string]$ContentType,
+        [System.Collections.Specialized.OrderedDictionary]$Params
+    )
+
+    if ($ContentType -ieq 'application/json') {
+        $json = $Params | ConvertTo-Json -Depth 5
+        return New-Object System.Net.Http.StringContent($json, [System.Text.Encoding]::UTF8, 'application/json')
+    }
+
+    if ($ContentType -ieq 'application/x-www-form-urlencoded') {
+        $pairs = New-Object 'System.Collections.Generic.List[System.Collections.Generic.KeyValuePair[string,string]]'
+        foreach ($key in $Params.Keys) {
+            $pairs.Add([System.Collections.Generic.KeyValuePair[string,string]]::new($key, [string]$Params[$key]))
+        }
+        return [System.Net.Http.FormUrlEncodedContent]::new($pairs)
+    }
+
+    # Content-Type no reconocido: se manda como key=value&key2=value2 sin encodear, tal cual.
+    $rawPairs = foreach ($key in $Params.Keys) { "$key=$($Params[$key])" }
+    $raw = $rawPairs -join '&'
+    return New-Object System.Net.Http.StringContent($raw, [System.Text.Encoding]::UTF8, $ContentType)
+}
+
+function Get-ProfileStringOrDefault {
+    param($Profile, [string]$PropertyName, [string]$Default)
+    $value = $Profile.$PropertyName
+    if ([string]::IsNullOrEmpty([string]$value)) { return $Default }
+    return [string]$value
+}
+
 function Get-OrRefreshAccessToken {
     param(
         [Parameter(Mandatory = $true)] $Profile,
@@ -15,36 +47,73 @@ function Get-OrRefreshAccessToken {
         }
     }
 
-    $pairs = New-Object 'System.Collections.Generic.List[System.Collections.Generic.KeyValuePair[string,string]]'
-    $pairs.Add([System.Collections.Generic.KeyValuePair[string,string]]::new('grant_type', 'client_credentials'))
-    $pairs.Add([System.Collections.Generic.KeyValuePair[string,string]]::new('client_id', [string]$Profile.clientId))
-    $pairs.Add([System.Collections.Generic.KeyValuePair[string,string]]::new('client_secret', [string]$Profile.clientSecret))
-    $content = [System.Net.Http.FormUrlEncodedContent]::new($pairs)
+    $variables = @{
+        clientId     = [string]$Profile.clientId
+        clientSecret = [string]$Profile.clientSecret
+    }
 
-    $response = $HttpClient.PostAsync($Profile.tokenUrl, $content).GetAwaiter().GetResult()
-    $bodyText = $response.Content.ReadAsStringAsync().GetAwaiter().GetResult()
+    $tokenMethod = Get-ProfileStringOrDefault -Profile $Profile -PropertyName 'tokenMethod' -Default 'POST'
+    $tokenBodyContentType = Get-ProfileStringOrDefault -Profile $Profile -PropertyName 'tokenBodyContentType' -Default 'application/x-www-form-urlencoded'
+    $accessTokenPath = Get-ProfileStringOrDefault -Profile $Profile -PropertyName 'tokenAccessTokenPath' -Default 'access_token'
+    $expiresInPath = Get-ProfileStringOrDefault -Profile $Profile -PropertyName 'tokenExpiresInPath' -Default 'expires_in'
+
+    # Parámetros del body del token request: por default, el client_credentials clásico.
+    # Un perfil puede pisar "tokenParams" para agregar/renombrar campos (ej. "scope", u otros
+    # nombres de campo que use un banco distinto), con placeholders {{clientId}}/{{clientSecret}}.
+    $tokenParams = [ordered]@{
+        grant_type    = 'client_credentials'
+        client_id     = '{{clientId}}'
+        client_secret = '{{clientSecret}}'
+    }
+    if ($Profile.tokenParams) {
+        $tokenParams = [ordered]@{}
+        foreach ($paramProp in $Profile.tokenParams.PSObject.Properties) {
+            $tokenParams[$paramProp.Name] = [string]$paramProp.Value
+        }
+    }
+
+    $resolvedParams = [ordered]@{}
+    foreach ($key in $tokenParams.Keys) {
+        $resolvedParams[$key] = Expand-Template -Template $tokenParams[$key] -Variables $variables
+    }
+
+    $request = New-Object System.Net.Http.HttpRequestMessage([System.Net.Http.HttpMethod]::new($tokenMethod), [string]$Profile.tokenUrl)
+    $request.Content = Build-TokenRequestContent -ContentType $tokenBodyContentType -Params $resolvedParams
+
+    if ($Profile.tokenHeaders) {
+        foreach ($headerProp in $Profile.tokenHeaders.PSObject.Properties) {
+            if ($headerProp.Name -ieq 'Content-Type') { continue }
+            $headerValue = Expand-Template -Template ([string]$headerProp.Value) -Variables $variables
+            [void]$request.Headers.TryAddWithoutValidation($headerProp.Name, $headerValue)
+        }
+    }
+
+    $response = $HttpClient.SendAsync($request).GetAwaiter().GetResult()
+    $responseBody = $response.Content.ReadAsStringAsync().GetAwaiter().GetResult()
 
     if (-not $response.IsSuccessStatusCode) {
-        throw "No se pudo obtener el token OAuth2 en '$($Profile.tokenUrl)' (HTTP $([int]$response.StatusCode)): $bodyText"
+        throw "No se pudo obtener el token OAuth2 en '$($Profile.tokenUrl)' (HTTP $([int]$response.StatusCode)): $responseBody"
     }
 
-    $tokenObj = $bodyText | ConvertFrom-Json
-    $accessToken = $tokenObj.access_token
-    if ([string]::IsNullOrEmpty($accessToken)) {
-        throw "La respuesta del endpoint de token no contiene 'access_token'."
+    $tokenJson = $responseBody | ConvertFrom-Json
+    $accessToken = Get-JsonPathValue -Data $tokenJson -Path $accessTokenPath
+    if ([string]::IsNullOrEmpty([string]$accessToken)) {
+        throw "La respuesta del endpoint de token no contiene un valor en '$accessTokenPath'."
     }
 
+    $expiresInRaw = Get-JsonPathValue -Data $tokenJson -Path $expiresInPath
     $expiresIn = 300
-    if ($tokenObj.expires_in) {
-        $expiresIn = [int]$tokenObj.expires_in
+    if (-not [string]::IsNullOrEmpty([string]$expiresInRaw)) {
+        $parsed = 0
+        if ([int]::TryParse([string]$expiresInRaw, [ref]$parsed)) { $expiresIn = $parsed }
     }
 
     $Global:TokenCache[$Profile.name] = @{
-        AccessToken  = $accessToken
+        AccessToken  = [string]$accessToken
         ExpiresAtUtc = $now.AddSeconds([Math]::Max(30, $expiresIn - 30))
     }
 
-    return $accessToken
+    return [string]$accessToken
 }
 
 function Add-AuthHeader {
@@ -63,7 +132,12 @@ function Add-AuthHeader {
         }
         'OAuth2ClientCredentials' {
             $token = Get-OrRefreshAccessToken -Profile $Profile -HttpClient $HttpClient
-            $Request.Headers.Authorization = New-Object System.Net.Http.Headers.AuthenticationHeaderValue('Bearer', $token)
+
+            $headerName = Get-ProfileStringOrDefault -Profile $Profile -PropertyName 'tokenAuthHeaderName' -Default 'Authorization'
+            $headerFormat = Get-ProfileStringOrDefault -Profile $Profile -PropertyName 'tokenAuthHeaderFormat' -Default 'Bearer {{token}}'
+            $headerValue = Expand-Template -Template $headerFormat -Variables @{ token = $token }
+
+            [void]$Request.Headers.TryAddWithoutValidation($headerName, $headerValue)
         }
         default {
             # None: sin header de autenticación.
