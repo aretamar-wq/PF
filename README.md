@@ -210,6 +210,43 @@ los flows de ejemplo):
   el flow se detiene y el paso queda marcado como error.
 - Los cambios en `Flows/` se leen del disco en cada request a `/api/flows` —
   solo hace falta recargar la página del navegador, no reiniciar el servidor.
+- Ningún step con `method` `GET`/`HEAD` debe llevar `bodyTemplate` — el motor
+  lo ignora si lo definís (ver "Limitaciones conocidas").
+
+### Variables de sistema (fecha/hora sin pedirlas al usuario)
+
+Además de los inputs del usuario y las variables extraídas de pasos previos,
+todo flow tiene disponibles automáticamente:
+
+- `{{nowDate}}` — fecha actual, `yyyy-MM-dd`.
+- `{{nowDateTime}}` — fecha y hora actual, `yyyy-MM-dd HH:mm:ss`.
+- `{{nowTime}}` — hora actual, `HH:mm:ss`.
+
+Útil para campos como `FechaMovimiento`/`FechaNegocio`/`FechayHoraMensaje`
+que el sistema debe completar solo, sin que el usuario los tenga que tipear
+(ver `Flows/debito-credito.json`).
+
+### Inputs con opciones fijas (selector en vez de campo de texto)
+
+Un input puede declararse como selector en lugar de caja de texto libre,
+útil cuando el valor real que espera la API es un código interno (`"C"`,
+`" "`, etc.) que no tiene sentido que el usuario tipee a mano:
+
+```json
+{
+  "variableName": "tipoMovimiento",
+  "label": "Tipo de movimiento",
+  "type": "select",
+  "options": [
+    { "label": "Crédito", "value": "C" },
+    { "label": "Débito", "value": " " }
+  ],
+  "defaultValue": "C"
+}
+```
+
+Sin `"type": "select"` (o sin `"options"`), el input se renderiza como
+siempre, una caja de texto.
 
 ## Limitaciones conocidas
 

@@ -105,10 +105,25 @@ function selectFlow(name) {
   for (const input of inputs) {
     const label = document.createElement('label');
     label.textContent = input.label || input.variableName;
-    const field = document.createElement('input');
-    field.name = input.variableName;
-    field.value = input.defaultValue || '';
-    if (input.secret) field.type = 'password';
+
+    let field;
+    if (input.type === 'select' && Array.isArray(input.options)) {
+      field = document.createElement('select');
+      field.name = input.variableName;
+      for (const opt of input.options) {
+        const optionEl = document.createElement('option');
+        optionEl.value = opt.value;
+        optionEl.textContent = opt.label;
+        field.appendChild(optionEl);
+      }
+      if (input.defaultValue != null) field.value = input.defaultValue;
+    } else {
+      field = document.createElement('input');
+      field.name = input.variableName;
+      field.value = input.defaultValue || '';
+      if (input.secret) field.type = 'password';
+    }
+
     label.appendChild(field);
     form.appendChild(label);
   }

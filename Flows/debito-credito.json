@@ -1,0 +1,33 @@
+{
+  "name": "Débito/Crédito",
+  "description": "Ejecuta un movimiento de débito o crédito en una cuenta (EjecutarCuentaDebitoCredito). FechaMovimiento, FechaNegocio y FechayHoraMensaje se completan solas con la fecha/hora del sistema al ejecutar. El selector Débito/Crédito define CodigoContrasiento: Crédito manda \"C\", Débito manda un valor vacío (un espacio), según indicó el banco. AJUSTAR si codigoSucursal/codigoSistema/codigoSubSistema/codigoMoneda/Concepto/SubConcepto/Sistema/Renglon2 no son siempre los mismos valores fijos.",
+  "inputs": [
+    { "variableName": "codigoCuenta", "label": "Código de cuenta" },
+    { "variableName": "numeroOperacion", "label": "Número de operación" },
+    { "variableName": "transaccion", "label": "Transacción" },
+    { "variableName": "importe", "label": "Importe" },
+    { "variableName": "numeroComprobante", "label": "Número de comprobante" },
+    {
+      "variableName": "tipoMovimiento",
+      "label": "Tipo de movimiento",
+      "type": "select",
+      "options": [
+        { "label": "Crédito", "value": "C" },
+        { "label": "Débito", "value": " " }
+      ],
+      "defaultValue": "C"
+    },
+    { "variableName": "renglon1", "label": "Renglón 1 (detalle)" }
+  ],
+  "steps": [
+    {
+      "name": "Ejecutar débito/crédito",
+      "method": "POST",
+      "pathTemplate": "/api/CuentaDebitoCredito/EjecutarCuentaDebitoCredito",
+      "headers": { "Accept": "application/json" },
+      "bodyTemplate": "{\n  \"codigoSucursal\": \"1\",\n  \"codigoSistema\": \"5\",\n  \"codigoSubSistema\": \"0\",\n  \"codigoMoneda\": \"0\",\n  \"codigoCuenta\": \"{{codigoCuenta}}\",\n  \"NumeroOperacion\": \"{{numeroOperacion}}\",\n  \"Concepto\": \"17\",\n  \"SubConcepto\": \"3\",\n  \"Sistema\": \"5\",\n  \"Transaccion\": \"{{transaccion}}\",\n  \"FechaMovimiento\": \"{{nowDate}}\",\n  \"FechayHoraMensaje\": \"{{nowDateTime}}\",\n  \"FechaNegocio\": \"{{nowDate}}\",\n  \"Importe\": \"{{importe}}\",\n  \"NumeroComprobante\": \"{{numeroComprobante}}\",\n  \"CodigoContrasiento\": \"{{tipoMovimiento}}\",\n  \"Libre\": \" \",\n  \"Renglon1\": \"{{renglon1}}\",\n  \"Renglon2\": \"BANCO VOII S.A. PAGO A PROVEE\",\n  \"IdMensaje\": \"{{numeroComprobante}}\"\n}",
+      "extractVariables": {},
+      "expectedStatusCode": 200
+    }
+  ]
+}

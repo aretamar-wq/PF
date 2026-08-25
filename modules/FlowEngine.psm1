@@ -156,7 +156,15 @@ function Invoke-Flow {
     $httpClient = New-Object System.Net.Http.HttpClient($handler)
     $httpClient.Timeout = [TimeSpan]::FromSeconds(60)
 
-    $variables = @{}
+    # Variables de sistema disponibles en cualquier flow (ej. {{nowDate}} para
+    # una FechaMovimiento/FechaNegocio que no debe pedirse al usuario). Un input
+    # del usuario con el mismo nombre pisa el valor de sistema.
+    $now = Get-Date
+    $variables = @{
+        nowDate     = $now.ToString('yyyy-MM-dd')
+        nowDateTime = $now.ToString('yyyy-MM-dd HH:mm:ss')
+        nowTime     = $now.ToString('HH:mm:ss')
+    }
     foreach ($key in $InputValues.Keys) {
         $variables[$key] = $InputValues[$key]
     }
