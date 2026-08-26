@@ -1,6 +1,6 @@
 {
-  "name": "Débito/Crédito - Caja de Ahorro",
-  "description": "Ejecuta un movimiento de débito o crédito en una Caja de Ahorro (EjecutarCuentaDebitoCredito). codigoSistema (y Sistema), Transaccion y Renglon1 se toman de la Parametría (Caja de Ahorro) — configuralos ahí. codigoCuenta sigue siendo manual porque cambia en cada operación. FechaMovimiento, FechaNegocio y FechayHoraMensaje se completan solas con la fecha/hora del sistema. CodigoContrasiento queda fijo en un espacio (siempre \" \"). AJUSTAR si codigoSucursal/codigoSubSistema/codigoMoneda/Concepto/SubConcepto/Renglon2/Renglon3/forzada no son siempre los mismos valores fijos.",
+  "name": "Crédito - Caja de Ahorro",
+  "description": "Ejecuta un movimiento de crédito en una Caja de Ahorro (EjecutarCuentaDebitoCredito). codigoSistema (y Sistema), Transaccion y Renglon1 se toman de la Parametría (Caja de Ahorro) — configuralos ahí. codigoCuenta sigue siendo manual porque cambia en cada operación. FechaMovimiento, FechaNegocio y FechayHoraMensaje se completan solas con la fecha/hora del sistema. CodigoContrasiento queda fijo en un espacio (siempre \" \"). AJUSTAR si codigoSucursal/codigoSubSistema/codigoMoneda/Concepto/SubConcepto/Renglon2/Renglon3/forzada no son siempre los mismos valores fijos.",
   "inputs": [
     { "variableName": "codigoCuenta", "label": "Código de cuenta" },
     { "variableName": "numeroOperacion", "label": "Número de operación" },
@@ -10,7 +10,7 @@
   ],
   "steps": [
     {
-      "name": "Ejecutar débito/crédito (Caja de Ahorro)",
+      "name": "Ejecutar crédito (Caja de Ahorro)",
       "method": "POST",
       "pathTemplate": "/api/CuentaDebitoCredito/EjecutarCuentaDebitoCredito",
       "headers": { "Accept": "application/json" },

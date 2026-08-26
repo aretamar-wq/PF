@@ -198,10 +198,10 @@ con nombre fijo (no hace falta declararlos como inputs):
 - `{{cajaAhorroCodigoSistema}}`, `{{cajaAhorroTransaccion}}`, `{{cajaAhorroRenglon1}}`
 - `{{plazoFijoCodigoProducto}}`, `{{plazoFijoCodigoMovimiento}}`
 
-Por eso "Débito/Crédito" está separado en dos flows —
-`Flows/debito-credito-cuenta-corriente.json` y
-`Flows/debito-credito-caja-de-ahorro.json` — en vez de uno solo con un
-selector: cada uno referencia directamente las variables de su categoría.
+Por eso "Débito - Cuenta Corriente" (`Flows/debito-credito-cuenta-corriente.json`)
+y "Crédito - Caja de Ahorro" (`Flows/debito-credito-caja-de-ahorro.json`) son
+dos flows separados en vez de uno solo con un selector: cada uno referencia
+directamente las variables de su categoría.
 Si necesitás otra combinación de campos parametrizados, agregá una nueva
 categoría a `parametria.local.json`/`parametria.sample.json` y a
 `Get-ParametriaVariables` en `modules/FlowEngine.psm1`.
