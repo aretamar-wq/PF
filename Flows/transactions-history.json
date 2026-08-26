@@ -1,6 +1,7 @@
 {
   "name": "Consulta de movimientos",
   "description": "Obtiene el historial de movimientos de una cuenta en un rango de fechas. AJUSTAR a la API real del core bancario.",
+  "enabled": false,
   "inputs": [
     { "variableName": "accountNumber", "label": "Número de cuenta" },
     { "variableName": "dateFrom", "label": "Fecha desde (YYYY-MM-DD)" },

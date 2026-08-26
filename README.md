@@ -248,6 +248,16 @@ los flows de ejemplo):
   solo hace falta recargar la página del navegador, no reiniciar el servidor.
 - Ningún step con `method` `GET`/`HEAD` debe llevar `bodyTemplate` — el motor
   lo ignora si lo definís (ver "Limitaciones conocidas").
+- Un flow con `"enabled": false` en el JSON se ignora por completo: no
+  aparece en la lista de la UI ni se puede ejecutar (ni por nombre desde
+  `/api/run`). Útil para dejar en el repo flows de ejemplo o en desuso sin
+  que aparezcan como opciones activas. Sin ese campo (o con `true`), el flow
+  está activo — es el comportamiento de siempre. Los flows de ejemplo con
+  endpoints ficticios (`balance-inquiry.json`, `transactions-history.json`,
+  `transfer.json`) y `consulta-plazos-fijos.json` están marcados
+  `"enabled": false` por default; los activos hoy son `alta-plazo-fijo.json`,
+  `debito-credito-cuenta-corriente.json`, `debito-credito-caja-de-ahorro.json`,
+  `plazo-fijo-cocos.json` y `plazo-fijo-cocos-files.json`.
 
 ### Flows que cargan sus inputs desde un archivo CSV (carga masiva)
 

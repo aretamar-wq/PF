@@ -1,5 +1,6 @@
 {
   "name": "Consulta de plazos fijos",
+  "enabled": false,
   "description": "Recupera las cuentas/operaciones del cliente en el core IBS (incluye plazos fijos) a partir del número de documento. Requiere un perfil con BaseUrl 'https://ibs-twapi03.voii.com.ar/ibsapi' y AuthType Bearer u OAuth2ClientCredentials (ver perfil 'IBS' en profiles.sample.json). CodigoProceso, TipoDocumento y CodigoSucursal quedan fijos; numeroDocumento e idMensaje son manuales.",
   "inputs": [
     { "variableName": "numeroDocumento", "label": "Número de documento" },
