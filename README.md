@@ -258,7 +258,7 @@ los flows de ejemplo):
   `"enabled": false` por default; los activos hoy son `alta-plazo-fijo.json`,
   `debito-credito-cuenta-corriente.json`, `debito-credito-caja-de-ahorro.json`,
   `plazo-fijo-cocos.json`, `plazo-fijo-cocos-files.json` y
-  `recupera-cuentas.json`.
+  `recupera-cuentas.json` (`numeroDocumento` e `idMensaje` manuales).
 
 ### Flows que cargan sus inputs desde un archivo CSV (carga masiva)
 
