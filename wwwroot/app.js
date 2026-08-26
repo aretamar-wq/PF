@@ -131,7 +131,11 @@ function selectFlow(name) {
   } else {
     form.style.display = '';
     csvSection.style.display = 'none';
-    document.getElementById('logTable').style.display = '';
+    // "Recupera cuentas" tampoco muestra la tabla de log: la respuesta es un
+    // volcado de JSON enorme e ilegible en la tabla, y el panel filtrado
+    // (#recuperaCuentasResult) ya muestra lo que hace falta. El detalle
+    // completo sigue en logs/http.log y en "Guardar log...".
+    document.getElementById('logTable').style.display = isRecuperaCuentasFlow(state.selectedFlow) ? 'none' : '';
 
     for (const input of inputs) {
       const label = document.createElement('label');

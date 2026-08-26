@@ -277,6 +277,12 @@ rápidamente los `codigoCuenta` que después se usan como input manual en
 flow puntual (`state.selectedFlow.name === 'Recupera cuentas'` en
 `wwwroot/app.js`), no es un mecanismo genérico para cualquier flow.
 
+Para este mismo flow tampoco se muestra la tabla de log paso a paso (sería
+un volcado de JSON enorme e ilegible) — solo el panel filtrado de arriba. El
+detalle completo de la respuesta sigue disponible en `logs/http.log` y en
+"Guardar log..." (que exporta el log completo a `.txt` aunque la tabla no se
+vea en pantalla).
+
 ### Flows que cargan sus inputs desde un archivo CSV (carga masiva)
 
 Un flow pensado para tipear a mano puede tener una versión "Files" que, en
