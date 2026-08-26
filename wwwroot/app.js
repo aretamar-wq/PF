@@ -257,10 +257,10 @@ function renderRecuperaCuentasResult(entries) {
   const rows = [];
   for (const item of output) {
     if (item.codigoSistema !== 4 && item.codigoSistema !== 5) continue;
-    const key = `${item.codigoSistema}|${item.codigoCuenta}`;
+    const key = `${item.codigoSistema}|${item.codigoCuenta}|${item.codigoMoneda}`;
     if (seen.has(key)) continue;
     seen.add(key);
-    rows.push({ codigoSistema: item.codigoSistema, codigoCuenta: item.codigoCuenta });
+    rows.push({ codigoSistema: item.codigoSistema, codigoCuenta: item.codigoCuenta, codigoMoneda: item.codigoMoneda });
   }
 
   if (rows.length === 0) {
@@ -271,7 +271,10 @@ function renderRecuperaCuentasResult(entries) {
 
   const lines = ['<div><strong>Cuentas (código de sistema 4 y 5)</strong></div>'];
   for (const row of rows) {
-    lines.push(`<div>Código de sistema ${escapeHtml(row.codigoSistema)}: código de cuenta ${escapeHtml(row.codigoCuenta)}</div>`);
+    lines.push(
+      `<div>Código de sistema ${escapeHtml(row.codigoSistema)}: código de cuenta ${escapeHtml(row.codigoCuenta)}, ` +
+        `código de moneda ${escapeHtml(row.codigoMoneda)}</div>`
+    );
   }
   el.innerHTML = lines.join('');
   el.style.display = '';
