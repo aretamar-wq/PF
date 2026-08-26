@@ -1,0 +1,17 @@
+{
+  "name": "Recupera cuentas",
+  "description": "Recupera las cuentas/operaciones del cliente en el core IBS (RecuperarClienteCuentaOperacion) a partir del número de documento. CodigoProceso, TipoDocumento y CodigoSucursal quedan fijos; IdMensaje se genera solo con la fecha/hora actual (yyyyMMddHHmm). Requiere un perfil con BaseUrl 'https://ibs-twapi03.voii.com.ar/ibsapi' y AuthType Bearer u OAuth2ClientCredentials (ver perfil 'IBS' en profiles.sample.json).",
+  "inputs": [
+    { "variableName": "numeroDocumento", "label": "Número de documento" }
+  ],
+  "steps": [
+    {
+      "name": "Recuperar cliente/cuenta/operación",
+      "method": "GET",
+      "pathTemplate": "/api/ClienteCuentaOperacion/RecuperarClienteCuentaOperacion?CodigoProceso=1&TipoDocumento=8&NumeroDocumento={{numeroDocumento}}&CodigoSucursal=1&IdMensaje={{nowCompact}}",
+      "headers": { "Accept": "application/json" },
+      "extractVariables": {},
+      "expectedStatusCode": 200
+    }
+  ]
+}
