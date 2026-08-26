@@ -113,6 +113,7 @@ function selectFlow(name) {
   csvFileInput.value = '';
   document.getElementById('csvProgress').textContent = '';
   hideCsvSummary();
+  hideRecuperaCuentasResult();
   state.pfDetailRows = [];
   document.getElementById('downloadPfDetailBtn').disabled = true;
 
@@ -216,6 +217,66 @@ function renderCsvSummary(flow, totalRows, stepCounts) {
   summaryEl.style.display = '';
 }
 
+// Acoplado a este flow puntual por nombre (igual que el detalle de Plazo
+// Fijo): sabemos que su única respuesta trae un array "output" con,
+// entre otras cosas, codigoSistema/codigoCuenta por cada cuenta/operación
+// del cliente.
+function isRecuperaCuentasFlow(flow) {
+  return !!flow && flow.name === 'Recupera cuentas';
+}
+
+function hideRecuperaCuentasResult() {
+  const el = document.getElementById('recuperaCuentasResult');
+  el.style.display = 'none';
+  el.innerHTML = '';
+}
+
+// Filtra el array "output" de la respuesta a las cuentas con código de
+// sistema 4 o 5, sin repetir combinaciones código de sistema + código de
+// cuenta ya vistas (la misma cuenta aparece una vez por cada operación
+// histórica en el core, y lo que hace falta acá es la lista de cuentas,
+// no de operaciones).
+function renderRecuperaCuentasResult(entries) {
+  const el = document.getElementById('recuperaCuentasResult');
+  const lastEntry = entries[entries.length - 1];
+  if (!lastEntry || lastEntry.status !== 'Success' || !lastEntry.responseSummary) {
+    hideRecuperaCuentasResult();
+    return;
+  }
+
+  let output;
+  try {
+    const parsed = JSON.parse(lastEntry.responseSummary);
+    output = Array.isArray(parsed.output) ? parsed.output : [];
+  } catch (err) {
+    hideRecuperaCuentasResult();
+    return;
+  }
+
+  const seen = new Set();
+  const rows = [];
+  for (const item of output) {
+    if (item.codigoSistema !== 4 && item.codigoSistema !== 5) continue;
+    const key = `${item.codigoSistema}|${item.codigoCuenta}`;
+    if (seen.has(key)) continue;
+    seen.add(key);
+    rows.push({ codigoSistema: item.codigoSistema, codigoCuenta: item.codigoCuenta });
+  }
+
+  if (rows.length === 0) {
+    el.innerHTML = '<div>No se encontraron cuentas con código de sistema 4 o 5 en la respuesta.</div>';
+    el.style.display = '';
+    return;
+  }
+
+  const lines = ['<div><strong>Cuentas (código de sistema 4 y 5)</strong></div>'];
+  for (const row of rows) {
+    lines.push(`<div>Código de sistema ${escapeHtml(row.codigoSistema)}: código de cuenta ${escapeHtml(row.codigoCuenta)}</div>`);
+  }
+  el.innerHTML = lines.join('');
+  el.style.display = '';
+}
+
 function readFileAsText(file) {
   return new Promise((resolve, reject) => {
     const reader = new FileReader();
@@ -289,6 +350,7 @@ async function runFlow() {
   const runBtn = document.getElementById('runBtn');
   runBtn.disabled = true;
   document.getElementById('logBody').innerHTML = '';
+  hideRecuperaCuentasResult();
 
   const form = document.getElementById('inputsForm');
   const inputs = {};
@@ -300,6 +362,9 @@ async function runFlow() {
     state.lastLog = await runOnce(inputs);
     renderLog(state.lastLog);
     document.getElementById('saveLogBtn').disabled = state.lastLog.length === 0;
+    if (isRecuperaCuentasFlow(state.selectedFlow)) {
+      renderRecuperaCuentasResult(state.lastLog);
+    }
   } catch (err) {
     alert(err.message);
   } finally {

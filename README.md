@@ -41,10 +41,12 @@ runtime adicional.
   ingresados por el usuario o extraídas de la respuesta de un paso anterior.
 - Log de ejecución paso a paso (estado, HTTP status, duración,
   respuesta/error) en la propia página, exportable a `.txt` desde el
-  navegador. La respuesta que la página muestra corta a los 800
-  caracteres; el detalle completo de cada request/response de negocio
-  (no de la obtención de token) queda en `logs/requests.log` y
-  `logs/responses.log` — ver "Logs en disco" más abajo.
+  navegador. La respuesta que la página muestra corta a los 200.000
+  caracteres (antes 800; se subió porque algunas respuestas, como la de
+  "Recupera cuentas" con muchas cuentas, superan ampliamente los 800); el
+  detalle completo de cada request/response de negocio (no de la
+  obtención de token) queda siempre entero, sin cortar, en
+  `logs/http.log` — ver "Logs en disco" más abajo.
 - Gestión de "perfiles" de conexión desde la UI web (nombre, URL base, tipo de
   autenticación, ApiKey/Bearer estático y los campos básicos de OAuth2 —
   `tokenUrl`/`clientId`/`clientSecret`). Los campos de OAuth2 más avanzados
@@ -260,6 +262,19 @@ los flows de ejemplo):
   `plazo-fijo-cocos.json`, `plazo-fijo-cocos-files.json` y
   `recupera-cuentas.json` (`numeroDocumento` e `idMensaje` manuales).
 
+### Panel de cuentas de "Recupera cuentas"
+
+Después de correr el flow **"Recupera cuentas"** con éxito, debajo del log
+aparece un panel con las cuentas de código de sistema **4** y **5** que trae
+la respuesta (`output[].codigoSistema`/`output[].codigoCuenta`), sin
+duplicados — la misma cuenta puede aparecer muchas veces en la respuesta (una
+por cada operación histórica), pero acá se muestra una sola vez por cada
+combinación código de sistema + código de cuenta. Sirve para copiar
+rápidamente los `codigoCuenta` que después se usan como input manual en
+"Plazo Fijo Cocos"/"Plazo Fijo Cocos Files". Está acoplado por nombre a este
+flow puntual (`state.selectedFlow.name === 'Recupera cuentas'` en
+`wwwroot/app.js`), no es un mecanismo genérico para cualquier flow.
+
 ### Flows que cargan sus inputs desde un archivo CSV (carga masiva)
 
 Un flow pensado para tipear a mano puede tener una versión "Files" que, en
@@ -370,8 +385,8 @@ Cada paso de un flow que llega a mandar un request (no la obtención interna
 del token OAuth2, para no loguear `client_secret`) se registra en
 `logs/http.log`, creado junto al script: primero el bloque `>>> REQUEST`
 (método, URL, headers, body) y después, cuando llega, el bloque
-`<<< RESPONSE` (HTTP status, duración, body completo sin el corte a 800
-caracteres que sí tiene la UI) — en ese orden cronológico, aunque el request
+`<<< RESPONSE` (HTTP status, duración, body completo sin el corte a
+200.000 caracteres que sí tiene la UI) — en ese orden cronológico, aunque el request
 se escribe antes de mandarse, así queda registrado igual si la respuesta
 nunca llega (timeout, host inalcanzable).
 

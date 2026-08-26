@@ -320,7 +320,13 @@ function Invoke-Flow {
                 Write-HttpLog -LogsDir $LogsDir -FileName 'http.log' -Content $responseLogText
 
                 $entry.httpStatusCode = [int]$response.StatusCode
-                $entry.responseSummary = if ($responseBody.Length -gt 800) { $responseBody.Substring(0, 800) + '...' } else { $responseBody }
+                # Se manda al navegador casi entera (hasta 200.000 caracteres, ~200KB):
+                # algunas respuestas (ej. "Recupera cuentas" con muchas cuentas/operaciones)
+                # superan ampliamente los 800 caracteres que se usaban antes, y la UI necesita
+                # el JSON completo para poder parsearlo (ej. filtrar cuentas por código de
+                # sistema). El corte a 200.000 sigue existiendo solo como resguardo ante una
+                # respuesta verdaderamente enorme. logs/http.log siempre guarda el body entero.
+                $entry.responseSummary = if ($responseBody.Length -gt 200000) { $responseBody.Substring(0, 200000) + '...' } else { $responseBody }
 
                 $expectedStatus = 200
                 if ($step.expectedStatusCode) { $expectedStatus = [int]$step.expectedStatusCode }
