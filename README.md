@@ -266,7 +266,7 @@ los flows de ejemplo):
 
 Después de correr el flow **"Recupera cuentas"** con éxito, debajo del log
 aparece un panel con las cuentas de código de sistema **4** y **5** y código
-de estado de cuenta **1** (activa) que trae la respuesta
+de estado de cuenta **1 o 2** que trae la respuesta
 (`output[].codigoSistema`/`output[].codigoCuenta`/`output[].codigoMoneda`/
 `output[].codigoEstadoCuenta`), sin duplicados — la misma cuenta puede
 aparecer muchas veces en la respuesta (una por cada operación histórica),

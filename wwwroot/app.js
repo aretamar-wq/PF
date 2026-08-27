@@ -236,7 +236,7 @@ function hideRecuperaCuentasResult() {
 }
 
 // Filtra el array "output" de la respuesta a las cuentas con código de
-// sistema 4 o 5 y código de estado de cuenta 1 (activa), sin repetir
+// sistema 4 o 5 y código de estado de cuenta 1 o 2, sin repetir
 // combinaciones código de sistema + código de cuenta + código de moneda ya
 // vistas (la misma cuenta aparece una vez por cada operación
 // histórica en el core, y lo que hace falta acá es la lista de cuentas,
@@ -262,24 +262,29 @@ function renderRecuperaCuentasResult(entries) {
   const rows = [];
   for (const item of output) {
     if (item.codigoSistema !== 4 && item.codigoSistema !== 5) continue;
-    if (item.codigoEstadoCuenta !== 1) continue;
+    if (item.codigoEstadoCuenta !== 1 && item.codigoEstadoCuenta !== 2) continue;
     const key = `${item.codigoSistema}|${item.codigoCuenta}|${item.codigoMoneda}`;
     if (seen.has(key)) continue;
     seen.add(key);
-    rows.push({ codigoSistema: item.codigoSistema, codigoCuenta: item.codigoCuenta, codigoMoneda: item.codigoMoneda });
+    rows.push({
+      codigoSistema: item.codigoSistema,
+      codigoCuenta: item.codigoCuenta,
+      codigoMoneda: item.codigoMoneda,
+      codigoEstadoCuenta: item.codigoEstadoCuenta,
+    });
   }
 
   if (rows.length === 0) {
-    el.innerHTML = '<div>No se encontraron cuentas con código de sistema 4 o 5 y código de estado de cuenta 1 en la respuesta.</div>';
+    el.innerHTML = '<div>No se encontraron cuentas con código de sistema 4 o 5 y código de estado de cuenta 1 o 2 en la respuesta.</div>';
     el.style.display = '';
     return;
   }
 
-  const lines = ['<div><strong>Cuentas (código de sistema 4 y 5, código de estado de cuenta 1)</strong></div>'];
+  const lines = ['<div><strong>Cuentas (código de sistema 4 y 5, código de estado de cuenta 1 y 2)</strong></div>'];
   for (const row of rows) {
     lines.push(
       `<div>Código de sistema ${escapeHtml(row.codigoSistema)}: código de cuenta ${escapeHtml(row.codigoCuenta)}, ` +
-        `código de moneda ${escapeHtml(row.codigoMoneda)}</div>`
+        `código de moneda ${escapeHtml(row.codigoMoneda)}, código de estado de cuenta ${escapeHtml(row.codigoEstadoCuenta)}</div>`
     );
   }
   el.innerHTML = lines.join('');
