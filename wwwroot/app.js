@@ -4,6 +4,7 @@ const state = {
   selectedFlow: null,
   lastLog: [],
   pfDetailRows: [],
+  enrichedCsvRows: [],
 };
 
 async function loadProfiles() {
@@ -117,6 +118,8 @@ function selectFlow(name) {
   hideSqlResult();
   state.pfDetailRows = [];
   document.getElementById('downloadPfDetailBtn').disabled = true;
+  state.enrichedCsvRows = [];
+  document.getElementById('downloadEnrichedCsvBtn').disabled = true;
 
   if (isCsvFlow(state.selectedFlow)) {
     form.style.display = 'none';
@@ -307,6 +310,13 @@ function isSqlFlow(flow) {
   return !!flow && Array.isArray(flow.steps) && flow.steps.some((step) => step.type === 'sql');
 }
 
+// Acoplado a este flow puntual: sabemos que su respuesta SQL trae
+// {rows: [{sistcod, cuecod}, ...]}, y que arma un archivo de salida
+// "fila original + cuecodSistema5 + cuecodSistema4" (ver runFlowFromCsv).
+function isRecuperaCuentasSqlFilesFlow(flow) {
+  return !!flow && flow.name === 'Recupera cuentas (SQL) Files';
+}
+
 function hideSqlResult() {
   const el = document.getElementById('sqlResultPanel');
   el.style.display = 'none';
@@ -464,6 +474,8 @@ async function runFlowFromCsv() {
   state.lastLog = [];
   state.pfDetailRows = [];
   document.getElementById('downloadPfDetailBtn').disabled = true;
+  state.enrichedCsvRows = [];
+  document.getElementById('downloadEnrichedCsvBtn').disabled = true;
 
   // stepCounts[i] cuenta, para el paso flow.steps[i], cuántas filas lo
   // completaron con éxito ('ok') y cuántas no ('error') — ya sea porque ese
@@ -590,6 +602,35 @@ async function runFlowFromCsv() {
       }
       document.getElementById('downloadPfDetailBtn').disabled = state.pfDetailRows.length === 0;
 
+      // Para "Recupera cuentas (SQL) Files": el último step SQL devuelve
+      // {rows: [{sistcod, cuecod}, ...]} (a lo sumo un row por sistema 5 y
+      // por sistema 4). Se arma la fila original del CSV + cuecodSistema5 +
+      // cuecodSistema4 al final — siempre se agrega la fila (para no perder
+      // la correspondencia 1:1 con el archivo de entrada), aunque no se
+      // haya encontrado cuenta para alguno de los dos sistemas (queda "").
+      if (isRecuperaCuentasSqlFilesFlow(flow)) {
+        let cuecodSistema5 = '';
+        let cuecodSistema4 = '';
+        if (stepEntries) {
+          const lastEntry = stepEntries[stepEntries.length - 1];
+          if (lastEntry && lastEntry.status === 'Success' && lastEntry.responseSummary) {
+            try {
+              const parsed = JSON.parse(lastEntry.responseSummary);
+              const sqlRows = Array.isArray(parsed.rows) ? parsed.rows : [];
+              for (const sqlRow of sqlRows) {
+                if (sqlRow.sistcod === 5) cuecodSistema5 = sqlRow.cuecod == null ? '' : String(sqlRow.cuecod);
+                else if (sqlRow.sistcod === 4) cuecodSistema4 = sqlRow.cuecod == null ? '' : String(sqlRow.cuecod);
+              }
+            } catch (err) {
+              // Respuesta no parseable como JSON: se agrega la fila igual, con
+              // las dos columnas de cuecod en blanco.
+            }
+          }
+        }
+        state.enrichedCsvRows.push([...row, cuecodSistema5, cuecodSistema4]);
+        document.getElementById('downloadEnrichedCsvBtn').disabled = state.enrichedCsvRows.length === 0;
+      }
+
       const prefixed = rowEntries.map((entry) => ({ ...entry, name: `Fila ${rowNumber} — ${entry.name}` }));
       state.lastLog = state.lastLog.concat(prefixed);
       document.getElementById('saveLogBtn').disabled = state.lastLog.length === 0;
@@ -645,6 +686,25 @@ function downloadPfDetail() {
   const a = document.createElement('a');
   a.href = url;
   a.download = `plazos-fijos-${new Date().toISOString().replace(/[:.]/g, '-')}.csv`;
+  a.click();
+  URL.revokeObjectURL(url);
+}
+
+function downloadEnrichedCsv() {
+  if (state.enrichedCsvRows.length === 0) return;
+
+  const flow = state.selectedFlow;
+  const headers = [...flow.inputs.map((input) => input.variableName), 'cuecodSistema5', 'cuecodSistema4'];
+  const lines = [headers.map(csvEscape).join(',')];
+  for (const row of state.enrichedCsvRows) {
+    lines.push(row.map(csvEscape).join(','));
+  }
+
+  const blob = new Blob([lines.join('\r\n')], { type: 'text/csv' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = `cuentas-agregadas-${new Date().toISOString().replace(/[:.]/g, '-')}.csv`;
   a.click();
   URL.revokeObjectURL(url);
 }
@@ -713,6 +773,7 @@ document.getElementById('testTokenBtn').addEventListener('click', testToken);
 document.getElementById('profileSelect').addEventListener('change', updateTestTokenButtonState);
 document.getElementById('csvFileInput').addEventListener('change', updateRunButtonState);
 document.getElementById('downloadPfDetailBtn').addEventListener('click', downloadPfDetail);
+document.getElementById('downloadEnrichedCsvBtn').addEventListener('click', downloadEnrichedCsv);
 
 const parametriaDialog = document.getElementById('parametriaDialog');
 const parametriaForm = document.getElementById('parametriaForm');

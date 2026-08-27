@@ -500,6 +500,25 @@ de 32 bits en vez de uno más ancho. Devolverlo como texto evita depender
 de que el driver ODBC infiera bien el tipo — para un identificador
 (no algo con lo que se hagan cuentas) no hay ninguna desventaja.
 
+### Flow "Recupera cuentas (SQL) Files"
+
+`Flows/recupera-cuentas-sql-files.json` es la versión CSV batch de
+"Recupera cuentas (SQL)": `inputMode: "csv"`, 5 inputs (`cuit`, `importe`,
+`plazo`, `numeroComprobante`, `idMensaje`) que tienen que coincidir con las
+5 columnas del CSV de entrada, sin encabezado. Por cada fila corre la misma
+consulta (agrupada por `sistcod`, `MIN(cuecod)`) filtrando por ese `cuit`.
+
+A diferencia de otros flows CSV, además del resumen ok/error por paso trae
+un botón **"Descargar archivo con cuentas agregadas..."**: arma un `.csv`
+con **la fila original de cada fila procesada** (las 5 columnas de entrada,
+tal cual estaban) más 2 columnas al final — `cuecodSistema5` y
+`cuecodSistema4` — con la cuenta encontrada para cada sistema (vacío si no
+se encontró ninguna para ese sistema en esa fila). A diferencia de
+"Descargar detalle de Plazos Fijos..." (que arma filas nuevas, una por
+plazo fijo dado de alta), acá se preserva 1:1 la fila de entrada — incluida
+una fila cuya consulta falló, con las dos columnas nuevas en blanco — para
+no perder la correspondencia con el archivo original.
+
 ### Panel de resultado de un step SQL
 
 Para cualquier flow cuyo último step sea `"type": "sql"` (no solo
