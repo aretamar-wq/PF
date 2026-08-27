@@ -372,6 +372,22 @@ function Invoke-SqlStep {
             }
         }
 
+        # requireVariables (opcional): nombres de variables que este step tiene que
+        # haber dejado seteadas (vía extractVariables) para que el step cuente como
+        # exitoso. Sin esto, una columna NULL/ausente simplemente no pisa la variable
+        # y el flow sigue de largo — un step siguiente que la necesite como número sin
+        # comillas (ej. un codigoCuenta) fallaría recién ahí con un JSON inválido, pero
+        # un step anterior que no dependa de esa variable (ej. un débito) ya se habría
+        # ejecutado. requireVariables corta acá, antes de que corra ningún step
+        # posterior, en vez de confiar en que el banco rechace un body armado a medias.
+        if ($Step.requireVariables) {
+            foreach ($requiredName in @($Step.requireVariables)) {
+                if (-not $Variables.ContainsKey($requiredName) -or [string]::IsNullOrEmpty([string]$Variables[$requiredName])) {
+                    throw "El step SQL no encontró un valor para la variable requerida '$requiredName' (columna vacía o ausente en el resultado de la consulta)."
+                }
+            }
+        }
+
         $Entry.status = 'Success'
     } finally {
         $connection.Dispose()

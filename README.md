@@ -276,6 +276,19 @@ request HTTP. En ese caso no usa `method`/`pathTemplate`/`headers`/
 - Se loguea en `logs/http.log` igual que un step HTTP (mismo formato
   `>>> REQUEST`/`<<< RESPONSE`), con el connection string logueado con la
   contraseña como `***REDACTED***` (nunca en texto plano).
+- `requireVariables` (opcional, array de nombres): después de aplicar
+  `extractVariables`, el step SQL falla explícitamente (con un mensaje
+  claro) si alguna de esas variables no quedó seteada — por ejemplo, porque
+  la columna vino `NULL`. Sin esto, una variable no encontrada simplemente
+  no pisa nada y el flow sigue de largo: un step **posterior** que la
+  necesite recién fallaría ahí (y solo si el placeholder `{{...}}` sin
+  reemplazar termina rompiendo el JSON — no siempre pasa, ej. dentro de un
+  campo entre comillas queda como string "raro" pero sigue siendo JSON
+  válido). Usalo cuando un step **anterior** en la misma cadena no depende
+  de esa variable y se ejecutaría igual sin ella (ver "Plazo Fijo Cocos
+  Files (SQL)" más abajo: sin `requireVariables`, un cuit sin cuenta
+  encontrada igual dispararía el débito en Cuenta Corriente antes de que
+  fallara el crédito o el alta).
 
 **Riesgo de inyección SQL:** `query` se arma con el mismo mecanismo de
 reemplazo de texto plano que usan `pathTemplate`/`bodyTemplate` — no
@@ -526,6 +539,32 @@ espera `Flows/plazo-fijo-cocos-files.json` como entrada — se puede
 descargar acá y subir directo en "Plazo Fijo Cocos Files" sin reordenar
 nada (`cuecodSistema5` = código de cuenta de Caja de Ahorro,
 `cuecodSistema4` = código de cuenta de Plazo Fijo).
+
+### Flow "Plazo Fijo Cocos Files (SQL)"
+
+`Flows/plazo-fijo-cocos-files-sql.json` encadena en un solo flow lo que
+"Recupera cuentas (SQL) Files" + "Plazo Fijo Cocos Files" hacían en dos
+pasos manuales (descargar el archivo enriquecido y volver a subirlo): por
+cada fila del CSV de entrada (`cuit, importe, plazo, numeroComprobante,
+idMensaje` — mismo formato que "Recupera cuentas (SQL) Files", sin las
+columnas de cuenta) corre 4 steps —
+
+0. Busca en Sybase `cuecodSistema5`/`cuecodSistema4` para ese `cuit` (la
+   consulta devuelve **una sola fila** con las dos columnas ya separadas —
+   a propósito, no dos filas por sistema como "Recupera cuentas (SQL)
+   Files": así la extracción por posición fija (`rows[0].cuecodSistema5`)
+   es segura aunque falte una de las dos cuentas, en vez de depender de en
+   qué posición cae cada sistema).
+1. Débito en Cuenta Corriente.
+2. Crédito en Caja de Ahorro (con `cuecodSistema5`).
+3. Alta de Plazo Fijo (con `cuecodSistema4` y `cuit`).
+
+El step 0 usa `requireVariables: ["cuecodSistema5", "cuecodSistema4"]`: si
+no se encuentra alguna de las dos cuentas para ese `cuit`, el step falla
+ahí mismo, **antes** de que se ejecute el débito — la alternativa (dejar
+que un step posterior falle por un placeholder sin reemplazar) hubiera
+significado debitar de Cuenta Corriente igual, sin saber a qué cuenta
+acreditar ni dar de alta el plazo fijo.
 
 ### Panel de resultado de un step SQL
 
