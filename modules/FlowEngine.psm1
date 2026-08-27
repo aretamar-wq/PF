@@ -209,6 +209,175 @@ function Get-ParametriaVariables {
     return $variables
 }
 
+# El usuario/contraseña de Sybase se resuelven acá, aparte de Get-ParametriaVariables
+# a propósito: si entraran al pool general de variables ({{sybaseUsuario}}/
+# {{sybasePassword}}), un flow HTTP podría llegar a interpolarlos por error en un
+# path/body/header y terminar logueando la contraseña en texto plano. Solo se usan
+# para armar el connection string de una conexión Sybase real.
+function Get-SybaseConnectionString {
+    param(
+        # AllowEmptyString: sin esto, PowerShell rechaza un "" (a diferencia de un
+        # string con solo espacios) antes de que el cuerpo de la función llegue a
+        # correr el chequeo de IsNullOrWhiteSpace de abajo, y el mensaje de error
+        # en español nunca se ve para ese caso.
+        [Parameter(Mandatory = $true)] [AllowEmptyString()] [string]$ConnectionStringTemplate,
+        [string]$Usuario,
+        [string]$Password
+    )
+
+    if ([string]::IsNullOrWhiteSpace($ConnectionStringTemplate)) {
+        throw 'El connection string de Sybase está vacío en la Parametría.'
+    }
+
+    $credentialVariables = @{
+        usuario  = [string]$Usuario
+        password = [string]$Password
+    }
+    return Expand-Template -Template $ConnectionStringTemplate -Variables $credentialVariables
+}
+
+# Enmascara Pwd=.../Password=... para poder loguear el connection string sin
+# exponer la contraseña real en logs/http.log (mismo criterio que el header
+# Authorization).
+function Get-RedactedSybaseConnectionString {
+    param([string]$ConnectionString)
+    if ([string]::IsNullOrEmpty($ConnectionString)) { return $ConnectionString }
+    return [regex]::Replace($ConnectionString, '(?i)(Pwd|Password)\s*=\s*[^;]*', '$1=***REDACTED***')
+}
+
+function Test-SybaseConnection {
+    param(
+        [Parameter(Mandatory = $true)] [AllowEmptyString()] [string]$ConnectionStringTemplate,
+        [string]$Usuario,
+        [string]$Password
+    )
+
+    $stopwatch = [System.Diagnostics.Stopwatch]::StartNew()
+    try {
+        $connectionString = Get-SybaseConnectionString -ConnectionStringTemplate $ConnectionStringTemplate -Usuario $Usuario -Password $Password
+        $connection = New-Object System.Data.Odbc.OdbcConnection($connectionString)
+        try {
+            $connection.Open()
+        } finally {
+            $connection.Dispose()
+        }
+        $stopwatch.Stop()
+        return [pscustomobject][ordered]@{
+            ok         = $true
+            message    = "Conexión exitosa en $($stopwatch.ElapsedMilliseconds) ms."
+            durationMs = $stopwatch.ElapsedMilliseconds
+        }
+    } catch {
+        $stopwatch.Stop()
+        return [pscustomobject][ordered]@{
+            ok         = $false
+            message    = $_.Exception.Message
+            durationMs = $stopwatch.ElapsedMilliseconds
+        }
+    }
+}
+
+# Ejecuta un step de flow con "type": "sql" contra Sybase vía ODBC (requiere que el
+# driver ODBC de Sybase/SAP ASE ya esté instalado en la máquina que corre server.ps1
+# — este módulo no instala ni empaqueta ningún driver). El resultado se envuelve como
+# { "rows": [ {columna: valor, ...}, ... ] } y de ahí en más se trata exactamente
+# igual que la respuesta JSON de un step HTTP: mismo mecanismo de extractVariables
+# (Get-JsonPathValue, ej. "rows[0].saldo"), mismo límite de 200.000 caracteres para
+# lo que se manda al navegador, mismo archivo logs/http.log.
+#
+# IMPORTANTE: $queryText se arma con el mismo Expand-Template sin escapar que usan
+# los bodies HTTP — un valor que traiga una comilla simple puede romper la consulta
+# o (si viniera de un origen no confiable) habilitar inyección SQL. Pensado para
+# los mismos inputs manuales/parametría ya confiables que usa el resto de la app,
+# no para datos externos sin validar.
+function Invoke-SqlStep {
+    param(
+        [Parameter(Mandatory = $true)] $Step,
+        [Parameter(Mandatory = $true)] $Flow,
+        [Parameter(Mandatory = $true)] [hashtable]$Variables,
+        $Parametria,
+        [string]$LogsDir,
+        [Parameter(Mandatory = $true)] $Entry
+    )
+
+    if ($null -eq $Parametria -or $null -eq $Parametria.sybase) {
+        throw "No hay una conexión Sybase configurada en la Parametría (botón 'Parametría...' > Conexión Sybase)."
+    }
+
+    $queryText = Expand-Template -Template ([string]$Step.query) -Variables $Variables
+    $connectionString = Get-SybaseConnectionString -ConnectionStringTemplate ([string]$Parametria.sybase.connectionString) -Usuario ([string]$Parametria.sybase.usuario) -Password ([string]$Parametria.sybase.password)
+    $redactedConnectionString = Get-RedactedSybaseConnectionString -ConnectionString $connectionString
+
+    $Entry.requestSummary = "SQL (Sybase): $queryText"
+
+    $logTimestamp = (Get-Date).ToString('yyyy-MM-dd HH:mm:ss.fff')
+    $requestLogText = (
+        ">>> REQUEST [$logTimestamp] Flow=$($Flow.name) | Step=$($Step.name) (SQL)",
+        "ConnectionString: $redactedConnectionString",
+        'Query:',
+        $queryText,
+        '---'
+    ) -join "`n"
+    # Igual que en un step HTTP: se loguea antes de ejecutar la consulta, así queda
+    # registrada aunque la conexión nunca llegue a abrirse.
+    Write-HttpLog -LogsDir $LogsDir -FileName 'http.log' -Content $requestLogText
+
+    $connection = New-Object System.Data.Odbc.OdbcConnection($connectionString)
+    try {
+        $connection.Open()
+        $command = $connection.CreateCommand()
+        $command.CommandText = $queryText
+        $command.CommandTimeout = 60
+
+        $rows = @()
+        $reader = $command.ExecuteReader()
+        try {
+            $columnNames = @()
+            for ($i = 0; $i -lt $reader.FieldCount; $i++) { $columnNames += $reader.GetName($i) }
+            while ($reader.Read()) {
+                $row = [ordered]@{}
+                for ($i = 0; $i -lt $columnNames.Count; $i++) {
+                    $value = $reader.GetValue($i)
+                    if ($value -is [DBNull]) { $value = $null }
+                    $row[$columnNames[$i]] = $value
+                }
+                $rows += [pscustomobject]$row
+            }
+        } finally {
+            $reader.Close()
+        }
+
+        $resultObject = [pscustomobject]@{ rows = $rows }
+        $responseBody = $resultObject | ConvertTo-Json -Depth 10
+
+        $responseLogTimestamp = (Get-Date).ToString('yyyy-MM-dd HH:mm:ss.fff')
+        $responseLogText = (
+            "<<< RESPONSE [$responseLogTimestamp] Flow=$($Flow.name) | Step=$($Step.name) (SQL) | OK, $($rows.Count) fila(s)",
+            'Body:',
+            $responseBody,
+            '---'
+        ) -join "`n"
+        Write-HttpLog -LogsDir $LogsDir -FileName 'http.log' -Content $responseLogText
+
+        $Entry.httpStatusCode = $null
+        $Entry.responseSummary = if ($responseBody.Length -gt 200000) { $responseBody.Substring(0, 200000) + '...' } else { $responseBody }
+
+        if ($Step.extractVariables) {
+            $responseJson = $responseBody | ConvertFrom-Json
+            foreach ($extractProp in $Step.extractVariables.PSObject.Properties) {
+                $extracted = Get-JsonPathValue -Data $responseJson -Path $extractProp.Value
+                if ($null -ne $extracted) {
+                    $Variables[$extractProp.Name] = [string]$extracted
+                }
+            }
+        }
+
+        $Entry.status = 'Success'
+    } finally {
+        $connection.Dispose()
+    }
+}
+
 function Invoke-Flow {
     param(
         [Parameter(Mandatory = $true)] $Profile,
@@ -257,6 +426,9 @@ function Invoke-Flow {
 
             $stopwatch = [System.Diagnostics.Stopwatch]::StartNew()
             try {
+                if ((([string]$step.type).Trim()) -ieq 'sql') {
+                    Invoke-SqlStep -Step $step -Flow $Flow -Variables $variables -Parametria $Parametria -LogsDir $LogsDir -Entry $entry
+                } else {
                 $path = Expand-Template -Template $step.pathTemplate -Variables $variables
                 $baseUrl = ([string]$Profile.baseUrl).TrimEnd('/')
                 $relativePath = $path.TrimStart('/')
@@ -350,6 +522,7 @@ function Invoke-Flow {
                     }
                     $entry.status = 'Success'
                 }
+                }
             } catch {
                 $entry.status = 'Error'
                 $entry.errorMessage = $_.Exception.Message
@@ -422,4 +595,4 @@ function Test-TokenAcquisition {
     }
 }
 
-Export-ModuleMember -Function Invoke-Flow, Test-TokenAcquisition
+Export-ModuleMember -Function Invoke-Flow, Test-TokenAcquisition, Test-SybaseConnection

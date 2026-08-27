@@ -672,6 +672,42 @@ async function openParametriaDialog() {
 document.getElementById('parametriaBtn').addEventListener('click', openParametriaDialog);
 document.getElementById('cancelParametriaBtn').addEventListener('click', () => parametriaDialog.close());
 
+async function testSybaseConnection() {
+  const btn = document.getElementById('testSybaseBtn');
+  const resultSpan = document.getElementById('sybaseTestResult');
+  const connectionString = parametriaForm.elements['sybase.connectionString'].value;
+  const usuario = parametriaForm.elements['sybase.usuario'].value;
+  const password = parametriaForm.elements['sybase.password'].value;
+
+  btn.disabled = true;
+  resultSpan.className = 'muted';
+  resultSpan.textContent = 'Probando...';
+
+  try {
+    const res = await fetch('/api/test-sybase', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ connectionString, usuario, password }),
+    });
+    const data = await res.json();
+
+    if (data.ok) {
+      resultSpan.className = 'status-Success';
+      resultSpan.textContent = `OK (${data.durationMs} ms)`;
+    } else {
+      resultSpan.className = 'status-Error';
+      resultSpan.textContent = `Error: ${data.message}`;
+    }
+  } catch (err) {
+    resultSpan.className = 'status-Error';
+    resultSpan.textContent = 'Error de red: ' + err.message;
+  } finally {
+    btn.disabled = false;
+  }
+}
+
+document.getElementById('testSybaseBtn').addEventListener('click', testSybaseConnection);
+
 parametriaForm.addEventListener('submit', async (event) => {
   event.preventDefault();
   const formData = new FormData(parametriaForm);

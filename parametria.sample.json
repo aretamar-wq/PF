@@ -13,5 +13,10 @@
   "plazoFijo": {
     "codigoProducto": "",
     "codigoMovimiento": ""
+  },
+  "sybase": {
+    "connectionString": "Driver={Adaptive Server Enterprise};Server=host;Port=5000;Database=dbname;Uid={{usuario}};Pwd={{password}}",
+    "usuario": "",
+    "password": ""
   }
 }

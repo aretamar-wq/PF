@@ -188,6 +188,11 @@ cambian de una ejecución a otra, agrupados por tipo de cuenta:
 - **Caja de Ahorro**: código de sistema, transacción, renglón 1 (el código de
   cuenta sigue siendo manual en cada flow, porque cambia por operación).
 - **Plazo Fijo**: código de producto, código de movimiento.
+- **Conexión Sybase**: connection string, usuario y contraseña — ver
+  "Conexión a una base Sybase (para steps SQL)" más abajo. A diferencia de
+  las demás categorías, esto no es un conjunto de variables `{{...}}` para
+  usar en cualquier flow: solo lo usan internamente los steps de tipo
+  `"type": "sql"`.
 
 Se guardan en `parametria.local.json` (plantilla en `parametria.sample.json`,
 igual mecánica que los perfiles: el archivo local **no se versiona**, está en
@@ -207,6 +212,73 @@ directamente las variables de su categoría.
 Si necesitás otra combinación de campos parametrizados, agregá una nueva
 categoría a `parametria.local.json`/`parametria.sample.json` y a
 `Get-ParametriaVariables` en `modules/FlowEngine.psm1`.
+
+### Conexión a una base Sybase (para steps SQL)
+
+En el diálogo de Parametría, la sección **"Conexión Sybase"** tiene tres
+campos:
+
+- **Connection string**: el connection string ODBC completo, con
+  `{{usuario}}`/`{{password}}` como placeholders en vez de las credenciales
+  reales — ej. `Driver={Adaptive Server Enterprise};Server=host;Port=5000;Database=dbname;Uid={{usuario}};Pwd={{password}}`.
+  El nombre exacto del driver (`Adaptive Server Enterprise`, `SYBASE ASE ODBC Driver`, etc.) depende de qué driver ODBC tengas instalado — la app no
+  asume ninguno en particular ni instala nada, solo arma el string que le
+  vas a pasar a `System.Data.Odbc.OdbcConnection`.
+- **Usuario** y **Contraseña**: se sustituyen en el connection string. La
+  contraseña **nunca vuelve al navegador** en el `GET /api/parametria` (el
+  campo siempre aparece vacío al abrir el diálogo) y, si la dejás vacía al
+  guardar, se conserva la que ya estaba — mismo criterio que
+  `clientSecret`/`apiKeyOrToken` en los perfiles.
+
+Botón **"Probar conexión"**: abre la conexión ODBC con los valores del
+formulario (usando la contraseña ya guardada si la dejaste en blanco) y
+avisa si conectó o el error exacto, sin ejecutar ninguna consulta.
+
+**Requisito:** la máquina donde corre `server.ps1` tiene que tener ya
+instalado un driver ODBC de Sybase/SAP ASE (por ejemplo, el que trae Sybase
+Open Client, PowerBuilder, o el cliente del banco) — esta app no instala,
+descarga ni empaqueta ningún driver, solo lo usa si ya está.
+
+### Steps de tipo SQL (consultas contra Sybase)
+
+Un step de un flow puede declarar `"type": "sql"` en vez de hacer un
+request HTTP. En ese caso no usa `method`/`pathTemplate`/`headers`/
+`bodyTemplate` — solo `query`:
+
+```json
+{
+  "name": "Consultar saldo en Sybase",
+  "type": "sql",
+  "query": "SELECT saldo FROM cuentas WHERE numeroCuenta = {{numeroCuenta}}",
+  "extractVariables": { "saldo": "rows[0].saldo" },
+  "expectedStatusCode": 200
+}
+```
+
+- `query` admite los mismos placeholders `{{variable}}` que `pathTemplate`/
+  `bodyTemplate` (inputs del usuario, parametría, variables extraídas en
+  pasos previos, `{{nowDate}}`/etc.).
+- La conexión se abre con el connection string + usuario + contraseña
+  configurados en Parametría (ver arriba) — no hace falta declararlos en el
+  flow.
+- El resultado de la consulta se envuelve como `{ "rows": [ {columna: valor, ...}, ... ] }` y `extractVariables` funciona exactamente igual que en un
+  step HTTP (notación de puntos con índice de array, ej. `"rows[0].saldo"`
+  o `"rows[2].numeroCuenta"`).
+- `expectedStatusCode` no aplica a un step SQL (no hay HTTP status): el
+  step se marca en error solo si la conexión o la consulta tiran una
+  excepción (ODBC no disponible, SQL inválido, etc.), no por la cantidad de
+  filas devueltas.
+- Se loguea en `logs/http.log` igual que un step HTTP (mismo formato
+  `>>> REQUEST`/`<<< RESPONSE`), con el connection string logueado con la
+  contraseña como `***REDACTED***` (nunca en texto plano).
+
+**Riesgo de inyección SQL:** `query` se arma con el mismo mecanismo de
+reemplazo de texto plano que usan `pathTemplate`/`bodyTemplate` — no
+escapa comillas ni nada por el estilo. Un valor con una comilla simple
+puede romper la consulta, y si alguna vez un input viniera de una fuente no
+confiable, esto habilita inyección SQL. Pensado para los mismos inputs
+manuales/de parametría, ya confiables, que usa el resto de la app — no para
+pasar datos externos sin validar.
 
 ## Cómo definir un flow nuevo
 
@@ -409,9 +481,14 @@ autenticación) se guarda como `***REDACTED***`, nunca el valor real.
 
 - Soporta REST con ApiKey, Bearer estático u OAuth2 client_credentials. No
   soporta mTLS ni SOAP.
-- Las credenciales (`apiKeyOrToken`, `clientSecret`) se guardan en texto
-  plano en `profiles.local.json`. Es un archivo local, no se versiona, pero
-  no está cifrado en disco.
+- Las credenciales (`apiKeyOrToken`, `clientSecret`, y la contraseña de
+  Sybase en `parametria.local.json`) se guardan en texto plano en disco. Son
+  archivos locales, no se versionan, pero no están cifrados.
+- Los steps `"type": "sql"` requieren un driver ODBC de Sybase/SAP ASE ya
+  instalado en la máquina — la app no lo instala ni lo empaqueta. Tampoco
+  escapan el SQL armado por `query` (mismo mecanismo de texto plano que
+  `pathTemplate`/`bodyTemplate`); pensado para inputs ya confiables, no para
+  datos externos sin validar (ver "Steps de tipo SQL" más arriba).
 - El servidor atiende un request HTTP a la vez (`HttpListener.GetContext()`
   sincrónico) — pensado para un solo usuario ejecutando flows manualmente,
   no para uso concurrente ni como servicio productivo expuesto a la red.

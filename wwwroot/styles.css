@@ -111,5 +111,14 @@ dialog::backdrop { background: rgba(0,0,0,0.4); }
 #profileForm { display: flex; flex-direction: column; gap: 10px; }
 #profileForm label { display: flex; flex-direction: column; gap: 4px; font-size: 0.9rem; }
 #profileForm input, #profileForm select { padding: 6px 8px; border: 1px solid var(--border); border-radius: 4px; }
+#parametriaForm { display: flex; flex-direction: column; gap: 10px; }
+#parametriaForm label { display: flex; flex-direction: column; gap: 4px; font-size: 0.9rem; margin-bottom: 6px; }
+#parametriaForm input, #parametriaForm textarea {
+  padding: 6px 8px;
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  width: 100%;
+  font-family: inherit;
+}
 fieldset { border: 1px solid var(--border); border-radius: 6px; padding: 8px 10px; }
 .dialog-actions { display: flex; justify-content: flex-end; gap: 8px; margin-top: 8px; }

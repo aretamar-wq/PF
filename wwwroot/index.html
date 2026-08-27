@@ -107,6 +107,23 @@
         <label>Código de producto <input name="plazoFijo.codigoProducto" /></label>
         <label>Código de movimiento <input name="plazoFijo.codigoMovimiento" /></label>
       </fieldset>
+      <fieldset>
+        <legend>Conexión Sybase</legend>
+        <p class="muted">
+          Requiere un driver ODBC de Sybase/SAP ASE ya instalado en esta máquina — la app
+          no instala ni empaqueta ninguno. El connection string admite
+          <code>{{usuario}}</code> y <code>{{password}}</code> como placeholders.
+        </p>
+        <label>Connection string
+          <textarea name="sybase.connectionString" rows="2" placeholder="Driver={Adaptive Server Enterprise};Server=host;Port=5000;Database=dbname;Uid={{usuario}};Pwd={{password}}"></textarea>
+        </label>
+        <label>Usuario <input name="sybase.usuario" /></label>
+        <label>Contraseña <input name="sybase.password" type="password" placeholder="(sin cambios si se deja vacío)" /></label>
+        <div class="dialog-actions">
+          <button type="button" id="testSybaseBtn">Probar conexión</button>
+          <span id="sybaseTestResult" class="muted"></span>
+        </div>
+      </fieldset>
       <div class="dialog-actions">
         <button type="button" id="cancelParametriaBtn">Cancelar</button>
         <button type="submit">Guardar</button>

@@ -213,13 +213,51 @@ try {
             }
             elseif ($method -eq 'GET' -and $path -eq '/api/parametria') {
                 $parametria = Get-Parametria -RootDir $scriptRoot
+                # La contraseña de Sybase nunca sale del servidor en texto plano, ni
+                # siquiera hacia la propia UI (mismo criterio que apiKeyOrToken/
+                # clientSecret en /api/profiles): el formulario la deja en blanco y el
+                # POST conserva la guardada si no se manda una nueva.
+                if ($parametria.sybase) {
+                    $parametria.sybase.password = ''
+                }
                 Write-JsonResponse -Response $response -StatusCode 200 -Body $parametria
             }
             elseif ($method -eq 'POST' -and $path -eq '/api/parametria') {
                 $bodyText = Read-RequestBody -Request $request
                 $incoming = $bodyText | ConvertFrom-Json
+
+                # La contraseña de Sybase nunca se manda de vuelta al navegador (ver GET
+                # /api/parametria más abajo), así que si el form la manda vacía es porque
+                # el usuario no la tocó: hay que conservar la que ya estaba guardada, no
+                # pisarla con "".
+                if ($incoming.sybase -and [string]::IsNullOrEmpty([string]$incoming.sybase.password)) {
+                    $existing = Get-Parametria -RootDir $scriptRoot
+                    if ($existing.sybase) {
+                        $incoming.sybase.password = $existing.sybase.password
+                    }
+                }
+
                 Save-Parametria -RootDir $scriptRoot -Parametria $incoming
                 Write-JsonResponse -Response $response -StatusCode 200 -Body ([pscustomobject]@{ ok = $true })
+            }
+            elseif ($method -eq 'POST' -and $path -eq '/api/test-sybase') {
+                $bodyText = Read-RequestBody -Request $request
+                $payload = $bodyText | ConvertFrom-Json
+
+                # El diálogo de Parametría nunca precarga la contraseña guardada (por
+                # seguridad, ver GET /api/parametria), así que si el usuario prueba la
+                # conexión sin retipearla, el form manda "" — en ese caso se usa la que
+                # ya está guardada en vez de intentar conectar con contraseña vacía.
+                $password = [string]$payload.password
+                if ([string]::IsNullOrEmpty($password)) {
+                    $existing = Get-Parametria -RootDir $scriptRoot
+                    if ($existing.sybase) {
+                        $password = [string]$existing.sybase.password
+                    }
+                }
+
+                $result = Test-SybaseConnection -ConnectionStringTemplate ([string]$payload.connectionString) -Usuario ([string]$payload.usuario) -Password $password
+                Write-JsonResponse -Response $response -StatusCode 200 -Body $result
             }
             elseif ($method -eq 'POST' -and $path -eq '/api/test-token') {
                 $bodyText = Read-RequestBody -Request $request
