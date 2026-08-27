@@ -693,12 +693,11 @@ function downloadPfDetail() {
 function downloadEnrichedCsv() {
   if (state.enrichedCsvRows.length === 0) return;
 
-  const flow = state.selectedFlow;
-  const headers = [...flow.inputs.map((input) => input.variableName), 'cuecodSistema5', 'cuecodSistema4'];
-  const lines = [headers.map(csvEscape).join(',')];
-  for (const row of state.enrichedCsvRows) {
-    lines.push(row.map(csvEscape).join(','));
-  }
+  // Sin fila de encabezado, a propósito: este archivo está pensado para
+  // subirse tal cual como entrada de "Plazo Fijo Cocos Files" (mismo orden
+  // de columnas), que espera un CSV sin encabezado como cualquier otro flow
+  // inputMode: "csv" de esta app.
+  const lines = state.enrichedCsvRows.map((row) => row.map(csvEscape).join(','));
 
   const blob = new Blob([lines.join('\r\n')], { type: 'text/csv' });
   const url = URL.createObjectURL(blob);

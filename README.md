@@ -520,7 +520,8 @@ una fila cuya consulta falló, con las dos columnas nuevas en blanco — para
 no perder la correspondencia con el archivo original.
 
 El archivo de salida (`cuit, importe, plazo, numeroComprobante, idMensaje,
-cuecodSistema5, cuecodSistema4`) tiene **el mismo orden de columnas** que
+cuecodSistema5, cuecodSistema4`, **sin fila de encabezado** — a propósito,
+para poder subirlo tal cual) tiene **el mismo orden de columnas** que
 espera `Flows/plazo-fijo-cocos-files.json` como entrada — se puede
 descargar acá y subir directo en "Plazo Fijo Cocos Files" sin reordenar
 nada (`cuecodSistema5` = código de cuenta de Caja de Ahorro,
