@@ -220,10 +220,15 @@ campos:
 
 - **Connection string**: el connection string ODBC completo, con
   `{{usuario}}`/`{{password}}` como placeholders en vez de las credenciales
-  reales — ej. `Driver={Adaptive Server Enterprise};Server=host;Port=5000;Database=dbname;Uid={{usuario}};Pwd={{password}}`.
+  reales — ej. `Driver={Adaptive Server Enterprise};NetworkAddress=aconquija4,5000;Database=dbname;Uid={{usuario}};Pwd={{password}}`.
   El nombre exacto del driver (`Adaptive Server Enterprise`, `SYBASE ASE ODBC Driver`, etc.) depende de qué driver ODBC tengas instalado — la app no
   asume ninguno en particular ni instala nada, solo arma el string que le
-  vas a pasar a `System.Data.Odbc.OdbcConnection`.
+  vas a pasar a `System.Data.Odbc.OdbcConnection`. El driver SAP/Sybase ASE
+  usa `NetworkAddress=host,puerto` (una sola clave, separada por coma) para
+  indicar a qué servidor conectarse — **no** `Server=host;Port=puerto` como
+  claves separadas; con esas dos claves el driver las ignora silenciosamente
+  y falla con un error como `There is no server listening at :5000` (host
+  vacío, antes de los dos puntos).
 - **Usuario** y **Contraseña**: se sustituyen en el connection string. La
   contraseña **nunca vuelve al navegador** en el `GET /api/parametria` (el
   campo siempre aparece vacío al abrir el diálogo) y, si la dejás vacía al
