@@ -265,13 +265,14 @@ los flows de ejemplo):
 ### Panel de cuentas de "Recupera cuentas"
 
 Después de correr el flow **"Recupera cuentas"** con éxito, debajo del log
-aparece un panel con las cuentas de código de sistema **4** y **5** que trae
-la respuesta (`output[].codigoSistema`/`output[].codigoCuenta`/
-`output[].codigoMoneda`), sin duplicados — la misma cuenta puede aparecer
-muchas veces en la respuesta (una por cada operación histórica), pero acá se
-muestra una sola vez por cada combinación código de sistema + código de
-cuenta + código de moneda (si la misma cuenta existiera en más de una
-moneda, no se pierde). Sirve para copiar
+aparece un panel con las cuentas de código de sistema **4** y **5** y código
+de estado de cuenta **1** (activa) que trae la respuesta
+(`output[].codigoSistema`/`output[].codigoCuenta`/`output[].codigoMoneda`/
+`output[].codigoEstadoCuenta`), sin duplicados — la misma cuenta puede
+aparecer muchas veces en la respuesta (una por cada operación histórica),
+pero acá se muestra una sola vez por cada combinación código de sistema +
+código de cuenta + código de moneda (si la misma cuenta existiera en más de
+una moneda, no se pierde). Sirve para copiar
 rápidamente los `codigoCuenta` que después se usan como input manual en
 "Plazo Fijo Cocos"/"Plazo Fijo Cocos Files". Está acoplado por nombre a este
 flow puntual (`state.selectedFlow.name === 'Recupera cuentas'` en

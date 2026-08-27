@@ -236,8 +236,9 @@ function hideRecuperaCuentasResult() {
 }
 
 // Filtra el array "output" de la respuesta a las cuentas con código de
-// sistema 4 o 5, sin repetir combinaciones código de sistema + código de
-// cuenta ya vistas (la misma cuenta aparece una vez por cada operación
+// sistema 4 o 5 y código de estado de cuenta 1 (activa), sin repetir
+// combinaciones código de sistema + código de cuenta + código de moneda ya
+// vistas (la misma cuenta aparece una vez por cada operación
 // histórica en el core, y lo que hace falta acá es la lista de cuentas,
 // no de operaciones).
 function renderRecuperaCuentasResult(entries) {
@@ -261,6 +262,7 @@ function renderRecuperaCuentasResult(entries) {
   const rows = [];
   for (const item of output) {
     if (item.codigoSistema !== 4 && item.codigoSistema !== 5) continue;
+    if (item.codigoEstadoCuenta !== 1) continue;
     const key = `${item.codigoSistema}|${item.codigoCuenta}|${item.codigoMoneda}`;
     if (seen.has(key)) continue;
     seen.add(key);
@@ -268,12 +270,12 @@ function renderRecuperaCuentasResult(entries) {
   }
 
   if (rows.length === 0) {
-    el.innerHTML = '<div>No se encontraron cuentas con código de sistema 4 o 5 en la respuesta.</div>';
+    el.innerHTML = '<div>No se encontraron cuentas con código de sistema 4 o 5 y código de estado de cuenta 1 en la respuesta.</div>';
     el.style.display = '';
     return;
   }
 
-  const lines = ['<div><strong>Cuentas (código de sistema 4 y 5)</strong></div>'];
+  const lines = ['<div><strong>Cuentas (código de sistema 4 y 5, código de estado de cuenta 1)</strong></div>'];
   for (const row of rows) {
     lines.push(
       `<div>Código de sistema ${escapeHtml(row.codigoSistema)}: código de cuenta ${escapeHtml(row.codigoCuenta)}, ` +
