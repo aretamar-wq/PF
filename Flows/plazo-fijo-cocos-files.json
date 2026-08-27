@@ -1,15 +1,15 @@
 {
   "name": "Plazo Fijo Cocos Files",
-  "description": "Igual que 'Plazo Fijo Cocos' (débito en Cuenta Corriente, crédito en Caja de Ahorro y alta de Plazo Fijo), pero en vez de tipear los campos se cargan desde un archivo .csv: una fila = una operación completa (se corre el flow de 3 pasos una vez por fila). El CSV no lleva encabezado; cada fila tiene 7 columnas separadas por comas, en este orden exacto: numeroDocumentoTitular, importe, codigoCuenta (Caja de Ahorro), codigoCuenta (Plazo Fijo), plazo, numeroComprobante, idMensaje. Si una fila falla, se sigue con las siguientes (cada fila es una operación independiente); dentro de una misma fila, si el débito falla no se ejecutan el crédito ni el alta de plazo fijo.",
+  "description": "Igual que 'Plazo Fijo Cocos' (débito en Cuenta Corriente, crédito en Caja de Ahorro y alta de Plazo Fijo), pero en vez de tipear los campos se cargan desde un archivo .csv: una fila = una operación completa (se corre el flow de 3 pasos una vez por fila). El CSV no lleva encabezado; cada fila tiene 7 columnas separadas por comas, en este orden exacto: cuit, importe, plazo, numeroComprobante, idMensaje, cuecodSistema5 (código de cuenta de Caja de Ahorro), cuecodSistema4 (código de cuenta de Plazo Fijo) — mismo orden que produce como salida el flow 'Recupera cuentas (SQL) Files', para poder encadenarlos sin reordenar columnas. Si una fila falla, se sigue con las siguientes (cada fila es una operación independiente); dentro de una misma fila, si el débito falla no se ejecutan el crédito ni el alta de plazo fijo.",
   "inputMode": "csv",
   "inputs": [
-    { "variableName": "numeroDocumentoTitular", "label": "Número de documento del titular" },
+    { "variableName": "cuit", "label": "CUIT" },
     { "variableName": "importe", "label": "Importe" },
-    { "variableName": "codigoCuentaCajaAhorro", "label": "Código de cuenta (Caja de Ahorro)" },
-    { "variableName": "codigoCuentaPlazoFijo", "label": "Código de cuenta (Plazo Fijo)" },
     { "variableName": "plazo", "label": "Plazo (días)" },
     { "variableName": "numeroComprobante", "label": "Número de comprobante" },
-    { "variableName": "idMensaje", "label": "IdMensaje" }
+    { "variableName": "idMensaje", "label": "IdMensaje" },
+    { "variableName": "cuecodSistema5", "label": "Código de cuenta (Caja de Ahorro)" },
+    { "variableName": "cuecodSistema4", "label": "Código de cuenta (Plazo Fijo)" }
   ],
   "steps": [
     {
@@ -26,7 +26,7 @@
       "method": "POST",
       "pathTemplate": "/api/CuentaDebitoCredito/EjecutarCuentaDebitoCredito",
       "headers": { "Accept": "application/json" },
-      "bodyTemplate": "{\n  \"codigoSucursal\": \"1\",\n  \"codigoSistema\": \"{{cajaAhorroCodigoSistema}}\",\n  \"codigoSubSistema\": \"0\",\n  \"codigoMoneda\": \"0\",\n  \"codigoCuenta\": \"{{codigoCuentaCajaAhorro}}\",\n  \"NumeroOperacion\": \"1\",\n  \"Concepto\": \"17\",\n  \"SubConcepto\": \"3\",\n  \"Sistema\": \"{{cajaAhorroCodigoSistema}}\",\n  \"Transaccion\": \"{{cajaAhorroTransaccion}}\",\n  \"FechaMovimiento\": \"{{nowDate}}\",\n  \"FechayHoraMensaje\": \"{{nowDateTime}}\",\n  \"FechaNegocio\": \"{{nowDate}}\",\n  \"Importe\": \"{{importe}}\",\n  \"NumeroComprobante\": \"{{numeroComprobante}}\",\n  \"CodigoContrasiento\": \" \",\n  \"Libre\": \" \",\n  \"Renglon1\": \"{{cajaAhorroRenglon1}}\",\n  \"Renglon2\": \"\",\n  \"Renglon3\": \"\",\n  \"IdMensaje\": \"{{idMensaje}}\",\n  \"forzada\": \"0\"\n}",
+      "bodyTemplate": "{\n  \"codigoSucursal\": \"1\",\n  \"codigoSistema\": \"{{cajaAhorroCodigoSistema}}\",\n  \"codigoSubSistema\": \"0\",\n  \"codigoMoneda\": \"0\",\n  \"codigoCuenta\": \"{{cuecodSistema5}}\",\n  \"NumeroOperacion\": \"1\",\n  \"Concepto\": \"17\",\n  \"SubConcepto\": \"3\",\n  \"Sistema\": \"{{cajaAhorroCodigoSistema}}\",\n  \"Transaccion\": \"{{cajaAhorroTransaccion}}\",\n  \"FechaMovimiento\": \"{{nowDate}}\",\n  \"FechayHoraMensaje\": \"{{nowDateTime}}\",\n  \"FechaNegocio\": \"{{nowDate}}\",\n  \"Importe\": \"{{importe}}\",\n  \"NumeroComprobante\": \"{{numeroComprobante}}\",\n  \"CodigoContrasiento\": \" \",\n  \"Libre\": \" \",\n  \"Renglon1\": \"{{cajaAhorroRenglon1}}\",\n  \"Renglon2\": \"\",\n  \"Renglon3\": \"\",\n  \"IdMensaje\": \"{{idMensaje}}\",\n  \"forzada\": \"0\"\n}",
       "extractVariables": {},
       "expectedStatusCode": 200
     },
@@ -35,7 +35,7 @@
       "method": "POST",
       "pathTemplate": "/api/PlazoFijoCompleto/RegistrarPlazoFijoCompleto",
       "headers": { "Accept": "application/json" },
-      "bodyTemplate": "{\n  \"codigoSucursal\": 1,\n  \"codigoMoneda\": 0,\n  \"codigoCuenta\": {{codigoCuentaPlazoFijo}},\n  \"codigoProducto\": {{plazoFijoCodigoProducto}},\n  \"importePactado\": {{importe}},\n  \"plazo\": {{plazo}},\n  \"codigoSistemaCuentaDebito\": 5,\n  \"codigoCuentaDebito\": {{codigoCuentaCajaAhorro}},\n  \"codigoSistemaAcreditacion\": 5,\n  \"codigoCuentaAcreditacion\": {{codigoCuentaCajaAhorro}},\n  \"codigoRetencionImpuesto\": 1,\n  \"tipoDocumentoTitular\": 8,\n  \"numeroDocumentoTitular\": {{numeroDocumentoTitular}},\n  \"tipoDocumentoTitular2\": null,\n  \"nroDocumentoTitular2\": null,\n  \"codigoVinculoVinc2\": null,\n  \"codigoMovimiento\": {{plazoFijoCodigoMovimiento}},\n  \"idPlantilla\": 2,\n  \"idMensaje\": \"{{idMensaje}}\"\n}",
+      "bodyTemplate": "{\n  \"codigoSucursal\": 1,\n  \"codigoMoneda\": 0,\n  \"codigoCuenta\": {{cuecodSistema4}},\n  \"codigoProducto\": {{plazoFijoCodigoProducto}},\n  \"importePactado\": {{importe}},\n  \"plazo\": {{plazo}},\n  \"codigoSistemaCuentaDebito\": 5,\n  \"codigoCuentaDebito\": {{cuecodSistema5}},\n  \"codigoSistemaAcreditacion\": 5,\n  \"codigoCuentaAcreditacion\": {{cuecodSistema5}},\n  \"codigoRetencionImpuesto\": 1,\n  \"tipoDocumentoTitular\": 8,\n  \"numeroDocumentoTitular\": {{cuit}},\n  \"tipoDocumentoTitular2\": null,\n  \"nroDocumentoTitular2\": null,\n  \"codigoVinculoVinc2\": null,\n  \"codigoMovimiento\": {{plazoFijoCodigoMovimiento}},\n  \"idPlantilla\": 2,\n  \"idMensaje\": \"{{idMensaje}}\"\n}",
       "extractVariables": {},
       "expectedStatusCode": 200
     }
