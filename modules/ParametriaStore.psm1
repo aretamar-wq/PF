@@ -20,7 +20,7 @@ function Get-DefaultParametria {
             codigoMovimiento = ''
         }
         sybase = [pscustomobject]@{
-            connectionString = 'Driver={Adaptive Server Enterprise};NetworkAddress=aconquija4,5000;Database=dbname;Uid={{usuario}};Pwd={{password}}'
+            connectionString = 'Driver={Adaptive Server Enterprise};NetworkAddress=Aconquija4.bv.voii.com.ar,5000;Database=Banksys;Uid={{usuario}};Pwd={{password}}'
             usuario          = ''
             password         = ''
         }

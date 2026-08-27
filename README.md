@@ -220,7 +220,7 @@ campos:
 
 - **Connection string**: el connection string ODBC completo, con
   `{{usuario}}`/`{{password}}` como placeholders en vez de las credenciales
-  reales — ej. `Driver={Adaptive Server Enterprise};NetworkAddress=aconquija4,5000;Database=dbname;Uid={{usuario}};Pwd={{password}}`.
+  reales — ej. `Driver={Adaptive Server Enterprise};NetworkAddress=Aconquija4.bv.voii.com.ar,5000;Database=Banksys;Uid={{usuario}};Pwd={{password}}`.
   El nombre exacto del driver (`Adaptive Server Enterprise`, `SYBASE ASE ODBC Driver`, etc.) depende de qué driver ODBC tengas instalado — la app no
   asume ninguno en particular ni instala nada, solo arma el string que le
   vas a pasar a `System.Data.Odbc.OdbcConnection`. El driver SAP/Sybase ASE
