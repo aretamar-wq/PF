@@ -465,6 +465,21 @@ Un input puede declararse como selector en lugar de caja de texto libre,
 Sin `"type": "select"` (o sin `"options"`), el input se renderiza como
 siempre, una caja de texto.
 
+Con `"type": "textarea"` el input se renderiza como una caja de texto
+multilínea (4 filas) en vez de un `<input>` de una sola línea — útil para
+texto largo, como una consulta SQL (ver `Flows/consulta-sql.json`).
+
+### Flow "Consulta SQL (Sybase)"
+
+`Flows/consulta-sql.json` es un flow de un solo input (`query`, tipo
+`textarea`) y un solo step `"type": "sql"` con `"query": "{{query}}"` — deja
+correr **cualquier** consulta que escribas contra la conexión Sybase
+configurada en Parametría, sin transformarla ni validarla. Es intencional
+(un flow "consola SQL"), pero por eso mismo es el punto de la app con más
+riesgo si se ejecuta algo mal escrito — no hay `expectedStatusCode` que
+valga (no aplica a SQL) ni ninguna otra verificación más que "no tiró una
+excepción".
+
 ## Logs en disco
 
 Cada paso de un flow que llega a mandar un request (no la obtención interna

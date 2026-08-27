@@ -152,6 +152,11 @@ function selectFlow(name) {
           field.appendChild(optionEl);
         }
         if (input.defaultValue != null) field.value = input.defaultValue;
+      } else if (input.type === 'textarea') {
+        field = document.createElement('textarea');
+        field.name = input.variableName;
+        field.rows = 4;
+        field.value = input.defaultValue || '';
       } else {
         field = document.createElement('input');
         field.name = input.variableName;

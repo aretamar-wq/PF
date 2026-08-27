@@ -55,7 +55,7 @@ aside li.selected { border-color: var(--accent); background: #eaf1ff; }
 
 #inputsForm { display: flex; flex-direction: column; gap: 8px; margin: 12px 0; max-width: 480px; }
 #inputsForm label { display: flex; flex-direction: column; gap: 4px; font-size: 0.9rem; }
-#inputsForm input, #inputsForm select { padding: 6px 8px; border: 1px solid var(--border); border-radius: 4px; }
+#inputsForm input, #inputsForm select, #inputsForm textarea { padding: 6px 8px; border: 1px solid var(--border); border-radius: 4px; font-family: inherit; }
 
 .actions { display: flex; gap: 8px; margin-bottom: 8px; }
 
