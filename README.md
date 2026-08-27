@@ -480,6 +480,17 @@ riesgo si se ejecuta algo mal escrito — no hay `expectedStatusCode` que
 valga (no aplica a SQL) ni ninguna otra verificación más que "no tiró una
 excepción".
 
+### Flow "Recupera cuentas (SQL)"
+
+`Flows/recupera-cuentas-sql.json` es una consulta SQL fija (a diferencia de
+"Consulta SQL (Sybase)") que trae `nrodoc`/`sistcod`/`cuecod` de
+`tcl_VinculoCli_Cue` + `tgl_cuentas`, filtrando por código de sistema 4/5,
+moneda 0 y estado de cuenta 1/2 — el mismo criterio que ya usa el panel de
+"Recupera cuentas" (vía API), pero yendo directo a la base. El único input
+manual es `nrodoc`, que se pega tal cual dentro del `IN (...)` de la
+consulta — admite uno o varios números de documento separados por coma
+(ej. `20308626971` o `20308626971,23237103769`).
+
 ## Logs en disco
 
 Cada paso de un flow que llega a mandar un request (no la obtención interna
