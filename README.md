@@ -483,13 +483,32 @@ excepción".
 ### Flow "Recupera cuentas (SQL)"
 
 `Flows/recupera-cuentas-sql.json` es una consulta SQL fija (a diferencia de
-"Consulta SQL (Sybase)") que trae `nrodoc`/`sistcod`/`cuecod` de
-`tcl_VinculoCli_Cue` + `tgl_cuentas`, filtrando por código de sistema 4/5,
-moneda 0 y estado de cuenta 1/2 — el mismo criterio que ya usa el panel de
-"Recupera cuentas" (vía API), pero yendo directo a la base. El único input
-manual es `nrodoc`, que se pega tal cual dentro del `IN (...)` de la
-consulta — admite uno o varios números de documento separados por coma
-(ej. `20308626971` o `20308626971,23237103769`).
+"Consulta SQL (Sybase)") que trae, por cada `nrodoc` + `sistcod` (código de
+sistema 4/5, moneda 0, estado de cuenta 1/2 — mismo criterio que ya usa el
+panel de "Recupera cuentas" vía API, pero yendo directo a la base), la
+`cuecod` más chica, sin duplicados (`GROUP BY nrodoc, sistcod` +
+`MIN(cuecod)`). El único input manual es `nrodoc`, que se pega tal cual
+dentro del `IN (...)` de la consulta — admite uno o varios números de
+documento separados por coma (ej. `20308626971` o
+`20308626971,23237103769`).
+
+`nrodoc`/`cuecod` se traen con `CAST(... AS VARCHAR(20))` en vez de como
+número — no es un capricho de formato: probando con un driver ODBC (no
+Sybase) durante el desarrollo, un `nrodoc` de 11 dígitos volvió truncado
+y con el signo cambiado porque el driver reportó la columna como entero
+de 32 bits en vez de uno más ancho. Devolverlo como texto evita depender
+de que el driver ODBC infiera bien el tipo — para un identificador
+(no algo con lo que se hagan cuentas) no hay ninguna desventaja.
+
+### Panel de resultado de un step SQL
+
+Para cualquier flow cuyo último step sea `"type": "sql"` (no solo
+"Recupera cuentas (SQL)" — también aplica a "Consulta SQL (Sybase)" y a
+cualquier otro que se agregue), la tabla de log paso a paso tampoco se
+muestra: en su lugar aparece una tabla HTML con el array `rows` de la
+respuesta (columnas = las que devuelve la consulta, en el mismo orden). El
+detalle completo sigue disponible en `logs/http.log` y en "Guardar
+log...".
 
 ## Logs en disco
 

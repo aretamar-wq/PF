@@ -1,6 +1,6 @@
 {
   "name": "Recupera cuentas (SQL)",
-  "description": "Trae nrodoc/sistcod/cuecod de tcl_VinculoCli_Cue + tgl_cuentas filtrando por código de sistema 4/5, moneda 0 y estado de cuenta 1/2 (mismo criterio que el flow 'Recupera cuentas' vía API, pero consultando la base Sybase directamente). Ejecuta contra la conexión Sybase configurada en Parametría.",
+  "description": "Trae, por cada nrodoc y sistcod (código de sistema 4/5, moneda 0, estado de cuenta 1/2), la cuecod más chica de tcl_VinculoCli_Cue + tgl_cuentas (mismo criterio que el flow 'Recupera cuentas' vía API, pero consultando la base Sybase directamente, sin duplicados: una fila por combinación nrodoc+sistcod). Ejecuta contra la conexión Sybase configurada en Parametría.",
   "inputs": [
     { "variableName": "nrodoc", "label": "Número(s) de documento (uno o varios separados por coma)" }
   ],
@@ -8,7 +8,7 @@
     {
       "name": "Consultar vínculo cliente-cuenta",
       "type": "sql",
-      "query": "select a.nrodoc, a.sistcod, a.cuecod\nFROM tcl_VinculoCli_Cue a\n\tJOIN tgl_cuentas c ON  a.paiscod = c.paiscod AND a.bcocod = c.bcocod AND a.succod = c.succod AND a.sistcod = c.sistcod AND a.moncod = c.moncod AND a.cuecod = c.cuecod\n\tWHERE a.paiscod = 54 AND a.bcocod = 312 AND c.sistcod IN (5,4) and c.moncod = 0 AND a.cliclivincod IN (1,2,3) AND c.estctacod IN (1,2) and a.nrodoc IN ({{nrodoc}})",
+      "query": "select CAST(a.nrodoc AS VARCHAR(20)) AS nrodoc, a.sistcod, CAST(MIN(a.cuecod) AS VARCHAR(20)) AS cuecod\nFROM tcl_VinculoCli_Cue a\n\tJOIN tgl_cuentas c ON  a.paiscod = c.paiscod AND a.bcocod = c.bcocod AND a.succod = c.succod AND a.sistcod = c.sistcod AND a.moncod = c.moncod AND a.cuecod = c.cuecod\n\tWHERE a.paiscod = 54 AND a.bcocod = 312 AND c.sistcod IN (5,4) and c.moncod = 0 AND a.cliclivincod IN (1,2,3) AND c.estctacod IN (1,2) and a.nrodoc IN ({{nrodoc}})\nGROUP BY a.nrodoc, a.sistcod",
       "extractVariables": {}
     }
   ]

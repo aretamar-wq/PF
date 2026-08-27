@@ -114,6 +114,7 @@ function selectFlow(name) {
   document.getElementById('csvProgress').textContent = '';
   hideCsvSummary();
   hideRecuperaCuentasResult();
+  hideSqlResult();
   state.pfDetailRows = [];
   document.getElementById('downloadPfDetailBtn').disabled = true;
 
@@ -131,11 +132,13 @@ function selectFlow(name) {
   } else {
     form.style.display = '';
     csvSection.style.display = 'none';
-    // "Recupera cuentas" tampoco muestra la tabla de log: la respuesta es un
-    // volcado de JSON enorme e ilegible en la tabla, y el panel filtrado
-    // (#recuperaCuentasResult) ya muestra lo que hace falta. El detalle
-    // completo sigue en logs/http.log y en "Guardar log...".
-    document.getElementById('logTable').style.display = isRecuperaCuentasFlow(state.selectedFlow) ? 'none' : '';
+    // "Recupera cuentas" y cualquier flow con un step SQL tampoco muestran la
+    // tabla de log: la respuesta es un volcado de JSON (o una tabla) más
+    // legible en su propio panel (#recuperaCuentasResult / #sqlResultPanel)
+    // que como fila de la tabla genérica. El detalle completo sigue en
+    // logs/http.log y en "Guardar log...".
+    document.getElementById('logTable').style.display =
+      isRecuperaCuentasFlow(state.selectedFlow) || isSqlFlow(state.selectedFlow) ? 'none' : '';
 
     for (const input of inputs) {
       const label = document.createElement('label');
@@ -296,6 +299,59 @@ function renderRecuperaCuentasResult(entries) {
   el.style.display = '';
 }
 
+// Genérico para cualquier flow cuyo último step sea "type": "sql" (no
+// acoplado a un flow puntual, a diferencia de isRecuperaCuentasFlow): sirve
+// tanto para "Consulta SQL (Sybase)" como para "Recupera cuentas (SQL)" y
+// cualquier otro flow SQL que se agregue después.
+function isSqlFlow(flow) {
+  return !!flow && Array.isArray(flow.steps) && flow.steps.some((step) => step.type === 'sql');
+}
+
+function hideSqlResult() {
+  const el = document.getElementById('sqlResultPanel');
+  el.style.display = 'none';
+  el.innerHTML = '';
+}
+
+// Muestra el array "rows" de la respuesta del último step SQL como una
+// tabla HTML (columnas = las claves del primer row, mismo orden en que las
+// devolvió la consulta) en vez de como JSON crudo en la tabla de log.
+function renderSqlResult(entries) {
+  const el = document.getElementById('sqlResultPanel');
+  const lastEntry = entries[entries.length - 1];
+  if (!lastEntry || lastEntry.status !== 'Success' || !lastEntry.responseSummary) {
+    hideSqlResult();
+    return;
+  }
+
+  let rows;
+  try {
+    const parsed = JSON.parse(lastEntry.responseSummary);
+    rows = Array.isArray(parsed.rows) ? parsed.rows : [];
+  } catch (err) {
+    hideSqlResult();
+    return;
+  }
+
+  if (rows.length === 0) {
+    el.innerHTML = '<p class="muted">La consulta no devolvió ninguna fila.</p>';
+    el.style.display = '';
+    return;
+  }
+
+  const columns = Object.keys(rows[0]);
+  const headerHtml = columns.map((col) => `<th>${escapeHtml(col)}</th>`).join('');
+  const rowsHtml = rows
+    .map((row) => `<tr>${columns.map((col) => `<td>${escapeHtml(row[col])}</td>`).join('')}</tr>`)
+    .join('');
+
+  el.innerHTML = (
+    `<p class="muted">${rows.length} fila(s)</p>` +
+    `<table><thead><tr>${headerHtml}</tr></thead><tbody>${rowsHtml}</tbody></table>`
+  );
+  el.style.display = '';
+}
+
 function readFileAsText(file) {
   return new Promise((resolve, reject) => {
     const reader = new FileReader();
@@ -370,6 +426,7 @@ async function runFlow() {
   runBtn.disabled = true;
   document.getElementById('logBody').innerHTML = '';
   hideRecuperaCuentasResult();
+  hideSqlResult();
 
   const form = document.getElementById('inputsForm');
   const inputs = {};
@@ -383,6 +440,8 @@ async function runFlow() {
     document.getElementById('saveLogBtn').disabled = state.lastLog.length === 0;
     if (isRecuperaCuentasFlow(state.selectedFlow)) {
       renderRecuperaCuentasResult(state.lastLog);
+    } else if (isSqlFlow(state.selectedFlow)) {
+      renderSqlResult(state.lastLog);
     }
   } catch (err) {
     alert(err.message);
