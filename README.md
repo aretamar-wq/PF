@@ -330,6 +330,17 @@ los flows de ejemplo):
   con variables extraídas en pasos previos.
 - `bodyContentType` es opcional (default `"application/json"`); usalo para
   endpoints que esperan `application/x-www-form-urlencoded` u otro formato.
+- `omitIfNull` (opcional, array de nombres de campo, solo con
+  `bodyContentType` JSON): para un campo opcional que el banco espera que
+  directamente **no aparezca** en el JSON en vez de ir vacío o en `null`.
+  Armá el `bodyTemplate` con el placeholder sin comillas (ej.
+  `"codigoCuenta": {{cuecodSistema4}}`) y que la variable, cuando no
+  corresponda, resuelva al literal JSON `null` (no a texto vacío ni a un
+  `{{...}}` sin reemplazar, que rompería el JSON) — con `omitIfNull:
+  ["codigoCuenta"]` en el step, esa clave se borra del body antes de
+  mandarlo si terminó en `null`. Ver "Plazo Fijo Cocos Files (SQL)" más
+  abajo para un ejemplo real (`codigoCuenta` de la cuenta de Plazo Fijo,
+  opcional para el banco).
 - `extractVariables` mapea `nombreDeVariable -> path` dentro del JSON de
   respuesta (notación de puntos, con índices de array opcionales, ej.
   `"items[0].id"`). El valor extraído queda disponible para los pasos
@@ -563,20 +574,23 @@ El step 0 usa `requireVariables: ["cuecodSistema5"]` — **solo** para la
 cuenta de Caja de Ahorro, adonde va la plata: si no se encuentra, el step
 falla ahí mismo, **antes** de que se ejecute el débito, para no debitar de
 Cuenta Corriente sin saber a qué cuenta acreditar. `cuecodSistema4` (la
-cuenta administrativa de Plazo Fijo) es distinta: si no se encuentra, no
-frena nada — la consulta la trae con `COALESCE(..., ' ')`, así que el alta
-de Plazo Fijo se manda igual con `"codigoCuenta": " "` (espacio literal,
-mismo criterio que `CodigoContrasiento` en Cuenta Corriente/Caja de Ahorro)
-y queda a criterio del banco aceptarla o rechazarla.
+cuenta administrativa de Plazo Fijo) es un campo opcional para el banco: si
+no se encuentra, no frena nada, y el alta de Plazo Fijo se manda igual pero
+**sin el campo `codigoCuenta`** (el banco espera que directamente no
+aparezca en el JSON, no que vaya vacío o en `null`).
 
-**Nota:** para poder mandar ese espacio en blanco, `codigoCuenta` en el
-body de "Alta de Plazo Fijo" pasó a ir siempre entre comillas (como string,
-`"codigoCuenta": "2104"`) en vez de como número sin comillas
-(`"codigoCuenta": 2104`, que era como lo mandaban "Plazo Fijo Cocos" y
-"Plazo Fijo Cocos Files" hasta ahora) — un espacio no es un JSON válido sin
-comillas. No se pudo confirmar contra el banco real si acepta ese campo
-como string cuando sí hay cuenta (además del caso en blanco); conviene
-probarlo con un caso real antes de confiar en este flow en producción.
+Esto se resuelve con `omitIfNull` (nuevo campo opcional de un step HTTP,
+en `modules/FlowEngine.psm1`): la consulta trae `cuecodSistema4` con
+`COALESCE(..., 'null')`, así que cuando no se encuentra queda como el
+literal JSON `null` (`"codigoCuenta": null` — JSON válido, a diferencia de
+dejar `{{cuecodSistema4}}` sin reemplazar) en vez de un número
+(`"codigoCuenta": 2104`) cuando sí se encuentra. El step declara
+`"omitIfNull": ["codigoCuenta"]`: después de armar el body con
+`Expand-Template` como siempre, si `bodyContentType` es JSON, se parsea el
+resultado y se borra por completo cualquier campo de esa lista cuyo valor
+haya quedado en `null` — recién ahí se manda. `codigoCuenta` sigue yendo
+como número sin comillas cuando sí hay cuenta, igual que en "Plazo Fijo
+Cocos"/"Plazo Fijo Cocos Files" — no cambió el formato para ese caso.
 
 ### Panel de resultado de un step SQL
 

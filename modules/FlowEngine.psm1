@@ -476,6 +476,33 @@ function Invoke-Flow {
                     $contentType = 'application/json'
                     if ($contentTypeFromHeaders) { $contentType = $contentTypeFromHeaders }
                     if ($step.bodyContentType) { $contentType = [string]$step.bodyContentType }
+
+                    # omitIfNull (opcional, array de nombres de campo): para un campo
+                    # opcional que el banco espera que directamente NO aparezca en el
+                    # JSON en vez de ir null/vacío (no "el campo, sin valor"). El
+                    # bodyTemplate arma el valor sin comillas (ej. {{cuecodSistema4}})
+                    # de forma que, si la variable no se encontró, quede como el
+                    # literal JSON "null" (no como texto sin reemplazar, que rompería
+                    # el JSON) — acá se parsea el body ya armado y se borra por
+                    # completo cualquier campo de la lista que haya quedado en null,
+                    # antes de mandarlo.
+                    if ($step.omitIfNull -and $contentType -ieq 'application/json') {
+                        try {
+                            $bodyJson = $bodyText | ConvertFrom-Json
+                            foreach ($propName in @($step.omitIfNull)) {
+                                $prop = $bodyJson.PSObject.Properties[$propName]
+                                if ($null -ne $prop -and $null -eq $prop.Value) {
+                                    $bodyJson.PSObject.Properties.Remove($propName)
+                                }
+                            }
+                            $bodyText = $bodyJson | ConvertTo-Json -Depth 10
+                        } catch {
+                            # El bodyTemplate no resultó en JSON parseable (no debería
+                            # pasar si bodyContentType es json); se manda tal cual,
+                            # sin aplicar omitIfNull.
+                        }
+                    }
+
                     $request.Content = New-Object System.Net.Http.StringContent($bodyText, [System.Text.Encoding]::UTF8, $contentType)
                 }
 
