@@ -5,10 +5,87 @@ const state = {
   lastLog: [],
   pfDetailRows: [],
   enrichedCsvRows: [],
+  token: sessionStorage.getItem('pf_token') || null,
+  currentUser: null, // { username, role, displayName, canManageUsers } — se completa en loadMe()
 };
 
+// Wrapper de fetch para todas las llamadas a /api/*: agrega el token de sesión
+// (Authorization: Bearer <token>, guardado en sessionStorage — se pierde si se
+// cierra la pestaña, a propósito para una app que mueve plata) y, si el
+// servidor contesta 401 (sesión inválida/expirada/usuario deshabilitado en el
+// medio), limpia la sesión y vuelve a mostrar la pantalla de login en vez de
+// dejar que cada llamador tenga que manejarlo por separado.
+async function apiFetch(path, options = {}) {
+  const headers = { ...(options.headers || {}) };
+  if (state.token) headers.Authorization = `Bearer ${state.token}`;
+
+  const res = await fetch(path, { ...options, headers });
+
+  if (res.status === 401 && path !== '/api/login') {
+    clearSession();
+    showLoginScreen();
+  }
+
+  return res;
+}
+
+function clearSession() {
+  state.token = null;
+  state.currentUser = null;
+  sessionStorage.removeItem('pf_token');
+}
+
+function showLoginScreen() {
+  document.getElementById('loginScreen').style.display = '';
+  document.getElementById('appShell').style.display = 'none';
+}
+
+function showAppShell() {
+  document.getElementById('loginScreen').style.display = 'none';
+  document.getElementById('appShell').style.display = '';
+}
+
+async function login(username, password) {
+  const res = await fetch('/api/login', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ username, password }),
+  });
+  const data = await res.json();
+
+  if (!res.ok) {
+    throw new Error((data && data.error) || 'No se pudo iniciar sesión.');
+  }
+
+  state.token = data.token;
+  sessionStorage.setItem('pf_token', data.token);
+}
+
+async function logout() {
+  try {
+    await apiFetch('/api/logout', { method: 'POST', headers: { 'Content-Type': 'application/json' } });
+  } catch (err) {
+    // Si falla la llamada de red, igual se limpia la sesión del lado del cliente.
+  }
+  clearSession();
+  showLoginScreen();
+}
+
+async function loadMe() {
+  const res = await apiFetch('/api/me');
+  if (!res.ok) throw new Error('Sesión inválida.');
+  state.currentUser = await res.json();
+
+  document.getElementById('currentUserInfo').textContent =
+    `${state.currentUser.displayName || state.currentUser.username} (${state.currentUser.role})`;
+  document.getElementById('usersBtn').style.display = state.currentUser.canManageUsers ? '' : 'none';
+
+  const isReadOnly = state.currentUser.role === 'lectura';
+  document.getElementById('readOnlyNotice').style.display = isReadOnly ? '' : 'none';
+}
+
 async function loadProfiles() {
-  const res = await fetch('/api/profiles');
+  const res = await apiFetch('/api/profiles');
   state.profiles = await res.json();
 
   const select = document.getElementById('profileSelect');
@@ -49,7 +126,7 @@ async function testToken() {
   resultSpan.textContent = 'Probando...';
 
   try {
-    const res = await fetch('/api/test-token', {
+    const res = await apiFetch('/api/test-token', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ profileName }),
@@ -72,7 +149,7 @@ async function testToken() {
 }
 
 async function loadFlows() {
-  const res = await fetch('/api/flows');
+  const res = await apiFetch('/api/flows');
   state.flows = await res.json();
 
   const list = document.getElementById('flowList');
@@ -184,6 +261,13 @@ function updateRunButtonState() {
   if (isCsvFlow(flow)) {
     const csvFileInput = document.getElementById('csvFileInput');
     enabled = enabled && csvFileInput.files && csvFileInput.files.length > 0;
+  }
+  // El servidor es quien realmente hace cumplir esto (rechaza /api/run con 403
+  // para rol 'lectura', ver server.ps1) — acá solo se evita el viaje de ida y
+  // vuelta ocultando/deshabilitando el botón para un rol que ya sabemos que no
+  // puede ejecutar nada.
+  if (state.currentUser && state.currentUser.role === 'lectura') {
+    enabled = false;
   }
   document.getElementById('runBtn').disabled = !enabled;
 }
@@ -473,7 +557,7 @@ function renderLog(entries) {
 }
 
 async function runFlowByName(flowName, inputs) {
-  const res = await fetch('/api/run', {
+  const res = await apiFetch('/api/run', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({
@@ -869,7 +953,7 @@ document.getElementById('deleteProfileBtn').addEventListener('click', async () =
   const name = document.getElementById('profileSelect').value;
   if (!name) return;
   if (!confirm(`¿Eliminar el perfil "${name}"?`)) return;
-  await fetch('/api/profiles?name=' + encodeURIComponent(name), { method: 'DELETE' });
+  await apiFetch('/api/profiles?name=' + encodeURIComponent(name), { method: 'DELETE' });
   await loadProfiles();
 });
 
@@ -881,7 +965,7 @@ profileForm.addEventListener('submit', async (event) => {
     payload[key] = value;
   });
 
-  await fetch('/api/profiles', {
+  await apiFetch('/api/profiles', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(payload),
@@ -905,7 +989,7 @@ const parametriaForm = document.getElementById('parametriaForm');
 async function openParametriaDialog() {
   parametriaForm.reset();
 
-  const res = await fetch('/api/parametria');
+  const res = await apiFetch('/api/parametria');
   const data = await res.json();
 
   for (const [category, fields] of Object.entries(data || {})) {
@@ -933,7 +1017,7 @@ async function testSybaseConnection() {
   resultSpan.textContent = 'Probando...';
 
   try {
-    const res = await fetch('/api/test-sybase', {
+    const res = await apiFetch('/api/test-sybase', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ connectionString, usuario, password }),
@@ -967,7 +1051,7 @@ parametriaForm.addEventListener('submit', async (event) => {
     payload[category][field] = value;
   });
 
-  await fetch('/api/parametria', {
+  await apiFetch('/api/parametria', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(payload),
@@ -976,7 +1060,191 @@ parametriaForm.addEventListener('submit', async (event) => {
   parametriaDialog.close();
 });
 
-(async function init() {
+// --- Administración de usuarios y configuración de Active Directory --------
+// Panel solo visible para rol 'admin' (usersBtn queda oculto para los demás en
+// loadMe()); el servidor igual vuelve a chequear el rol en cada request de
+// /api/users y /api/security-config, así que ocultar el botón acá es solo UX.
+
+const usersDialog = document.getElementById('usersDialog');
+const adConfigForm = document.getElementById('adConfigForm');
+const userForm = document.getElementById('userForm');
+let editingUsername = null; // null = alta de un usuario nuevo; si no, username que se está editando
+
+async function loadAdConfig() {
+  const res = await apiFetch('/api/security-config');
+  if (!res.ok) return;
+  const data = await res.json();
+  const ad = data.ad || {};
+  adConfigForm.elements.server.value = ad.server || '';
+  adConfigForm.elements.port.value = ad.port || 389;
+  adConfigForm.elements.useSsl.checked = !!ad.useSsl;
+  adConfigForm.elements.domain.value = ad.domain || '';
+}
+
+function renderUsersTable(users) {
+  const tbody = document.getElementById('usersTableBody');
+  tbody.innerHTML = '';
+  for (const user of users) {
+    const tr = document.createElement('tr');
+    tr.innerHTML = `
+      <td>${escapeHtml(user.username)}</td>
+      <td>${escapeHtml(user.displayName)}</td>
+      <td>${escapeHtml(user.role)}</td>
+      <td>${user.enabled ? 'Sí' : 'No'}</td>
+      <td>
+        <button type="button" class="editUserBtn">Editar</button>
+        <button type="button" class="deleteUserBtn">Eliminar</button>
+      </td>
+    `;
+    tr.querySelector('.editUserBtn').addEventListener('click', () => startEditUser(user));
+    tr.querySelector('.deleteUserBtn').addEventListener('click', () => deleteUser(user.username));
+    tbody.appendChild(tr);
+  }
+}
+
+async function loadUsersList() {
+  const res = await apiFetch('/api/users');
+  if (!res.ok) return;
+  const users = await res.json();
+  renderUsersTable(users);
+}
+
+function startEditUser(user) {
+  editingUsername = user.username;
+  document.getElementById('userFormLegend').textContent = `Editando "${user.username}"`;
+  userForm.elements.username.value = user.username;
+  userForm.elements.username.readOnly = true;
+  userForm.elements.displayName.value = user.displayName || '';
+  userForm.elements.role.value = user.role;
+  userForm.elements.enabled.checked = !!user.enabled;
+  document.getElementById('cancelUserEditBtn').style.display = '';
+}
+
+function resetUserForm() {
+  editingUsername = null;
+  userForm.reset();
+  userForm.elements.username.readOnly = false;
+  document.getElementById('userFormLegend').textContent = 'Nuevo usuario';
+  document.getElementById('cancelUserEditBtn').style.display = 'none';
+  document.getElementById('userFormResult').textContent = '';
+}
+
+async function deleteUser(username) {
+  if (!confirm(`¿Eliminar el acceso de "${username}" a la aplicación? (esto no toca su cuenta de Active Directory)`)) return;
+  const res = await apiFetch('/api/users?username=' + encodeURIComponent(username), { method: 'DELETE' });
+  const data = await res.json();
+  if (!res.ok) {
+    alert(data.error || 'No se pudo eliminar el usuario.');
+    return;
+  }
+  if (editingUsername === username) resetUserForm();
+  await loadUsersList();
+}
+
+async function openUsersDialog() {
+  resetUserForm();
+  document.getElementById('adConfigSaveResult').textContent = '';
+  await loadAdConfig();
+  await loadUsersList();
+  usersDialog.showModal();
+}
+
+document.getElementById('usersBtn').addEventListener('click', openUsersDialog);
+document.getElementById('closeUsersDialogBtn').addEventListener('click', () => usersDialog.close());
+document.getElementById('cancelUserEditBtn').addEventListener('click', resetUserForm);
+
+adConfigForm.addEventListener('submit', async (event) => {
+  event.preventDefault();
+  const resultSpan = document.getElementById('adConfigSaveResult');
+  const payload = {
+    server: adConfigForm.elements.server.value,
+    port: Number(adConfigForm.elements.port.value) || 389,
+    useSsl: adConfigForm.elements.useSsl.checked,
+    domain: adConfigForm.elements.domain.value,
+  };
+
+  const res = await apiFetch('/api/security-config', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(payload),
+  });
+  const data = await res.json();
+
+  resultSpan.className = res.ok ? 'status-Success' : 'status-Error';
+  resultSpan.textContent = res.ok ? 'Guardado.' : data.error || 'Error al guardar.';
+});
+
+userForm.addEventListener('submit', async (event) => {
+  event.preventDefault();
+  const resultSpan = document.getElementById('userFormResult');
+  const payload = {
+    username: userForm.elements.username.value.trim(),
+    displayName: userForm.elements.displayName.value,
+    role: userForm.elements.role.value,
+    enabled: userForm.elements.enabled.checked,
+  };
+
+  const res = await apiFetch('/api/users', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(payload),
+  });
+  const data = await res.json();
+
+  if (!res.ok) {
+    resultSpan.className = 'status-Error';
+    resultSpan.textContent = data.error || 'Error al guardar el usuario.';
+    return;
+  }
+
+  resetUserForm();
+  await loadUsersList();
+});
+
+// --- Login / logout ---------------------------------------------------------
+
+const loginForm = document.getElementById('loginForm');
+
+loginForm.addEventListener('submit', async (event) => {
+  event.preventDefault();
+  const errorEl = document.getElementById('loginError');
+  const btn = document.getElementById('loginSubmitBtn');
+  const username = loginForm.elements.username.value.trim();
+  const password = loginForm.elements.password.value;
+
+  errorEl.style.display = 'none';
+  btn.disabled = true;
+  try {
+    await login(username, password);
+    await startApp();
+    loginForm.reset();
+  } catch (err) {
+    errorEl.textContent = err.message;
+    errorEl.style.display = '';
+  } finally {
+    btn.disabled = false;
+  }
+});
+
+document.getElementById('logoutBtn').addEventListener('click', logout);
+
+async function startApp() {
+  await loadMe();
+  showAppShell();
   await loadProfiles();
   await loadFlows();
+}
+
+(async function init() {
+  if (!state.token) {
+    showLoginScreen();
+    return;
+  }
+  try {
+    await startApp();
+  } catch (err) {
+    // El token guardado ya no sirve (servidor reiniciado, sesión vencida, etc.)
+    clearSession();
+    showLoginScreen();
+  }
 })();

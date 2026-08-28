@@ -21,7 +21,10 @@ runtime adicional.
 1. Descargá o cloná el repo — es solo texto, no hay nada para compilar.
 2. Copiá `profiles.sample.json` a `profiles.local.json` (este archivo **no se
    versiona**, ver `.gitignore`) y completá tus credenciales — ver
-   "Configurar perfiles" más abajo.
+   "Configurar perfiles" más abajo. Copiá también `security.sample.json` a
+   `security.local.json` y completá los datos de tu Active Directory — ver
+   "Módulo de seguridad" más abajo (el primer login exitoso se da de alta
+   solo como administrador, no hace falta crear usuarios a mano).
 3. Hacé doble click en **`Iniciar.bat`**. Esto abre PowerShell, levanta el
    servidor local y abre tu navegador en `http://localhost:8787/`
    automáticamente.
@@ -33,6 +36,10 @@ runtime adicional.
 
 ## Qué resuelve
 
+- Login obligatorio contra **Active Directory** (la contraseña nunca se
+  guarda) con administración local de usuarios y **roles**
+  (admin/operador/lectura) que controlan quién puede ejecutar flows y quién
+  puede administrar usuarios — ver "Módulo de seguridad" más abajo.
 - Autenticación por **API Key** (header configurable), **Bearer token
   estático** u **OAuth2 client_credentials** (el servidor obtiene y cachea el
   `access_token` automáticamente antes de cada request).
@@ -70,12 +77,111 @@ modules/
   ParametriaStore.psm1   Lee/escribe parametria.local.json
   FlowStore.psm1         Lee todos los Flows/*.json
   FlowEngine.psm1        Ejecuta un flow paso a paso, incluye el caché de token OAuth2
+  SecurityStore.psm1     Login (AD) + sesiones + usuarios/roles + auditoría (ver "Módulo de seguridad")
 wwwroot/
   index.html, app.js, styles.css   Front-end (vanilla JS, sin build step)
 Flows/                   *.json de flows (ver "Cómo definir un flow nuevo")
 profiles.sample.json      Plantilla de perfiles (sin secretos)
 parametria.sample.json   Plantilla de parametría (ver "Módulo de parametría")
+security.sample.json    Plantilla de seguridad (conexión AD + usuarios, ver "Módulo de seguridad")
 ```
+
+## Módulo de seguridad (login + Active Directory + roles)
+
+Toda la app queda detrás de un login: al abrir `http://localhost:8787/` se
+muestra una pantalla de usuario/contraseña antes de mostrar flows, perfiles o
+cualquier otra cosa. La contraseña **nunca se guarda** en ningún archivo ni se
+loguea — se usa un instante para validarla contra Active Directory (bind
+LDAP) y se descarta. Lo que la app sí guarda localmente es, para cada
+usuario habilitado, su nombre de cuenta de AD y qué **rol** tiene acá adentro.
+
+### Configuración inicial
+
+1. Copiá `security.sample.json` a `security.local.json` (no se versiona, ver
+   `.gitignore` — igual que `profiles.local.json`/`parametria.local.json`).
+2. Completá el bloque `ad` con los datos del Domain Controller contra el que
+   validar contraseñas — **no hace falta que la PC donde corre
+   BankCoreFlowRunner esté unida al dominio**, alcanza con que llegue por red
+   al DC (mismo criterio que la conexión a Sybase: apuntás a un host/puerto
+   puntual, no se asume nada del entorno):
+   ```json
+   {
+     "ad": {
+       "server": "dc01.voii.com.ar",
+       "port": 389,
+       "useSsl": false,
+       "domain": "voii.com.ar"
+     },
+     "users": []
+   }
+   ```
+   `port`/`useSsl` también se pueden dejar en los valores de arriba (389,
+   `false`) para LDAP simple; para LDAPS usá `"port": 636, "useSsl": true`.
+3. **Bootstrap del primer administrador:** con `"users": []` (lista vacía),
+   el primer login que valide correctamente contra AD se da de alta
+   automáticamente como el primer usuario, con rol `admin` — así no hace
+   falta editar el JSON a mano para crear el primer usuario. Una vez que
+   existe al menos un usuario en la lista, este atajo deja de aplicar: a
+   partir de ahí, un usuario que no esté en la lista (o que esté
+   deshabilitado) no puede entrar aunque su contraseña de AD sea correcta,
+   tenga que darlo de alta un admin desde el panel "Usuarios..." (o editando
+   `security.local.json` directamente).
+4. Los pasos siguientes (agregar más usuarios, cambiar roles, reconfigurar la
+   conexión AD) se hacen desde la propia UI: botón **"Usuarios..."** en el
+   header, visible solo para rol `admin`.
+
+### Roles
+
+| Rol | Puede ejecutar flows (`POST /api/run`) | Puede administrar usuarios/AD |
+|---|---|---|
+| `admin` | Sí | Sí |
+| `operador` | Sí | No |
+| `lectura` | **No** (ve flows, perfiles, Parametría, pero el botón "Ejecutar flow" queda deshabilitado y el servidor rechaza `/api/run` con 403 igual si se lo llama directo) | No |
+
+Los roles están fijos en `Test-RoleCanRunFlow`/`Test-RoleCanManageUsers`
+(`modules/SecurityStore.psm1`) — no hay UI para inventar roles nuevos ni para
+restringir un rol a un subconjunto de flows todavía, aunque el código queda
+en un único lugar para agregarlo si hiciera falta. La app nunca deja sin
+ningún admin habilitado: no se puede eliminar, deshabilitar, ni sacarle el
+rol de admin al último administrador habilitado (tanto desde la UI como
+llamando a `/api/users` directo).
+
+### Sesiones
+
+Al loguearse, el servidor genera un token (32 bytes al azar) y lo guarda en
+memoria (`$Global:SecuritySessions`, se pierde si se reinicia el servidor —
+mismo criterio que el caché de token OAuth2 de los perfiles) con una
+expiración de 8 horas. La UI lo guarda en `sessionStorage` (se pierde si se
+cierra la pestaña/navegador, a propósito para una app que mueve plata — no
+en `localStorage`) y lo manda como `Authorization: Bearer <token>` en cada
+llamada a `/api/*` (`apiFetch` en `wwwroot/app.js`). Un 401 en cualquier
+llamada limpia la sesión del lado del cliente y vuelve a mostrar la pantalla
+de login.
+
+En cada request autenticado, el servidor no solo mira si el token existe:
+vuelve a leer `security.local.json` y confirma que ese usuario siga
+habilitado y toma su rol **actual** (no el que tenía al momento del login) —
+si un admin deshabilita a alguien, le cambia el rol, o lo elimina, eso tiene
+efecto inmediato en la próxima request de esa sesión, sin esperar a que el
+token expire ni a que la persona vuelva a loguearse.
+
+### Auditoría
+
+`logs/security.log` (mismo directorio que `logs/http.log`, no versionado)
+registra, con fecha/hora: logins exitosos y fallidos (usuario, nunca la
+contraseña), el bootstrap del primer admin, altas/bajas/ediciones de
+usuarios (quién lo hizo y a quién), cambios en la configuración de AD, y
+ejecuciones de flow denegadas por rol.
+
+### Limitaciones conocidas
+
+- La validación contra AD usa
+  `System.DirectoryServices.AccountManagement` (`Test-AdCredentials` en
+  `modules/SecurityStore.psm1`), que es específico de Windows — igual que el
+  resto de la app, no funciona corriendo en Linux/macOS.
+- Como el resto de BankCoreFlowRunner, esto está pensado para uso local
+  (`http://localhost:...`): el token viaja por HTTP plano, aceptable en ese
+  contexto pero no pensado para exponerse en red.
 
 ## Configurar perfiles de conexión
 

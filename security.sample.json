@@ -1,0 +1,9 @@
+{
+  "ad": {
+    "server": "dc01.voii.com.ar",
+    "port": 389,
+    "useSsl": false,
+    "domain": "voii.com.ar"
+  },
+  "users": []
+}

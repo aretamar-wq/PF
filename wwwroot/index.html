@@ -6,55 +6,73 @@
   <link rel="stylesheet" href="/styles.css" />
 </head>
 <body>
-  <header>
-    <h1>BankCoreFlowRunner</h1>
-    <div class="profile-bar">
-      <label for="profileSelect">Perfil:</label>
-      <select id="profileSelect"></select>
-      <button id="newProfileBtn">Nuevo...</button>
-      <button id="editProfileBtn">Editar...</button>
-      <button id="deleteProfileBtn">Eliminar</button>
-      <button id="testTokenBtn" disabled>Probar token</button>
-      <span id="tokenTestResult" class="muted"></span>
-      <button id="parametriaBtn">Parametría...</button>
-    </div>
-  </header>
+  <div id="loginScreen">
+    <form id="loginForm">
+      <h1>BankCoreFlowRunner</h1>
+      <p class="muted">Iniciá sesión con tu usuario y contraseña de dominio (Active Directory).</p>
+      <label>Usuario <input name="username" autocomplete="username" required autofocus /></label>
+      <label>Contraseña <input name="password" type="password" autocomplete="current-password" required /></label>
+      <p id="loginError" class="status-Error" style="display: none;"></p>
+      <button type="submit" id="loginSubmitBtn">Ingresar</button>
+    </form>
+  </div>
 
-  <main>
-    <aside>
-      <h2>Flows</h2>
-      <ul id="flowList"></ul>
-    </aside>
-
-    <section id="flowDetail">
-      <p id="flowDescription" class="muted">Elegí un flow de la lista.</p>
-      <form id="inputsForm"></form>
-      <div id="csvInputSection" style="display: none;">
-        <label>Archivo CSV (sin encabezado) <input type="file" id="csvFileInput" accept=".csv,text/csv" /></label>
-        <p id="csvColumnsHint" class="muted"></p>
-        <p id="csvProgress" class="muted"></p>
-        <div id="csvSummary" class="csv-summary" style="display: none;"></div>
-        <button id="downloadPfDetailBtn" disabled>Descargar detalle de Plazos Fijos...</button>
-        <button id="downloadEnrichedCsvBtn" disabled>Descargar archivo con cuentas agregadas...</button>
+  <div id="appShell" style="display: none;">
+    <header>
+      <h1>BankCoreFlowRunner</h1>
+      <div class="profile-bar">
+        <label for="profileSelect">Perfil:</label>
+        <select id="profileSelect"></select>
+        <button id="newProfileBtn">Nuevo...</button>
+        <button id="editProfileBtn">Editar...</button>
+        <button id="deleteProfileBtn">Eliminar</button>
+        <button id="testTokenBtn" disabled>Probar token</button>
+        <span id="tokenTestResult" class="muted"></span>
+        <button id="parametriaBtn">Parametría...</button>
+        <button id="usersBtn" style="display: none;">Usuarios...</button>
+        <span class="spacer"></span>
+        <span id="currentUserInfo" class="muted"></span>
+        <button id="logoutBtn">Cerrar sesión</button>
       </div>
-      <div class="actions">
-        <button id="runBtn" disabled>Ejecutar flow</button>
-        <button id="saveLogBtn" disabled>Guardar log...</button>
-      </div>
+    </header>
 
-      <div id="recuperaCuentasResult" class="csv-summary" style="display: none;"></div>
-      <div id="sqlResultPanel" style="display: none;"></div>
+    <main>
+      <aside>
+        <h2>Flows</h2>
+        <ul id="flowList"></ul>
+      </aside>
 
-      <table id="logTable">
-        <thead>
-          <tr>
-            <th>Paso</th><th>Estado</th><th>HTTP</th><th>ms</th><th>Request</th><th>Respuesta / Error</th>
-          </tr>
-        </thead>
-        <tbody id="logBody"></tbody>
-      </table>
-    </section>
-  </main>
+      <section id="flowDetail">
+        <p id="flowDescription" class="muted">Elegí un flow de la lista.</p>
+        <form id="inputsForm"></form>
+        <div id="csvInputSection" style="display: none;">
+          <label>Archivo CSV (sin encabezado) <input type="file" id="csvFileInput" accept=".csv,text/csv" /></label>
+          <p id="csvColumnsHint" class="muted"></p>
+          <p id="csvProgress" class="muted"></p>
+          <div id="csvSummary" class="csv-summary" style="display: none;"></div>
+          <button id="downloadPfDetailBtn" disabled>Descargar detalle de Plazos Fijos...</button>
+          <button id="downloadEnrichedCsvBtn" disabled>Descargar archivo con cuentas agregadas...</button>
+        </div>
+        <div class="actions">
+          <button id="runBtn" disabled>Ejecutar flow</button>
+          <button id="saveLogBtn" disabled>Guardar log...</button>
+        </div>
+        <p id="readOnlyNotice" class="muted" style="display: none;">Tu usuario tiene rol de solo lectura: podés ver flows y perfiles, pero no ejecutar nada.</p>
+
+        <div id="recuperaCuentasResult" class="csv-summary" style="display: none;"></div>
+        <div id="sqlResultPanel" style="display: none;"></div>
+
+        <table id="logTable">
+          <thead>
+            <tr>
+              <th>Paso</th><th>Estado</th><th>HTTP</th><th>ms</th><th>Request</th><th>Respuesta / Error</th>
+            </tr>
+          </thead>
+          <tbody id="logBody"></tbody>
+        </table>
+      </section>
+    </main>
+  </div>
 
   <dialog id="profileDialog">
     <form id="profileForm">
@@ -131,6 +149,57 @@
         <button type="submit">Guardar</button>
       </div>
     </form>
+  </dialog>
+
+  <dialog id="usersDialog">
+    <h2>Usuarios y Active Directory</h2>
+    <p class="muted">Solo administradores pueden ver este panel. La contraseña siempre se valida contra Active Directory — acá no se guarda ninguna.</p>
+
+    <form id="adConfigForm">
+      <fieldset>
+        <legend>Conexión a Active Directory</legend>
+        <label>Servidor (host o IP del Domain Controller) <input name="server" placeholder="dc01.voii.com.ar" /></label>
+        <label>Puerto <input name="port" type="number" placeholder="389" /></label>
+        <label><input name="useSsl" type="checkbox" /> Usar LDAPS (SSL)</label>
+        <label>Dominio <input name="domain" placeholder="voii.com.ar" /></label>
+      </fieldset>
+      <div class="dialog-actions">
+        <span id="adConfigSaveResult" class="muted"></span>
+        <button type="submit">Guardar conexión AD</button>
+      </div>
+    </form>
+
+    <form id="userForm">
+      <fieldset>
+        <legend id="userFormLegend">Nuevo usuario</legend>
+        <label>Usuario (nombre de cuenta de AD) <input name="username" required /></label>
+        <label>Nombre para mostrar <input name="displayName" /></label>
+        <label>Rol
+          <select name="role">
+            <option value="admin">admin — administra usuarios y ejecuta flows</option>
+            <option value="operador" selected>operador — ejecuta flows</option>
+            <option value="lectura">lectura — solo consulta, no ejecuta nada</option>
+          </select>
+        </label>
+        <label><input name="enabled" type="checkbox" checked /> Habilitado</label>
+      </fieldset>
+      <div class="dialog-actions">
+        <span id="userFormResult" class="muted"></span>
+        <button type="button" id="cancelUserEditBtn" style="display: none;">Cancelar edición</button>
+        <button type="submit">Guardar usuario</button>
+      </div>
+    </form>
+
+    <table id="usersTable">
+      <thead>
+        <tr><th>Usuario</th><th>Nombre</th><th>Rol</th><th>Habilitado</th><th>Acciones</th></tr>
+      </thead>
+      <tbody id="usersTableBody"></tbody>
+    </table>
+
+    <div class="dialog-actions">
+      <button type="button" id="closeUsersDialogBtn">Cerrar</button>
+    </div>
   </dialog>
 
   <script src="/app.js"></script>

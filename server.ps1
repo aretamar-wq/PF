@@ -22,8 +22,10 @@ Import-Module (Join-Path $scriptRoot 'modules\ProfileStore.psm1') -Force
 Import-Module (Join-Path $scriptRoot 'modules\ParametriaStore.psm1') -Force
 Import-Module (Join-Path $scriptRoot 'modules\FlowStore.psm1') -Force
 Import-Module (Join-Path $scriptRoot 'modules\FlowEngine.psm1') -Force
+Import-Module (Join-Path $scriptRoot 'modules\SecurityStore.psm1') -Force
 
 $Global:TokenCache = @{}
+$Global:SecuritySessions = @{}
 $flowsDir = Join-Path $scriptRoot 'Flows'
 $wwwRoot = Join-Path $scriptRoot 'wwwroot'
 $logsDir = Join-Path $scriptRoot 'logs'
@@ -99,6 +101,41 @@ function Get-MaskedProfile {
     }
 }
 
+function Get-BearerToken {
+    param($Request)
+    $header = $Request.Headers['Authorization']
+    if ([string]::IsNullOrEmpty($header)) { return $null }
+    if ($header -notmatch '^Bearer\s+(.+)$') { return $null }
+    return $Matches[1].Trim()
+}
+
+function Get-ClientAddress {
+    param($Request)
+    try { return [string]$Request.RemoteEndPoint.Address } catch { return '?' }
+}
+
+function Get-AuthenticatedSession {
+    # A diferencia de solo mirar el token, esto vuelve a chequear contra
+    # security.local.json en cada request (no confía en el rol cacheado al hacer
+    # login): si un admin deshabilita o elimina a un usuario, o le cambia el rol,
+    # eso tiene efecto inmediato en la próxima request de esa sesión, en vez de
+    # recién cuando el token expire (hasta 8hs después).
+    param($Request, [string]$RootDir)
+
+    $session = Get-SessionUser -Token (Get-BearerToken -Request $Request)
+    if ($null -eq $session) { return $null }
+
+    $currentUser = Find-SecurityUser -RootDir $RootDir -Username $session.username
+    if (-not $currentUser -or -not $currentUser.enabled) {
+        Remove-Session -Token (Get-BearerToken -Request $Request)
+        return $null
+    }
+
+    $session.role = $currentUser.role
+    $session.displayName = $currentUser.displayName
+    return $session
+}
+
 $listener = New-Object System.Net.HttpListener
 $prefix = "http://localhost:$Port/"
 $listener.Prefixes.Add($prefix)
@@ -127,7 +164,149 @@ try {
             $path = $request.Url.AbsolutePath
             $method = $request.HttpMethod
 
-            if ($method -eq 'GET' -and $path -eq '/api/profiles') {
+            # Todo /api/* (salvo /api/login) requiere una sesión válida. Los archivos
+            # estáticos (index.html/app.js/styles.css, rama GET del final) siguen sin
+            # auth a propósito: si no, la pantalla de login no tendría cómo cargar.
+            $authRequired = $path.StartsWith('/api/') -and $path -ne '/api/login'
+            $session = $null
+            if ($authRequired) {
+                $session = Get-AuthenticatedSession -Request $request -RootDir $scriptRoot
+            }
+
+            if ($authRequired -and $null -eq $session) {
+                Write-JsonResponse -Response $response -StatusCode 401 -Body ([pscustomobject]@{ error = 'Sesión inválida o expirada. Iniciá sesión de nuevo.' })
+            }
+            elseif ($method -eq 'POST' -and $path -eq '/api/login') {
+                $bodyText = Read-RequestBody -Request $request
+                $payload = $bodyText | ConvertFrom-Json
+                $username = [string]$payload.username
+                $password = [string]$payload.password
+                $clientAddress = Get-ClientAddress -Request $request
+
+                if ([string]::IsNullOrWhiteSpace($username) -or [string]::IsNullOrWhiteSpace($password)) {
+                    Write-JsonResponse -Response $response -StatusCode 400 -Body ([pscustomobject]@{ error = 'Usuario y contraseña son obligatorios.' })
+                } else {
+                    $security = Get-Security -RootDir $scriptRoot
+                    $users = @($security.users)
+                    $localUser = $users | Where-Object { $_.username -ieq $username } | Select-Object -First 1
+
+                    # Bootstrap: si todavía no hay ningún usuario configurado localmente,
+                    # el primer login exitoso contra AD se auto-promueve a admin — si no,
+                    # nadie podría entrar nunca a dar de alta al primer usuario. Una vez que
+                    # existe al menos un usuario, este atajo no aplica más.
+                    $isBootstrap = $users.Count -eq 0
+
+                    if (-not $isBootstrap -and (-not $localUser -or -not $localUser.enabled)) {
+                        Write-SecurityLog -LogsDir $logsDir -Message "LOGIN DENEGADO usuario='$username' (no habilitado en la app) desde $clientAddress"
+                        Write-JsonResponse -Response $response -StatusCode 401 -Body ([pscustomobject]@{ error = 'Usuario no habilitado en esta aplicación. Pedile a un administrador que te dé de alta.' })
+                    } else {
+                        $adResult = Test-AdCredentials -AdConfig $security.ad -Username $username -Password $password
+                        if (-not $adResult.ok) {
+                            Write-SecurityLog -LogsDir $logsDir -Message "LOGIN FALLIDO usuario='$username' desde $clientAddress ($($adResult.message))"
+                            Write-JsonResponse -Response $response -StatusCode 401 -Body ([pscustomobject]@{ error = $adResult.message })
+                        } else {
+                            if ($isBootstrap) {
+                                Add-OrUpdateSecurityUser -RootDir $scriptRoot -Username $username -Role 'admin' -Enabled $true
+                                $localUser = Find-SecurityUser -RootDir $scriptRoot -Username $username
+                                Write-SecurityLog -LogsDir $logsDir -Message "BOOTSTRAP: '$username' se dio de alta como el primer administrador (login exitoso, sin usuarios configurados todavía)"
+                            }
+                            $token = New-Session -Username $localUser.username -Role $localUser.role -DisplayName $localUser.displayName
+                            Write-SecurityLog -LogsDir $logsDir -Message "LOGIN OK usuario='$($localUser.username)' rol='$($localUser.role)' desde $clientAddress"
+                            Write-JsonResponse -Response $response -StatusCode 200 -Body ([pscustomobject]@{
+                                token       = $token
+                                username    = $localUser.username
+                                role        = $localUser.role
+                                displayName = $localUser.displayName
+                            })
+                        }
+                    }
+                }
+            }
+            elseif ($method -eq 'POST' -and $path -eq '/api/logout') {
+                Remove-Session -Token (Get-BearerToken -Request $request)
+                Write-JsonResponse -Response $response -StatusCode 200 -Body ([pscustomobject]@{ ok = $true })
+            }
+            elseif ($method -eq 'GET' -and $path -eq '/api/me') {
+                Write-JsonResponse -Response $response -StatusCode 200 -Body ([pscustomobject]@{
+                    username    = $session.username
+                    role        = $session.role
+                    displayName = $session.displayName
+                    canManageUsers = Test-RoleCanManageUsers -Role $session.role
+                })
+            }
+            elseif ($method -eq 'GET' -and $path -eq '/api/users') {
+                if (-not (Test-RoleCanManageUsers -Role $session.role)) {
+                    Write-JsonResponse -Response $response -StatusCode 403 -Body ([pscustomobject]@{ error = 'No tenés permiso para administrar usuarios.' })
+                } else {
+                    Write-JsonResponse -Response $response -StatusCode 200 -Body (@(Get-SecurityUsers -RootDir $scriptRoot))
+                }
+            }
+            elseif ($method -eq 'POST' -and $path -eq '/api/users') {
+                if (-not (Test-RoleCanManageUsers -Role $session.role)) {
+                    Write-JsonResponse -Response $response -StatusCode 403 -Body ([pscustomobject]@{ error = 'No tenés permiso para administrar usuarios.' })
+                } else {
+                    $bodyText = Read-RequestBody -Request $request
+                    $incoming = $bodyText | ConvertFrom-Json
+                    $targetUsername = [string]$incoming.username
+                    $targetRole = [string]$incoming.role
+                    $targetEnabled = [bool]$incoming.enabled
+
+                    if ([string]::IsNullOrWhiteSpace($targetUsername)) {
+                        Write-JsonResponse -Response $response -StatusCode 400 -Body ([pscustomobject]@{ error = 'Falta el nombre de usuario.' })
+                    } elseif ($targetRole -notin (Get-ValidRoles)) {
+                        Write-JsonResponse -Response $response -StatusCode 400 -Body ([pscustomobject]@{ error = "Rol inválido. Roles válidos: $((Get-ValidRoles) -join ', ')." })
+                    } elseif (-not $targetEnabled -and (Test-IsLastEnabledAdmin -RootDir $scriptRoot -Username $targetUsername)) {
+                        Write-JsonResponse -Response $response -StatusCode 400 -Body ([pscustomobject]@{ error = 'No se puede deshabilitar al último administrador habilitado.' })
+                    } elseif ($targetRole -ne 'admin' -and (Test-IsLastEnabledAdmin -RootDir $scriptRoot -Username $targetUsername)) {
+                        Write-JsonResponse -Response $response -StatusCode 400 -Body ([pscustomobject]@{ error = 'No se puede sacarle el rol de administrador al último administrador habilitado.' })
+                    } else {
+                        Add-OrUpdateSecurityUser -RootDir $scriptRoot -Username $targetUsername -Role $targetRole -Enabled $targetEnabled -DisplayName ([string]$incoming.displayName)
+                        Write-SecurityLog -LogsDir $logsDir -Message "USUARIO '$targetUsername' (rol='$targetRole', habilitado=$targetEnabled) dado de alta/editado por '$($session.username)'"
+                        Write-JsonResponse -Response $response -StatusCode 200 -Body ([pscustomobject]@{ ok = $true })
+                    }
+                }
+            }
+            elseif ($method -eq 'DELETE' -and $path -eq '/api/users') {
+                if (-not (Test-RoleCanManageUsers -Role $session.role)) {
+                    Write-JsonResponse -Response $response -StatusCode 403 -Body ([pscustomobject]@{ error = 'No tenés permiso para administrar usuarios.' })
+                } else {
+                    $targetUsername = $request.QueryString['username']
+                    if (Test-IsLastEnabledAdmin -RootDir $scriptRoot -Username $targetUsername) {
+                        Write-JsonResponse -Response $response -StatusCode 400 -Body ([pscustomobject]@{ error = 'No se puede eliminar al último administrador habilitado.' })
+                    } else {
+                        Remove-SecurityUser -RootDir $scriptRoot -Username $targetUsername
+                        Write-SecurityLog -LogsDir $logsDir -Message "USUARIO '$targetUsername' eliminado por '$($session.username)'"
+                        Write-JsonResponse -Response $response -StatusCode 200 -Body ([pscustomobject]@{ ok = $true })
+                    }
+                }
+            }
+            elseif ($method -eq 'GET' -and $path -eq '/api/security-config') {
+                if (-not (Test-RoleCanManageUsers -Role $session.role)) {
+                    Write-JsonResponse -Response $response -StatusCode 403 -Body ([pscustomobject]@{ error = 'No tenés permiso para administrar usuarios.' })
+                } else {
+                    $security = Get-Security -RootDir $scriptRoot
+                    Write-JsonResponse -Response $response -StatusCode 200 -Body ([pscustomobject]@{ ad = $security.ad })
+                }
+            }
+            elseif ($method -eq 'POST' -and $path -eq '/api/security-config') {
+                if (-not (Test-RoleCanManageUsers -Role $session.role)) {
+                    Write-JsonResponse -Response $response -StatusCode 403 -Body ([pscustomobject]@{ error = 'No tenés permiso para administrar usuarios.' })
+                } else {
+                    $bodyText = Read-RequestBody -Request $request
+                    $incoming = $bodyText | ConvertFrom-Json
+                    $security = Get-Security -RootDir $scriptRoot
+                    $security.ad = [pscustomobject]@{
+                        server = [string]$incoming.server
+                        port   = [int]$incoming.port
+                        useSsl = [bool]$incoming.useSsl
+                        domain = [string]$incoming.domain
+                    }
+                    Save-Security -RootDir $scriptRoot -Security $security
+                    Write-SecurityLog -LogsDir $logsDir -Message "CONFIG AD actualizada por '$($session.username)' (server='$($security.ad.server)', domain='$($security.ad.domain)')"
+                    Write-JsonResponse -Response $response -StatusCode 200 -Body ([pscustomobject]@{ ok = $true })
+                }
+            }
+            elseif ($method -eq 'GET' -and $path -eq '/api/profiles') {
                 $profiles = @(Get-Profiles -RootDir $scriptRoot)
                 $masked = @($profiles | ForEach-Object { Get-MaskedProfile -Profile $_ })
                 Write-JsonResponse -Response $response -StatusCode 200 -Body $masked
@@ -198,6 +377,9 @@ try {
                     Write-JsonResponse -Response $response -StatusCode 400 -Body ([pscustomobject]@{ error = "Perfil '$($payload.profileName)' no encontrado." })
                 } elseif ($null -eq $selectedFlow) {
                     Write-JsonResponse -Response $response -StatusCode 400 -Body ([pscustomobject]@{ error = "Flow '$($payload.flowName)' no encontrado." })
+                } elseif (-not (Test-RoleCanRunFlow -Role $session.role -FlowName $selectedFlow.name)) {
+                    Write-SecurityLog -LogsDir $logsDir -Message "EJECUCIÓN DENEGADA usuario='$($session.username)' rol='$($session.role)' flow='$($selectedFlow.name)' (rol sin permiso para ejecutar)"
+                    Write-JsonResponse -Response $response -StatusCode 403 -Body ([pscustomobject]@{ error = "Tu rol ('$($session.role)') no tiene permiso para ejecutar flows." })
                 } else {
                     $inputValues = @{}
                     if ($payload.inputs) {
