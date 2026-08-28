@@ -317,6 +317,54 @@ function isRecuperaCuentasSqlFilesFlow(flow) {
   return !!flow && flow.name === 'Recupera cuentas (SQL) Files';
 }
 
+// Acoplado a este flow puntual: no tiene ningún step SQL propio (a
+// diferencia de la primera versión) — la búsqueda de cuentas se hace UNA
+// sola vez para todo el archivo, antes del loop de filas (ver
+// fetchAccountsByCuit / runFlowFromCsv), en vez de una consulta por fila.
+function isPlazoFijoCocosFilesSqlFlow(flow) {
+  return !!flow && flow.name === 'Plazo Fijo Cocos Files (SQL)';
+}
+
+// Junta los CUIT únicos de todas las filas (primera columna) y hace UNA
+// sola consulta a Sybase para todos (reusando el flow "Recupera cuentas
+// (SQL)", que ya soporta una lista de nrodoc separados por coma), en vez
+// de una consulta por fila. Devuelve un Map cuit -> { cuecodSistema5,
+// cuecodSistema4 } (cuecodSistema4 es 'null' en texto, no ausente, para
+// que el step "Alta de Plazo Fijo" lo trate igual que un valor no
+// encontrado vía omitIfNull). Un cuit sin ninguna cuenta simplemente no
+// aparece en el Map.
+async function fetchAccountsByCuit(rows) {
+  const cuits = new Set();
+  for (const row of rows) {
+    const cuit = (row[0] || '').trim();
+    if (!cuit) continue;
+    if (!/^\d+$/.test(cuit)) {
+      throw new Error(`El CUIT "${cuit}" tiene caracteres no numéricos — no se puede armar la consulta a Sybase.`);
+    }
+    cuits.add(cuit);
+  }
+
+  const accountsByCuit = new Map();
+  if (cuits.size === 0) return accountsByCuit;
+
+  const entries = await runFlowByName('Recupera cuentas (SQL)', { nrodoc: Array.from(cuits).join(',') });
+  const lastEntry = entries[entries.length - 1];
+  if (!lastEntry || lastEntry.status !== 'Success' || !lastEntry.responseSummary) {
+    throw new Error('No se pudo buscar las cuentas en Sybase para los CUIT del archivo: ' + (lastEntry ? lastEntry.errorMessage : 'sin respuesta'));
+  }
+
+  const parsed = JSON.parse(lastEntry.responseSummary);
+  const sqlRows = Array.isArray(parsed.rows) ? parsed.rows : [];
+  for (const sqlRow of sqlRows) {
+    const cuit = String(sqlRow.nrodoc);
+    if (!accountsByCuit.has(cuit)) accountsByCuit.set(cuit, {});
+    const entry = accountsByCuit.get(cuit);
+    if (sqlRow.sistcod === 5) entry.cuecodSistema5 = sqlRow.cuecod == null ? '' : String(sqlRow.cuecod);
+    else if (sqlRow.sistcod === 4) entry.cuecodSistema4 = sqlRow.cuecod == null ? '' : String(sqlRow.cuecod);
+  }
+  return accountsByCuit;
+}
+
 function hideSqlResult() {
   const el = document.getElementById('sqlResultPanel');
   el.style.display = 'none';
@@ -404,13 +452,13 @@ function renderLog(entries) {
   }
 }
 
-async function runOnce(inputs) {
+async function runFlowByName(flowName, inputs) {
   const res = await fetch('/api/run', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({
       profileName: document.getElementById('profileSelect').value,
-      flowName: state.selectedFlow.name,
+      flowName,
       inputs,
     }),
   });
@@ -422,6 +470,10 @@ async function runOnce(inputs) {
   }
 
   return Array.isArray(data) ? data : [data];
+}
+
+async function runOnce(inputs) {
+  return runFlowByName(state.selectedFlow.name, inputs);
 }
 
 async function runFlow() {
@@ -493,6 +545,22 @@ async function runFlowFromCsv() {
       return;
     }
 
+    // Para "Plazo Fijo Cocos Files (SQL)": UNA sola consulta a Sybase con
+    // todos los CUIT del archivo, antes de procesar ninguna fila — en vez
+    // de una consulta por fila (o por CUIT repetido). Si esto falla, se
+    // aborta todo el archivo: sin las cuentas no se puede procesar ninguna
+    // fila de forma segura.
+    let accountsByCuit = null;
+    if (isPlazoFijoCocosFilesSqlFlow(flow)) {
+      progressEl.textContent = 'Buscando cuentas en Sybase para todos los CUIT del archivo...';
+      try {
+        accountsByCuit = await fetchAccountsByCuit(rows);
+      } catch (err) {
+        alert('Error buscando las cuentas en Sybase: ' + err.message);
+        return;
+      }
+    }
+
     const startedAt = Date.now();
 
     for (let i = 0; i < rows.length; i++) {
@@ -531,10 +599,27 @@ async function runFlowFromCsv() {
           inputs[inputDef.variableName] = row[idx];
         });
 
-        try {
-          rowEntries = await runOnce(inputs);
-          stepEntries = rowEntries;
-        } catch (err) {
+        // Cuentas ya resueltas por fetchAccountsByCuit (una sola consulta
+        // para todo el archivo, antes del loop) — cuecodSistema5 (Caja de
+        // Ahorro) es obligatoria: si no se encontró, la fila queda en error
+        // sin llamar a ningún endpoint del banco (mismo criterio de
+        // seguridad que antes tenía el step SQL con requireVariables, pero
+        // ahora resuelto acá porque el flow ya no tiene ese step).
+        // cuecodSistema4 (Plazo Fijo) es opcional: si no se encontró, se
+        // manda 'null' (texto) para que el step 3 lo omita vía omitIfNull.
+        let accountLookupError = null;
+        if (isPlazoFijoCocosFilesSqlFlow(flow)) {
+          const cuit = (row[0] || '').trim();
+          const accounts = accountsByCuit.get(cuit);
+          if (!accounts || !accounts.cuecodSistema5) {
+            accountLookupError = `No se encontró cuenta de Caja de Ahorro (código de sistema 5) en Sybase para el CUIT ${cuit}.`;
+          } else {
+            inputs.cuecodSistema5 = accounts.cuecodSistema5;
+            inputs.cuecodSistema4 = accounts.cuecodSistema4 || 'null';
+          }
+        }
+
+        if (accountLookupError) {
           rowEntries = [
             {
               name: `Fila ${rowNumber}`,
@@ -543,9 +628,26 @@ async function runFlowFromCsv() {
               responseSummary: null,
               httpStatusCode: null,
               durationMs: 0,
-              errorMessage: err.message,
+              errorMessage: accountLookupError,
             },
           ];
+        } else {
+          try {
+            rowEntries = await runOnce(inputs);
+            stepEntries = rowEntries;
+          } catch (err) {
+            rowEntries = [
+              {
+                name: `Fila ${rowNumber}`,
+                status: 'Error',
+                requestSummary: null,
+                responseSummary: null,
+                httpStatusCode: null,
+                durationMs: 0,
+                errorMessage: err.message,
+              },
+            ];
+          }
         }
       }
 

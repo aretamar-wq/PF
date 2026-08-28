@@ -1,6 +1,6 @@
 {
   "name": "Plazo Fijo Cocos Files (SQL)",
-  "description": "Como 'Plazo Fijo Cocos Files', pero busca las cuentas (Caja de Ahorro y Plazo Fijo) automáticamente en Sybase en vez de necesitar el archivo ya enriquecido con 'Recupera cuentas (SQL) Files': encadena 4 pasos por fila — 0. busca en Sybase la cuecod de sistema 5 y 4 para el cuit, 1. débito en Cuenta Corriente, 2. crédito en Caja de Ahorro, 3. alta de Plazo Fijo. El CSV no lleva encabezado; 5 columnas: cuit, importe, plazo, numeroComprobante, idMensaje (mismo formato de entrada que 'Recupera cuentas (SQL) Files'). Si no se encuentra cuecodSistema5 (Caja de Ahorro, adonde va la plata) el paso 0 falla explícitamente (requireVariables) antes de ejecutar cualquier otro paso — nunca se debita de Cuenta Corriente sin saber a qué cuenta acreditar. Si no se encuentra cuecodSistema4 (cuenta administrativa de Plazo Fijo, campo opcional para el banco), no frena el flow: el alta de Plazo Fijo se manda igual pero directamente sin el campo codigoCuenta (omitIfNull) en vez de con un valor vacío.",
+  "description": "Como 'Plazo Fijo Cocos Files', pero busca las cuentas (Caja de Ahorro y Plazo Fijo) automáticamente en Sybase en vez de necesitar el archivo ya enriquecido con 'Recupera cuentas (SQL) Files': 3 pasos HTTP por fila — 1. débito en Cuenta Corriente, 2. crédito en Caja de Ahorro, 3. alta de Plazo Fijo. El CSV no lleva encabezado; 5 columnas: cuit, importe, plazo, numeroComprobante, idMensaje (mismo formato de entrada que 'Recupera cuentas (SQL) Files'). A diferencia de la primera versión de este flow, la búsqueda de cuentas en Sybase NO es un step del flow (no se repite una consulta por fila): la UI hace UNA sola consulta con todos los CUIT distintos del archivo (reusando el flow 'Recupera cuentas (SQL)') antes de procesar ninguna fila, y le pasa a cada fila cuecodSistema5/cuecodSistema4 ya resueltos como inputs extra (ver 'Flow \"Plazo Fijo Cocos Files (SQL)\"' en el README). Si no se encontró cuecodSistema5 (Caja de Ahorro, adonde va la plata) para el cuit de una fila, esa fila queda en error sin llegar a llamar a ningún endpoint — nunca se debita de Cuenta Corriente sin saber a qué cuenta acreditar. Si no se encontró cuecodSistema4 (cuenta administrativa de Plazo Fijo, campo opcional para el banco), esa fila sigue igual: el alta de Plazo Fijo se manda sin el campo codigoCuenta (omitIfNull) en vez de con un valor vacío.",
   "inputMode": "csv",
   "inputs": [
     { "variableName": "cuit", "label": "CUIT" },
@@ -10,16 +10,6 @@
     { "variableName": "idMensaje", "label": "IdMensaje" }
   ],
   "steps": [
-    {
-      "name": "0. Buscar cuentas (SQL)",
-      "type": "sql",
-      "query": "SELECT\n  CAST(MIN(CASE WHEN a.sistcod = 5 THEN a.cuecod END) AS VARCHAR(20)) AS cuecodSistema5,\n  COALESCE(CAST(MIN(CASE WHEN a.sistcod = 4 THEN a.cuecod END) AS VARCHAR(20)), 'null') AS cuecodSistema4\nFROM tcl_VinculoCli_Cue a\n\tJOIN tgl_cuentas c ON  a.paiscod = c.paiscod AND a.bcocod = c.bcocod AND a.succod = c.succod AND a.sistcod = c.sistcod AND a.moncod = c.moncod AND a.cuecod = c.cuecod\n\tWHERE a.paiscod = 54 AND a.bcocod = 312 AND c.sistcod IN (5,4) and c.moncod = 0 AND a.cliclivincod IN (1,2,3) AND c.estctacod IN (1,2) and a.nrodoc IN ({{cuit}})",
-      "extractVariables": {
-        "cuecodSistema5": "rows[0].cuecodSistema5",
-        "cuecodSistema4": "rows[0].cuecodSistema4"
-      },
-      "requireVariables": ["cuecodSistema5"]
-    },
     {
       "name": "1. Débito en Cuenta Corriente",
       "method": "POST",

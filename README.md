@@ -553,44 +553,46 @@ nada (`cuecodSistema5` = código de cuenta de Caja de Ahorro,
 
 ### Flow "Plazo Fijo Cocos Files (SQL)"
 
-`Flows/plazo-fijo-cocos-files-sql.json` encadena en un solo flow lo que
-"Recupera cuentas (SQL) Files" + "Plazo Fijo Cocos Files" hacían en dos
-pasos manuales (descargar el archivo enriquecido y volver a subirlo): por
-cada fila del CSV de entrada (`cuit, importe, plazo, numeroComprobante,
-idMensaje` — mismo formato que "Recupera cuentas (SQL) Files", sin las
-columnas de cuenta) corre 4 steps —
+`Flows/plazo-fijo-cocos-files-sql.json` hace lo que "Recupera cuentas (SQL)
+Files" + "Plazo Fijo Cocos Files" hacían en dos pasos manuales (descargar
+el archivo enriquecido y volver a subirlo), pero en una sola corrida. El
+CSV de entrada tiene 5 columnas, sin encabezado: `cuit, importe, plazo,
+numeroComprobante, idMensaje` (mismo formato que "Recupera cuentas (SQL)
+Files", sin las columnas de cuenta).
 
-0. Busca en Sybase `cuecodSistema5`/`cuecodSistema4` para ese `cuit` (la
-   consulta devuelve **una sola fila** con las dos columnas ya separadas —
-   a propósito, no dos filas por sistema como "Recupera cuentas (SQL)
-   Files": así la extracción por posición fija (`rows[0].cuecodSistema5`)
-   es segura aunque falte una de las dos cuentas, en vez de depender de en
-   qué posición cae cada sistema).
-1. Débito en Cuenta Corriente.
-2. Crédito en Caja de Ahorro (con `cuecodSistema5`).
-3. Alta de Plazo Fijo (con `cuecodSistema4` y `cuit`).
+**El flow en sí solo tiene 3 steps HTTP** (débito en Cuenta Corriente,
+crédito en Caja de Ahorro, alta de Plazo Fijo) — **no** tiene ningún step
+SQL. La búsqueda de cuentas en Sybase no se hace por fila: la UI
+(`wwwroot/app.js`, función `fetchAccountsByCuit`) junta los CUIT **únicos**
+de todo el archivo antes de procesar ninguna fila y hace **una sola**
+consulta a Sybase para todos juntos (reusando el flow "Recupera cuentas
+(SQL)", que ya soporta una lista de `nrodoc` separados por coma) — en vez
+de una consulta por fila, o incluso una por cada CUIT repetido. El
+resultado se guarda en un `Map` en memoria (`cuit -> {cuecodSistema5,
+cuecodSistema4}`) y, al procesar cada fila, esos dos valores se agregan
+como inputs extra (`cuecodSistema5`/`cuecodSistema4`) además de las 5
+columnas del CSV — el motor no exige que un input declarado en `flow.inputs`
+sea la única fuente de variables, así que esto funciona sin declararlos ahí
+(si estuvieran en `inputs`, la UI los pediría como columnas del CSV, que ya
+no lo son).
 
-El step 0 usa `requireVariables: ["cuecodSistema5"]` — **solo** para la
-cuenta de Caja de Ahorro, adonde va la plata: si no se encuentra, el step
-falla ahí mismo, **antes** de que se ejecute el débito, para no debitar de
-Cuenta Corriente sin saber a qué cuenta acreditar. `cuecodSistema4` (la
-cuenta administrativa de Plazo Fijo) es un campo opcional para el banco: si
-no se encuentra, no frena nada, y el alta de Plazo Fijo se manda igual pero
-**sin el campo `codigoCuenta`** (el banco espera que directamente no
-aparezca en el JSON, no que vaya vacío o en `null`).
+Si no se encontró `cuecodSistema5` (Caja de Ahorro, adonde va la plata)
+para el CUIT de una fila, esa fila queda directamente en error **sin
+llamar a ningún endpoint del banco** — nunca se debita de Cuenta Corriente
+sin saber a qué cuenta acreditar. Si no se encontró `cuecodSistema4`
+(cuenta administrativa de Plazo Fijo, campo opcional para el banco), la
+fila sigue igual, pasando el texto literal `null` para esa variable — el
+alta de Plazo Fijo se arma con `"codigoCuenta": null` (JSON válido) y el
+step usa `"omitIfNull": ["codigoCuenta"]` (nuevo campo opcional de un step
+HTTP, en `modules/FlowEngine.psm1`) para borrar esa clave del body antes de
+mandarlo, en vez de mandarla vacía o en `null` — el banco espera que
+directamente no aparezca. Con cuenta encontrada, `codigoCuenta` sigue
+yendo como número sin comillas (`"codigoCuenta": 2104`), igual que en
+"Plazo Fijo Cocos"/"Plazo Fijo Cocos Files".
 
-Esto se resuelve con `omitIfNull` (nuevo campo opcional de un step HTTP,
-en `modules/FlowEngine.psm1`): la consulta trae `cuecodSistema4` con
-`COALESCE(..., 'null')`, así que cuando no se encuentra queda como el
-literal JSON `null` (`"codigoCuenta": null` — JSON válido, a diferencia de
-dejar `{{cuecodSistema4}}` sin reemplazar) en vez de un número
-(`"codigoCuenta": 2104`) cuando sí se encuentra. El step declara
-`"omitIfNull": ["codigoCuenta"]`: después de armar el body con
-`Expand-Template` como siempre, si `bodyContentType` es JSON, se parsea el
-resultado y se borra por completo cualquier campo de esa lista cuyo valor
-haya quedado en `null` — recién ahí se manda. `codigoCuenta` sigue yendo
-como número sin comillas cuando sí hay cuenta, igual que en "Plazo Fijo
-Cocos"/"Plazo Fijo Cocos Files" — no cambió el formato para ese caso.
+Si algún valor de la primera columna no es puramente numérico, se aborta
+el archivo entero antes de mandar ninguna consulta (defensa contra
+inyección SQL al armar la lista de CUIT para el `IN (...)`).
 
 ### Panel de resultado de un step SQL
 
