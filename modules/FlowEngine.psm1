@@ -413,10 +413,11 @@ function Invoke-Flow {
     # Un input del usuario con el mismo nombre pisa a ambos.
     $now = Get-Date
     $variables = @{
-        nowDate     = $now.ToString('yyyy-MM-dd')
-        nowDateTime = $now.ToString('yyyy-MM-dd HH:mm:ss')
-        nowTime     = $now.ToString('HH:mm:ss')
-        nowCompact  = $now.ToString('yyyyMMddHHmm')
+        nowDate           = $now.ToString('yyyy-MM-dd')
+        nowDateTime       = $now.ToString('yyyy-MM-dd HH:mm:ss')
+        nowTime           = $now.ToString('HH:mm:ss')
+        nowCompact        = $now.ToString('yyyyMMddHHmm')
+        idMensajeGenerado = 'PFC' + $now.ToString('yyyyMMddHHmmss')
     }
     $parametriaVariables = Get-ParametriaVariables -Parametria $Parametria
     foreach ($key in $parametriaVariables.Keys) {

@@ -310,6 +310,26 @@ function isSqlFlow(flow) {
   return !!flow && Array.isArray(flow.steps) && flow.steps.some((step) => step.type === 'sql');
 }
 
+// Mismo formato que modules/FlowEngine.psm1 genera para {{idMensajeGenerado}}
+// (PFC + yyyyMMddHHmmss). Se genera acá (no solo en el servidor) y se manda
+// como input por fila para que "Plazo Fijo Cocos Files"/"Plazo Fijo Cocos
+// Files (SQL)" lo usen (un input del usuario pisa la variable de sistema del
+// mismo nombre) — así el cliente sabe el valor exacto que se usó en cada
+// fila, para poder agregarlo al final de "Descargar detalle de Plazos
+// Fijos..." (el servidor no lo devuelve en la respuesta).
+function generateIdMensaje() {
+  const now = new Date();
+  const pad = (n) => String(n).padStart(2, '0');
+  const stamp =
+    now.getFullYear().toString() +
+    pad(now.getMonth() + 1) +
+    pad(now.getDate()) +
+    pad(now.getHours()) +
+    pad(now.getMinutes()) +
+    pad(now.getSeconds());
+  return `PFC${stamp}`;
+}
+
 // Acoplado a este flow puntual: sabemos que su respuesta SQL trae
 // {rows: [{sistcod, cuecod}, ...]}, y que arma un archivo de salida
 // "fila original + cuecodSistema5 + cuecodSistema4" (ver runFlowFromCsv).
@@ -578,6 +598,7 @@ async function runFlowFromCsv() {
       progressEl.textContent = `Procesando fila ${rowNumber} de ${rows.length}...${etaText}`;
 
       const row = rows[i];
+      const rowIdMensaje = generateIdMensaje();
       let rowEntries;
       let stepEntries = null; // solo se llena con la respuesta real de /api/run, alineada 1:1 con flow.steps
 
@@ -598,6 +619,7 @@ async function runFlowFromCsv() {
         flow.inputs.forEach((inputDef, idx) => {
           inputs[inputDef.variableName] = row[idx];
         });
+        inputs.idMensajeGenerado = rowIdMensaje;
 
         // Cuentas ya resueltas por fetchAccountsByCuit (una sola consulta
         // para todo el archivo, antes del loop) — cuecodSistema5 (Caja de
@@ -693,6 +715,7 @@ async function runFlowFromCsv() {
                 otros: otros.length > 0
                   ? otros.map((item) => `función ${item.funcion}: ${item.monto} (${item.accesorio})`).join(' | ')
                   : '',
+                idMensaje: rowIdMensaje,
               });
             }
           } catch (err) {
@@ -777,7 +800,7 @@ function csvEscape(value) {
 function downloadPfDetail() {
   if (state.pfDetailRows.length === 0) return;
 
-  const headers = ['fila', 'operacion', 'vencimiento', 'tem', 'tna', 'importeNeto', 'montoCapital', 'montoInteres', 'otros'];
+  const headers = ['fila', 'operacion', 'vencimiento', 'tem', 'tna', 'importeNeto', 'montoCapital', 'montoInteres', 'otros', 'idMensaje'];
   const lines = [headers.join(',')];
   for (const row of state.pfDetailRows) {
     lines.push(headers.map((h) => csvEscape(row[h])).join(','));

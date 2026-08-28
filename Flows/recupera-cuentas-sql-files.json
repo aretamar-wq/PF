@@ -1,13 +1,12 @@
 {
   "name": "Recupera cuentas (SQL) Files",
-  "description": "Por cada fila del CSV (sin encabezado, columnas: cuit, importe, plazo, numeroComprobante, idMensaje), busca en Sybase la cuecod más chica de código de sistema 5 (Caja de Ahorro) y 4 (Plazo Fijo) para ese cuit (mismo criterio que 'Recupera cuentas (SQL)': moneda 0, estado de cuenta 1/2). El botón 'Descargar archivo con cuentas agregadas...' arma un CSV con la fila original de cada CUIT procesado + 2 columnas al final: cuecodSistema5, cuecodSistema4 (vacías si no se encontró cuenta para ese sistema en esa fila).",
+  "description": "Por cada fila del CSV (sin encabezado, columnas: cuit, importe, plazo, numeroComprobante), busca en Sybase la cuecod más chica de código de sistema 5 (Caja de Ahorro) y 4 (Plazo Fijo) para ese cuit (mismo criterio que 'Recupera cuentas (SQL)': moneda 0, estado de cuenta 1/2). El botón 'Descargar archivo con cuentas agregadas...' arma un CSV con la fila original de cada CUIT procesado + 2 columnas al final: cuecodSistema5, cuecodSistema4 (vacías si no se encontró cuenta para ese sistema en esa fila).",
   "inputMode": "csv",
   "inputs": [
     { "variableName": "cuit", "label": "CUIT" },
     { "variableName": "importe", "label": "Importe" },
     { "variableName": "plazo", "label": "Plazo" },
-    { "variableName": "numeroComprobante", "label": "Número de comprobante" },
-    { "variableName": "idMensaje", "label": "IdMensaje" }
+    { "variableName": "numeroComprobante", "label": "Número de comprobante" }
   ],
   "steps": [
     {

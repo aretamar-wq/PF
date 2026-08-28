@@ -443,12 +443,15 @@ vez por cada fila (ej. `Flows/plazo-fijo-cocos-files.json`, copia de
   interés) que comparten `operacion`/`vencimiento`/`tem`/`tna`/`importeNeto`
   — se unifican en una sola fila con columnas `fila` (la fila del CSV de
   origen), `operacion`, `vencimiento`, `tem`, `tna`, `importeNeto`,
-  `montoCapital`, `montoInteres` y `otros` (si algún item viene con una
+  `montoCapital`, `montoInteres`, `otros` (si algún item viene con una
   función distinta de 1 o 3, no se pierde: queda listado ahí en vez de en
-  una columna propia). Una fila del CSV de origen que falló (en cualquier
-  paso) no agrega nada a este archivo. Asume que el último step del flow es
-  el que da de alta el plazo fijo y devuelve ese formato — no es genérico
-  para cualquier otro flow CSV que se agregue en el futuro.
+  una columna propia) e `idMensaje` al final — el mismo valor generado para
+  esa fila (ver `{{idMensajeGenerado}}` en "Variables de sistema"), para
+  poder cruzar cada plazo fijo dado de alta con su `IdMensaje` real. Una
+  fila del CSV de origen que falló (en cualquier paso) no agrega nada a
+  este archivo. Asume que el último step del flow es el que da de alta el
+  plazo fijo y devuelve ese formato — no es genérico para cualquier otro
+  flow CSV que se agregue en el futuro.
 
 ### Variables de sistema (fecha/hora sin pedirlas al usuario)
 
@@ -460,12 +463,26 @@ todo flow tiene disponibles automáticamente:
 - `{{nowTime}}` — hora actual, `HH:mm:ss`.
 - `{{nowCompact}}` — fecha y hora actual sin separadores, `yyyyMMddHHmm`
   (útil para IDs de mensaje tipo `202608251243`).
+- `{{idMensajeGenerado}}` — `IdMensaje` generado automáticamente,
+  `PFC` + fecha y hora actual sin separadores con segundos,
+  `yyyyMMddHHmmss` (ej. `PFC20260828143205`). `Invoke-Flow` la recalcula en
+  cada corrida (una por fila en un flow CSV) como valor por defecto, pero
+  para los flows CSV que la usan (`Flows/plazo-fijo-cocos-files.json` y
+  `Flows/plazo-fijo-cocos-files-sql.json`) la UI (`wwwroot/app.js`,
+  `generateIdMensaje`) la genera del lado del cliente y la manda como input
+  de la fila (un input pisa la variable de sistema del mismo nombre) — así
+  el cliente conoce el valor exacto usado en cada fila y lo puede agregar a
+  "Descargar detalle de Plazos Fijos..." (el servidor no lo devuelve en la
+  respuesta). En ninguno de los dos, `idMensaje` es ya una columna del CSV
+  de entrada — antes había que tipearlo/traerlo en el archivo, ahora se
+  genera solo por fila.
 
 Útil para campos como `FechaMovimiento`/`FechaNegocio`/`FechayHoraMensaje`
 que el sistema debe completar solo, sin que el usuario los tenga que tipear
-(ver `Flows/debito-credito-cuenta-corriente.json`). `{{nowCompact}}` no lo usa
-ningún flow por ahora (`idMensaje` es manual en todos), pero queda disponible
-para el que lo necesite.
+(ver `Flows/debito-credito-cuenta-corriente.json`). En los demás flows
+(los que no son CSV batch de Plazo Fijo Cocos), `idMensaje` sigue siendo
+manual — `{{nowCompact}}`/`{{idMensajeGenerado}}` quedan disponibles para
+el que los necesite.
 
 ### Inputs con opciones fijas (selector en vez de campo de texto)
 
@@ -527,14 +544,16 @@ de que el driver ODBC infiera bien el tipo — para un identificador
 ### Flow "Recupera cuentas (SQL) Files"
 
 `Flows/recupera-cuentas-sql-files.json` es la versión CSV batch de
-"Recupera cuentas (SQL)": `inputMode: "csv"`, 5 inputs (`cuit`, `importe`,
-`plazo`, `numeroComprobante`, `idMensaje`) que tienen que coincidir con las
-5 columnas del CSV de entrada, sin encabezado. Por cada fila corre la misma
-consulta (agrupada por `sistcod`, `MIN(cuecod)`) filtrando por ese `cuit`.
+"Recupera cuentas (SQL)": `inputMode: "csv"`, 4 inputs (`cuit`, `importe`,
+`plazo`, `numeroComprobante`) que tienen que coincidir con las 4 columnas
+del CSV de entrada, sin encabezado (`idMensaje` no es columna acá: esta
+consulta SQL nunca la usó, era solo un pasamano). Por cada fila corre la
+misma consulta (agrupada por `sistcod`, `MIN(cuecod)`) filtrando por ese
+`cuit`.
 
 A diferencia de otros flows CSV, además del resumen ok/error por paso trae
 un botón **"Descargar archivo con cuentas agregadas..."**: arma un `.csv`
-con **la fila original de cada fila procesada** (las 5 columnas de entrada,
+con **la fila original de cada fila procesada** (las 4 columnas de entrada,
 tal cual estaban) más 2 columnas al final — `cuecodSistema5` y
 `cuecodSistema4` — con la cuenta encontrada para cada sistema (vacío si no
 se encontró ninguna para ese sistema en esa fila). A diferencia de
@@ -543,22 +562,25 @@ plazo fijo dado de alta), acá se preserva 1:1 la fila de entrada — incluida
 una fila cuya consulta falló, con las dos columnas nuevas en blanco — para
 no perder la correspondencia con el archivo original.
 
-El archivo de salida (`cuit, importe, plazo, numeroComprobante, idMensaje,
+El archivo de salida (`cuit, importe, plazo, numeroComprobante,
 cuecodSistema5, cuecodSistema4`, **sin fila de encabezado** — a propósito,
 para poder subirlo tal cual) tiene **el mismo orden de columnas** que
 espera `Flows/plazo-fijo-cocos-files.json` como entrada — se puede
 descargar acá y subir directo en "Plazo Fijo Cocos Files" sin reordenar
 nada (`cuecodSistema5` = código de cuenta de Caja de Ahorro,
-`cuecodSistema4` = código de cuenta de Plazo Fijo).
+`cuecodSistema4` = código de cuenta de Plazo Fijo). `idMensaje` no viaja en
+este archivo: "Plazo Fijo Cocos Files" lo genera solo por fila
+(`{{idMensajeGenerado}}`, ver "Variables de sistema").
 
 ### Flow "Plazo Fijo Cocos Files (SQL)"
 
 `Flows/plazo-fijo-cocos-files-sql.json` hace lo que "Recupera cuentas (SQL)
 Files" + "Plazo Fijo Cocos Files" hacían en dos pasos manuales (descargar
 el archivo enriquecido y volver a subirlo), pero en una sola corrida. El
-CSV de entrada tiene 5 columnas, sin encabezado: `cuit, importe, plazo,
-numeroComprobante, idMensaje` (mismo formato que "Recupera cuentas (SQL)
-Files", sin las columnas de cuenta).
+CSV de entrada tiene 4 columnas, sin encabezado: `cuit, importe, plazo,
+numeroComprobante` (mismo formato que "Recupera cuentas (SQL) Files", sin
+las columnas de cuenta). `idMensaje` no es columna del CSV: se genera solo
+por fila (`{{idMensajeGenerado}}`, ver "Variables de sistema").
 
 **El flow en sí solo tiene 3 steps HTTP** (débito en Cuenta Corriente,
 crédito en Caja de Ahorro, alta de Plazo Fijo) — **no** tiene ningún step
@@ -570,7 +592,7 @@ consulta a Sybase para todos juntos (reusando el flow "Recupera cuentas
 de una consulta por fila, o incluso una por cada CUIT repetido. El
 resultado se guarda en un `Map` en memoria (`cuit -> {cuecodSistema5,
 cuecodSistema4}`) y, al procesar cada fila, esos dos valores se agregan
-como inputs extra (`cuecodSistema5`/`cuecodSistema4`) además de las 5
+como inputs extra (`cuecodSistema5`/`cuecodSistema4`) además de las 4
 columnas del CSV — el motor no exige que un input declarado en `flow.inputs`
 sea la única fuente de variables, así que esto funciona sin declararlos ahí
 (si estuvieran en `inputs`, la UI los pediría como columnas del CSV, que ya
