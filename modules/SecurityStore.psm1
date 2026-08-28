@@ -213,8 +213,18 @@ function Remove-SecurityUser {
 # mismo criterio que $Global:TokenCache para el token OAuth2 en FlowEngine) ----
 
 function New-SessionToken {
+    # Ojo: el método estático RandomNumberGenerator.Fill(byte[]) recién existe
+    # desde .NET 6 — en Windows PowerShell 5.1 (.NET Framework) no está, y
+    # tira "no contiene ningún método llamado 'Fill'". Create()+GetBytes() de
+    # instancia sí existe desde .NET Framework 2.0, así que funciona igual en
+    # PowerShell 5.1 y en pwsh 7.
     $bytes = [byte[]]::new(32)
-    [System.Security.Cryptography.RandomNumberGenerator]::Fill($bytes)
+    $rng = [System.Security.Cryptography.RandomNumberGenerator]::Create()
+    try {
+        $rng.GetBytes($bytes)
+    } finally {
+        $rng.Dispose()
+    }
     return -join ($bytes | ForEach-Object { $_.ToString('x2') })
 }
 
