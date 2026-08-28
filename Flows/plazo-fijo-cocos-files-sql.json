@@ -1,6 +1,6 @@
 {
   "name": "Plazo Fijo Cocos Files (SQL)",
-  "description": "Como 'Plazo Fijo Cocos Files', pero busca las cuentas (Caja de Ahorro y Plazo Fijo) automáticamente en Sybase en vez de necesitar el archivo ya enriquecido con 'Recupera cuentas (SQL) Files': encadena 4 pasos por fila — 0. busca en Sybase la cuecod de sistema 5 y 4 para el cuit, 1. débito en Cuenta Corriente, 2. crédito en Caja de Ahorro, 3. alta de Plazo Fijo. El CSV no lleva encabezado; 5 columnas: cuit, importe, plazo, numeroComprobante, idMensaje (mismo formato de entrada que 'Recupera cuentas (SQL) Files'). Si no se encuentra alguna de las 2 cuentas para un cuit, el paso 0 (búsqueda SQL) falla explícitamente (requireVariables) antes de que se ejecute cualquier otro paso de esa fila — en particular, nunca se debita de Cuenta Corriente si no se sabe a qué cuentas acreditar/dar de alta el plazo fijo.",
+  "description": "Como 'Plazo Fijo Cocos Files', pero busca las cuentas (Caja de Ahorro y Plazo Fijo) automáticamente en Sybase en vez de necesitar el archivo ya enriquecido con 'Recupera cuentas (SQL) Files': encadena 4 pasos por fila — 0. busca en Sybase la cuecod de sistema 5 y 4 para el cuit, 1. débito en Cuenta Corriente, 2. crédito en Caja de Ahorro, 3. alta de Plazo Fijo. El CSV no lleva encabezado; 5 columnas: cuit, importe, plazo, numeroComprobante, idMensaje (mismo formato de entrada que 'Recupera cuentas (SQL) Files'). Si no se encuentra cuecodSistema5 (Caja de Ahorro, adonde va la plata) el paso 0 falla explícitamente (requireVariables) antes de ejecutar cualquier otro paso — nunca se debita de Cuenta Corriente sin saber a qué cuenta acreditar. Si no se encuentra cuecodSistema4 (cuenta administrativa de Plazo Fijo), no frena el flow: el alta de Plazo Fijo se manda igual con codigoCuenta en blanco (un espacio, ' ', mismo criterio que CodigoContrasiento en Cuenta Corriente/Caja de Ahorro) y queda a criterio del banco aceptarla o rechazarla.",
   "inputMode": "csv",
   "inputs": [
     { "variableName": "cuit", "label": "CUIT" },
@@ -13,12 +13,12 @@
     {
       "name": "0. Buscar cuentas (SQL)",
       "type": "sql",
-      "query": "SELECT\n  CAST(MIN(CASE WHEN a.sistcod = 5 THEN a.cuecod END) AS VARCHAR(20)) AS cuecodSistema5,\n  CAST(MIN(CASE WHEN a.sistcod = 4 THEN a.cuecod END) AS VARCHAR(20)) AS cuecodSistema4\nFROM tcl_VinculoCli_Cue a\n\tJOIN tgl_cuentas c ON  a.paiscod = c.paiscod AND a.bcocod = c.bcocod AND a.succod = c.succod AND a.sistcod = c.sistcod AND a.moncod = c.moncod AND a.cuecod = c.cuecod\n\tWHERE a.paiscod = 54 AND a.bcocod = 312 AND c.sistcod IN (5,4) and c.moncod = 0 AND a.cliclivincod IN (1,2,3) AND c.estctacod IN (1,2) and a.nrodoc IN ({{cuit}})",
+      "query": "SELECT\n  CAST(MIN(CASE WHEN a.sistcod = 5 THEN a.cuecod END) AS VARCHAR(20)) AS cuecodSistema5,\n  COALESCE(CAST(MIN(CASE WHEN a.sistcod = 4 THEN a.cuecod END) AS VARCHAR(20)), ' ') AS cuecodSistema4\nFROM tcl_VinculoCli_Cue a\n\tJOIN tgl_cuentas c ON  a.paiscod = c.paiscod AND a.bcocod = c.bcocod AND a.succod = c.succod AND a.sistcod = c.sistcod AND a.moncod = c.moncod AND a.cuecod = c.cuecod\n\tWHERE a.paiscod = 54 AND a.bcocod = 312 AND c.sistcod IN (5,4) and c.moncod = 0 AND a.cliclivincod IN (1,2,3) AND c.estctacod IN (1,2) and a.nrodoc IN ({{cuit}})",
       "extractVariables": {
         "cuecodSistema5": "rows[0].cuecodSistema5",
         "cuecodSistema4": "rows[0].cuecodSistema4"
       },
-      "requireVariables": ["cuecodSistema5", "cuecodSistema4"]
+      "requireVariables": ["cuecodSistema5"]
     },
     {
       "name": "1. Débito en Cuenta Corriente",
@@ -43,7 +43,7 @@
       "method": "POST",
       "pathTemplate": "/api/PlazoFijoCompleto/RegistrarPlazoFijoCompleto",
       "headers": { "Accept": "application/json" },
-      "bodyTemplate": "{\n  \"codigoSucursal\": 1,\n  \"codigoMoneda\": 0,\n  \"codigoCuenta\": {{cuecodSistema4}},\n  \"codigoProducto\": {{plazoFijoCodigoProducto}},\n  \"importePactado\": {{importe}},\n  \"plazo\": {{plazo}},\n  \"codigoSistemaCuentaDebito\": 5,\n  \"codigoCuentaDebito\": {{cuecodSistema5}},\n  \"codigoSistemaAcreditacion\": 5,\n  \"codigoCuentaAcreditacion\": {{cuecodSistema5}},\n  \"codigoRetencionImpuesto\": 1,\n  \"tipoDocumentoTitular\": 8,\n  \"numeroDocumentoTitular\": {{cuit}},\n  \"tipoDocumentoTitular2\": null,\n  \"nroDocumentoTitular2\": null,\n  \"codigoVinculoVinc2\": null,\n  \"codigoMovimiento\": {{plazoFijoCodigoMovimiento}},\n  \"idPlantilla\": 2,\n  \"idMensaje\": \"{{idMensaje}}\"\n}",
+      "bodyTemplate": "{\n  \"codigoSucursal\": 1,\n  \"codigoMoneda\": 0,\n  \"codigoCuenta\": \"{{cuecodSistema4}}\",\n  \"codigoProducto\": {{plazoFijoCodigoProducto}},\n  \"importePactado\": {{importe}},\n  \"plazo\": {{plazo}},\n  \"codigoSistemaCuentaDebito\": 5,\n  \"codigoCuentaDebito\": {{cuecodSistema5}},\n  \"codigoSistemaAcreditacion\": 5,\n  \"codigoCuentaAcreditacion\": {{cuecodSistema5}},\n  \"codigoRetencionImpuesto\": 1,\n  \"tipoDocumentoTitular\": 8,\n  \"numeroDocumentoTitular\": {{cuit}},\n  \"tipoDocumentoTitular2\": null,\n  \"nroDocumentoTitular2\": null,\n  \"codigoVinculoVinc2\": null,\n  \"codigoMovimiento\": {{plazoFijoCodigoMovimiento}},\n  \"idPlantilla\": 2,\n  \"idMensaje\": \"{{idMensaje}}\"\n}",
       "extractVariables": {},
       "expectedStatusCode": 200
     }

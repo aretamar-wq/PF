@@ -559,12 +559,24 @@ columnas de cuenta) corre 4 steps —
 2. Crédito en Caja de Ahorro (con `cuecodSistema5`).
 3. Alta de Plazo Fijo (con `cuecodSistema4` y `cuit`).
 
-El step 0 usa `requireVariables: ["cuecodSistema5", "cuecodSistema4"]`: si
-no se encuentra alguna de las dos cuentas para ese `cuit`, el step falla
-ahí mismo, **antes** de que se ejecute el débito — la alternativa (dejar
-que un step posterior falle por un placeholder sin reemplazar) hubiera
-significado debitar de Cuenta Corriente igual, sin saber a qué cuenta
-acreditar ni dar de alta el plazo fijo.
+El step 0 usa `requireVariables: ["cuecodSistema5"]` — **solo** para la
+cuenta de Caja de Ahorro, adonde va la plata: si no se encuentra, el step
+falla ahí mismo, **antes** de que se ejecute el débito, para no debitar de
+Cuenta Corriente sin saber a qué cuenta acreditar. `cuecodSistema4` (la
+cuenta administrativa de Plazo Fijo) es distinta: si no se encuentra, no
+frena nada — la consulta la trae con `COALESCE(..., ' ')`, así que el alta
+de Plazo Fijo se manda igual con `"codigoCuenta": " "` (espacio literal,
+mismo criterio que `CodigoContrasiento` en Cuenta Corriente/Caja de Ahorro)
+y queda a criterio del banco aceptarla o rechazarla.
+
+**Nota:** para poder mandar ese espacio en blanco, `codigoCuenta` en el
+body de "Alta de Plazo Fijo" pasó a ir siempre entre comillas (como string,
+`"codigoCuenta": "2104"`) en vez de como número sin comillas
+(`"codigoCuenta": 2104`, que era como lo mandaban "Plazo Fijo Cocos" y
+"Plazo Fijo Cocos Files" hasta ahora) — un espacio no es un JSON válido sin
+comillas. No se pudo confirmar contra el banco real si acepta ese campo
+como string cuando sí hay cuenta (además del caso en blanco); conviene
+probarlo con un caso real antes de confiar en este flow en producción.
 
 ### Panel de resultado de un step SQL
 
