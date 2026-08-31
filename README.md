@@ -81,6 +81,7 @@ modules/
   FlowStore.psm1         Lee todos los Flows/*.json
   FlowEngine.psm1        Ejecuta un flow paso a paso, incluye el caché de token OAuth2
   SecurityStore.psm1     Login (AD) + sesiones + usuarios/roles + auditoría (ver "Módulo de seguridad")
+  ProcessedOperationsStore.psm1  Registro de operaciones ya procesadas, evita duplicados (ver "Prevención de operaciones duplicadas")
 wwwroot/
   index.html, app.js, styles.css   Front-end (vanilla JS, sin build step)
 Flows/                   *.json de flows (ver "Cómo definir un flow nuevo")
@@ -569,11 +570,12 @@ identifiquen como del mismo archivo procesado:
   agregue en el futuro.
 - **`pfouterror-<timestamp>.csv`** — una fila por cada fila del CSV de
   origen que **no** terminó de darse de alta (columnas de más/menos, cuenta
-  no encontrada en Sybase, o cualquier paso del banco en error), con la
-  fila **tal cual vino en el archivo de entrada** (mismas columnas, mismo
-  orden) más el `IdMensaje` generado para esa fila al final. **Sin
-  encabezado**, igual que el archivo de entrada — pensado para poder
-  inspeccionar o volver a subir las filas que fallaron.
+  no encontrada en Sybase, operación bloqueada por duplicada — ver más
+  abajo —, o cualquier paso del banco en error), con la fila **tal cual
+  vino en el archivo de entrada** (mismas columnas, mismo orden) más el
+  `IdMensaje` generado para esa fila al final. **Sin encabezado**, igual
+  que el archivo de entrada — pensado para poder inspeccionar o volver a
+  subir las filas que fallaron.
 
 Si no hubo ningún plazo fijo dado de alta, no se genera `pfout-...`; si no
 hubo ninguna fila fallada, no se genera `pfouterror-...`. `POST
@@ -582,6 +584,34 @@ hubo ninguna fila fallada, no se genera `pfouterror-...`. `POST
 respectivamente) antes de armar el nombre de archivo — es la única defensa
 contra path traversal en un endpoint que escribe a disco a partir de un
 valor que arma el cliente.
+
+### Prevención de operaciones duplicadas
+
+Antes de procesar ninguna fila de un CSV, la UI manda al servidor las
+`(cuit, numeroComprobante)` de **todo el archivo** en una sola consulta
+(`POST /api/check-operations`) para saber cuáles ya se procesaron con
+éxito antes — evita duplicar un débito/crédito/alta de plazo fijo real por
+subir el mismo archivo dos veces, o por repetir un comprobante en un
+archivo distinto. Si el chequeo en sí falla (error de red, servidor caído),
+se aborta el archivo entero por seguridad — no sigue de largo como si no
+hubiera duplicados.
+
+Una fila cuyo `(cuit, numeroComprobante)` ya está registrado queda
+**bloqueada directamente, sin excepción ni confirmación**: no se llama a
+ningún endpoint del banco para esa fila (se chequea antes incluso que la
+cuenta en Sybase) y termina en `pfouterror-...` con el motivo del bloqueo.
+No hay forma de "forzar" el reproceso desde la UI — si hace falta de
+verdad, hoy solo se puede editando a mano
+`logs/processed-operations.json`.
+
+El registro (`modules/ProcessedOperationsStore.psm1`,
+`logs/processed-operations.json`, no versionado) solo se llena con
+operaciones que **realmente se dieron de alta** (mismo criterio que decide
+si una fila entra a `pfout-...`) — nunca con filas que fallaron o se
+bloquearon, así que sí se pueden reintentar sin quedar frenadas para
+siempre por su propio intento fallido. El registro se guarda en un solo
+`POST /api/register-operations` al terminar de procesar todo el archivo
+(no una llamada por fila), con todas las operaciones exitosas de ese lote.
 
 ### Variables de sistema (fecha/hora sin pedirlas al usuario)
 
@@ -748,6 +778,10 @@ Es append-only (crece con cada ejecución, nunca se rota ni se limpia solo) y
 bancarios reales — números de cuenta, DNIs, importes. El header
 `Authorization` (y el header de ApiKey, si el perfil usa ese tipo de
 autenticación) se guarda como `***REDACTED***`, nunca el valor real.
+
+`logs/security.log` — ver "Auditoría" en "Módulo de seguridad" — y
+`logs/processed-operations.json` — ver "Prevención de operaciones
+duplicadas" — viven en la misma carpeta, tampoco se versionan.
 
 ## Limitaciones conocidas
 

@@ -23,6 +23,7 @@ Import-Module (Join-Path $scriptRoot 'modules\ParametriaStore.psm1') -Force
 Import-Module (Join-Path $scriptRoot 'modules\FlowStore.psm1') -Force
 Import-Module (Join-Path $scriptRoot 'modules\FlowEngine.psm1') -Force
 Import-Module (Join-Path $scriptRoot 'modules\SecurityStore.psm1') -Force
+Import-Module (Join-Path $scriptRoot 'modules\ProcessedOperationsStore.psm1') -Force
 
 $Global:TokenCache = @{}
 $Global:SecuritySessions = @{}
@@ -437,6 +438,42 @@ try {
                     Write-SecurityLog -LogsDir $logsDir -Message "ARCHIVO DE SALIDA '$fileName' guardado por '$($session.username)'"
                     Write-JsonResponse -Response $response -StatusCode 200 -Body ([pscustomobject]@{ ok = $true; fileName = $fileName })
                 }
+            }
+            elseif ($method -eq 'POST' -and $path -eq '/api/check-operations') {
+                # Antes de procesar un CSV, el cliente manda todas las (cuit,
+                # numeroComprobante) del archivo de una sola vez (no una consulta
+                # por fila) para saber cuáles ya se procesaron antes — evita
+                # duplicar una operación bancaria real por subir el mismo archivo
+                # dos veces, o por repetir un comprobante en otro archivo distinto.
+                $bodyText = Read-RequestBody -Request $request
+                $payload = $bodyText | ConvertFrom-Json
+                $operations = @()
+                if ($payload.operations) {
+                    foreach ($op in @($payload.operations)) {
+                        $operations += [pscustomobject]@{ cuit = [string]$op.cuit; numeroComprobante = [string]$op.numeroComprobante }
+                    }
+                }
+                $duplicates = @(Find-DuplicateOperations -RootDir $scriptRoot -Operations $operations)
+                Write-JsonResponse -Response $response -StatusCode 200 -Body ([pscustomobject]@{ duplicates = $duplicates })
+            }
+            elseif ($method -eq 'POST' -and $path -eq '/api/register-operations') {
+                # Se llama una sola vez al terminar de procesar el CSV, con las
+                # operaciones que realmente se dieron de alta con éxito (no las que
+                # fallaron ni las que se bloquearon por duplicadas) — así quedan
+                # registradas para bloquear un reintento futuro del mismo comprobante.
+                $bodyText = Read-RequestBody -Request $request
+                $payload = $bodyText | ConvertFrom-Json
+                $operations = @()
+                if ($payload.operations) {
+                    foreach ($op in @($payload.operations)) {
+                        $operations += [pscustomobject]@{ cuit = [string]$op.cuit; numeroComprobante = [string]$op.numeroComprobante; idMensaje = [string]$op.idMensaje }
+                    }
+                }
+                if ($operations.Count -gt 0) {
+                    Add-ProcessedOperations -RootDir $scriptRoot -Operations $operations -Username $session.username
+                    Write-SecurityLog -LogsDir $logsDir -Message "OPERACIONES REGISTRADAS: $($operations.Count) por '$($session.username)' (antiduplicado)"
+                }
+                Write-JsonResponse -Response $response -StatusCode 200 -Body ([pscustomobject]@{ ok = $true; registered = $operations.Count })
             }
             elseif ($method -eq 'GET' -and $path -eq '/api/parametria') {
                 $parametria = Get-Parametria -RootDir $scriptRoot

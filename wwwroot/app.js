@@ -5,6 +5,7 @@ const state = {
   lastLog: [],
   pfDetailRows: [],
   errorRows: [],
+  successfulOperations: [],
   token: sessionStorage.getItem('pf_token') || null,
   currentUser: null, // { username, role, displayName, canManageUsers } — se completa en loadMe()
 };
@@ -194,6 +195,7 @@ function selectFlow(name) {
   hideSqlResult();
   state.pfDetailRows = [];
   state.errorRows = [];
+  state.successfulOperations = [];
 
   if (isCsvFlow(state.selectedFlow)) {
     form.style.display = 'none';
@@ -380,6 +382,31 @@ function generateIdMensaje() {
 // fetchAccountsByCuit / runFlowFromCsv), en vez de una consulta por fila.
 function isPlazoFijoCocosFilesSqlFlow(flow) {
   return !!flow && flow.name === 'Alta de Plazo Fijos - File';
+}
+
+// Manda al servidor las (cuit, numeroComprobante) de TODAS las filas del
+// archivo en una sola consulta (evita duplicar una operación bancaria real
+// por subir el mismo archivo dos veces, o por repetir un comprobante en
+// otro archivo distinto). Devuelve un Set con "cuit|numeroComprobante" de
+// las que ya se habían procesado antes, para bloquear esas filas puntuales
+// sin llegar a llamar a ningún endpoint del banco.
+async function checkDuplicateOperations(rows) {
+  const operations = rows.map((row) => ({
+    cuit: (row[0] || '').trim(),
+    numeroComprobante: (row[4] || '').trim(),
+  }));
+
+  const res = await apiFetch('/api/check-operations', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ operations }),
+  });
+  const data = await res.json();
+  if (!res.ok) {
+    throw new Error(data.error || 'Error desconocido.');
+  }
+
+  return new Set((data.duplicates || []).map((d) => `${d.cuit}|${d.numeroComprobante}`));
 }
 
 // Junta los CUIT únicos de todas las filas (primera columna) y hace UNA
@@ -580,6 +607,7 @@ async function runFlowFromCsv() {
   state.lastLog = [];
   state.pfDetailRows = [];
   state.errorRows = [];
+  state.successfulOperations = [];
 
   // stepCounts[i] cuenta, para el paso flow.steps[i], cuántas filas lo
   // completaron con éxito ('ok') y cuántas no ('error') — ya sea porque ese
@@ -595,6 +623,22 @@ async function runFlowFromCsv() {
     if (rows.length === 0) {
       alert('El archivo CSV no tiene ninguna fila con datos.');
       return;
+    }
+
+    // Antes de tocar nada: chequear qué (cuit, numeroComprobante) del archivo
+    // ya se procesaron con éxito antes — evita duplicar una operación
+    // bancaria real por subir el mismo archivo dos veces (o repetir un
+    // comprobante en otro archivo). Si esto falla, se aborta el archivo
+    // entero (fail-safe: no seguir de largo sin haber podido chequear).
+    let duplicateOps = new Set();
+    if (isPlazoFijoCocosFilesSqlFlow(flow)) {
+      progressEl.textContent = 'Verificando operaciones ya procesadas...';
+      try {
+        duplicateOps = await checkDuplicateOperations(rows);
+      } catch (err) {
+        alert('No se pudo verificar operaciones duplicadas, se aborta el archivo por seguridad: ' + err.message);
+        return;
+      }
     }
 
     // Para "Alta de Plazo Fijos - File": UNA sola consulta a Sybase con
@@ -661,8 +705,28 @@ async function runFlowFromCsv() {
         // ahora resuelto acá porque el flow ya no tiene ese step).
         // cuecodSistema4 (Plazo Fijo) es opcional: si no se encontró, se
         // manda 'null' (texto) para que el step 3 lo omita vía omitIfNull.
-        let accountLookupError = null;
+        // Operación ya procesada antes (mismo cuit + numeroComprobante) — se
+        // bloquea sin llamar a ningún endpoint del banco, para no duplicar un
+        // débito/crédito/alta de plazo fijo real. Se chequea antes que la
+        // cuenta: si ya se hizo, no hace falta ni buscarla.
+        let duplicateError = null;
         if (isPlazoFijoCocosFilesSqlFlow(flow)) {
+          const key = `${(row[0] || '').trim()}|${(row[4] || '').trim()}`;
+          if (duplicateOps.has(key)) {
+            duplicateError = `Esta operación (CUIT ${row[0]}, comprobante ${row[4]}) ya fue procesada antes — se bloquea para evitar una operación bancaria duplicada.`;
+          }
+        }
+
+        // Cuentas ya resueltas por fetchAccountsByCuit (una sola consulta
+        // para todo el archivo, antes del loop) — cuecodSistema5 (Caja de
+        // Ahorro) es obligatoria: si no se encontró, la fila queda en error
+        // sin llamar a ningún endpoint del banco (mismo criterio de
+        // seguridad que antes tenía el step SQL con requireVariables, pero
+        // ahora resuelto acá porque el flow ya no tiene ese step).
+        // cuecodSistema4 (Plazo Fijo) es opcional: si no se encontró, se
+        // manda 'null' (texto) para que el step 3 lo omita vía omitIfNull.
+        let accountLookupError = null;
+        if (!duplicateError && isPlazoFijoCocosFilesSqlFlow(flow)) {
           const cuit = (row[0] || '').trim();
           const accounts = accountsByCuit.get(cuit);
           if (!accounts || !accounts.cuecodSistema5) {
@@ -673,7 +737,7 @@ async function runFlowFromCsv() {
           }
         }
 
-        if (accountLookupError) {
+        if (duplicateError || accountLookupError) {
           rowEntries = [
             {
               name: `Fila ${rowNumber}`,
@@ -682,7 +746,7 @@ async function runFlowFromCsv() {
               responseSummary: null,
               httpStatusCode: null,
               durationMs: 0,
-              errorMessage: accountLookupError,
+              errorMessage: duplicateError || accountLookupError,
             },
           ];
         } else {
@@ -762,6 +826,15 @@ async function runFlowFromCsv() {
                   : '',
                 idMensaje: rowIdMensaje,
               });
+              // Se registra como operación exitosa (para bloquear un futuro
+              // reintento del mismo cuit+numeroComprobante) recién acá, con
+              // el mismo criterio que decide si entra a pfDetailRows — nunca
+              // antes de haber confirmado la alta real del plazo fijo.
+              state.successfulOperations.push({
+                cuit: (row[0] || '').trim(),
+                numeroComprobante: (row[4] || '').trim(),
+                idMensaje: rowIdMensaje,
+              });
             }
           } catch (err) {
             // La respuesta no vino en el formato esperado (JSON con "output": [...]);
@@ -777,6 +850,22 @@ async function runFlowFromCsv() {
     }
 
     let doneText = `Listo: ${rows.length} fila(s) procesada(s) en ${formatDurationShort(Date.now() - startedAt)}.`;
+
+    if (state.successfulOperations.length > 0) {
+      try {
+        await apiFetch('/api/register-operations', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ operations: state.successfulOperations }),
+        });
+      } catch (err) {
+        // Si esto falla, las operaciones que sí se dieron de alta no quedan
+        // protegidas contra un reintento futuro del mismo archivo — hay que
+        // avisar, no fallar en silencio.
+        alert('Atención: no se pudieron registrar las operaciones exitosas para evitar duplicados en el futuro: ' + err.message);
+      }
+    }
+
     const savedFiles = await saveOutputFiles();
     if (savedFiles.length > 0) {
       doneText += ` Guardado en files/: ${savedFiles.join(', ')}.`;
