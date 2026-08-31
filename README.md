@@ -84,6 +84,7 @@ modules/
 wwwroot/
   index.html, app.js, styles.css   Front-end (vanilla JS, sin build step)
 Flows/                   *.json de flows (ver "Cómo definir un flow nuevo")
+files/                   Archivos de salida pfout-.../pfouterror-... (no versionado, se crea solo)
 profiles.sample.json      Plantilla de perfiles (sin secretos)
 parametria.sample.json   Plantilla de parametría (ver "Módulo de parametría")
 security.sample.json    Plantilla de seguridad (conexión AD + usuarios, ver "Módulo de seguridad")
@@ -177,9 +178,11 @@ usuarios (quién lo hizo y a quién), cambios en la configuración de AD,
 ejecuciones de flow denegadas por rol, y **cada ejecución de un flow**
 (usuario, rol, flow, perfil, y cuántos pasos terminaron ok/error) — para un
 flow CSV, una línea por fila/operación, así queda trazado quién ejecutó
-cada Plazo Fijo dado de alta. Nunca incluye los inputs de la fila ni la
-respuesta del banco (pueden traer datos bancarios reales); el detalle
-completo de cada request/response sigue en `logs/http.log`.
+cada Plazo Fijo dado de alta, y cada archivo guardado en `files/` (nombre
+del archivo y quién lo guardó, ver "Archivos de salida (`files/`)"). Nunca
+incluye los inputs de la fila ni la respuesta del banco (pueden traer datos
+bancarios reales); el detalle completo de cada request/response sigue en
+`logs/http.log`.
 
 ### Limitaciones conocidas
 
@@ -496,11 +499,12 @@ vez por cada fila (ej. `Flows/plazo-fijo-cocos-files-sql.json`). Para esto:
 ```
 
 - `"inputMode": "csv"` es lo único que cambia respecto de un flow normal —
-  hace que la UI muestre un selector de archivo en vez del formulario.
+  hace que la UI muestre una zona de archivo (con drag & drop, además del
+  selector de siempre) en vez del formulario.
 - El CSV **no lleva fila de encabezado**: la columna 1 de cada fila es el
   primer elemento de `inputs`, la columna 2 el segundo, y así — el mismo
   orden en que están declarados en `inputs`. Los valores no necesitan
-  comillas salvo que el campo tenga una coma (no soportado, ver más abajo).
+  comillas salvo que el campo tenga una coma (ver más abajo).
 - Cada fila se ejecuta como una corrida independiente del flow completo (los
   mismos pasos, en el mismo orden, con la misma lógica de "si un paso falla
   no se ejecutan los siguientes de esa fila"). El motor de ejecución
@@ -531,12 +535,25 @@ vez por cada fila (ej. `Flows/plazo-fijo-cocos-files-sql.json`). Para esto:
   columnas, o hubo un error de red antes de tener respuesta) — así el total
   ok+error de cada paso siempre coincide con la cantidad de filas procesadas
   hasta ese momento.
-- Botón **"Descargar detalle de Plazos Fijos..."**: al terminar de procesar
-  (o incluso a mitad de proceso), descarga un `.csv` con **una fila por cada
-  plazo fijo dado de alta** (no una fila por cada item que devuelve la API),
-  tomando la respuesta del **último paso** del flow (para
-  "Plazo Fijo Cocos Files (SQL)", la alta del plazo fijo) de cada fila del
-  CSV de origen que llegó a completarse con éxito. La respuesta trae un array
+- Al terminar de procesar todas las filas, la UI guarda automáticamente en
+  el servidor (carpeta `files/`, ver "Archivos de salida (`files/`)" más
+  abajo) hasta dos `.csv`: uno con el detalle de los plazos fijos dados de
+  alta y otro con las filas que fallaron.
+
+### Archivos de salida (`files/`)
+
+`wwwroot/app.js` (`saveOutputFiles`) arma, al terminar de procesar un flow
+CSV, hasta dos archivos y los manda a `POST /api/save-output`
+(`server.ps1`), que los escribe en `<carpeta de la app>/files/` (se crea
+sola si no existe; **no se versiona**, está en `.gitignore`, porque va a
+tener datos bancarios reales). Los dos comparten el mismo timestamp
+(`yyyyMMddHHmmss`, generado una sola vez al terminar el lote), para que se
+identifiquen como del mismo archivo procesado:
+
+- **`pfout-<timestamp>.csv`** — una fila por cada plazo fijo dado de alta
+  (no una fila por cada item que devuelve la API), tomando la respuesta del
+  **último paso** del flow (la alta del plazo fijo) de cada fila del CSV de
+  origen que llegó a completarse con éxito. La respuesta trae un array
   `output` con 2 items por plazo fijo (función 1 = capital, función 3 =
   interés) que comparten `operacion`/`vencimiento`/`tem`/`tna`/`importeNeto`
   — se unifican en una sola fila con columnas `fila` (la fila del CSV de
@@ -544,12 +561,26 @@ vez por cada fila (ej. `Flows/plazo-fijo-cocos-files-sql.json`). Para esto:
   `montoCapital`, `montoInteres`, `otros` (si algún item viene con una
   función distinta de 1 o 3, no se pierde: queda listado ahí en vez de en
   una columna propia) e `idMensaje` al final — el mismo valor generado para
-  esa fila (ver `{{idMensajeGenerado}}` en "Variables de sistema"), para
-  poder cruzar cada plazo fijo dado de alta con su `IdMensaje` real. Una
-  fila del CSV de origen que falló (en cualquier paso) no agrega nada a
-  este archivo. Asume que el último step del flow es el que da de alta el
-  plazo fijo y devuelve ese formato — no es genérico para cualquier otro
-  flow CSV que se agregue en el futuro.
+  esa fila (ver `{{idMensajeGenerado}}`), para poder cruzar cada plazo fijo
+  dado de alta con su `IdMensaje` real. **Con encabezado.** Asume que el
+  último step del flow es el que da de alta el plazo fijo y devuelve ese
+  formato — no es genérico para cualquier otro flow CSV que se agregue en
+  el futuro.
+- **`pfouterror-<timestamp>.csv`** — una fila por cada fila del CSV de
+  origen que **no** terminó de darse de alta (columnas de más/menos, cuenta
+  no encontrada en Sybase, o cualquier paso del banco en error), con la
+  fila **tal cual vino en el archivo de entrada** (mismas columnas, mismo
+  orden) más el `IdMensaje` generado para esa fila al final. **Sin
+  encabezado**, igual que el archivo de entrada — pensado para poder
+  inspeccionar o volver a subir las filas que fallaron.
+
+Si no hubo ningún plazo fijo dado de alta, no se genera `pfout-...`; si no
+hubo ninguna fila fallada, no se genera `pfouterror-...`. `POST
+/api/save-output` valida que `prefix` (`pfout-`/`pfouterror-`) y
+`timestamp` tengan un formato estricto (`[a-zA-Z0-9-]` y 14 dígitos,
+respectivamente) antes de armar el nombre de archivo — es la única defensa
+contra path traversal en un endpoint que escribe a disco a partir de un
+valor que arma el cliente.
 
 ### Variables de sistema (fecha/hora sin pedirlas al usuario)
 

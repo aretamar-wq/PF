@@ -29,6 +29,7 @@ $Global:SecuritySessions = @{}
 $flowsDir = Join-Path $scriptRoot 'Flows'
 $wwwRoot = Join-Path $scriptRoot 'wwwroot'
 $logsDir = Join-Path $scriptRoot 'logs'
+$filesDir = Join-Path $scriptRoot 'files'
 
 function ConvertTo-JsonArraySafe {
     param($Items, [int]$Depth = 10)
@@ -405,6 +406,36 @@ try {
                     Write-SecurityLog -LogsDir $logsDir -Message "EJECUCIÓN flow='$($selectedFlow.name)' perfil='$($selectedProfile.name)' usuario='$($session.username)' rol='$($session.role)' pasos_ok=$okSteps pasos_error=$errorSteps"
 
                     Write-JsonResponse -Response $response -StatusCode 200 -Body $log
+                }
+            }
+            elseif ($method -eq 'POST' -and $path -eq '/api/save-output') {
+                # Guarda un archivo generado por el cliente (hoy, el detalle de Plazos
+                # Fijos dados de alta o de filas que fallaron en un CSV batch) en
+                # files/, en vez de depender de la descarga del navegador — así el
+                # archivo queda en un lugar fijo y predecible en el disco del servidor.
+                # $prefix/$timestamp los arma el cliente (p.ej. "pfout-"/"20260831195022"),
+                # pero se validan acá con formato estricto: es la única defensa contra
+                # path traversal en un endpoint que escribe archivos a partir de input
+                # del cliente.
+                $bodyText = Read-RequestBody -Request $request
+                $payload = $bodyText | ConvertFrom-Json
+                $prefix = [string]$payload.prefix
+                $timestamp = [string]$payload.timestamp
+                $content = [string]$payload.content
+
+                if ($prefix -notmatch '^[a-zA-Z0-9-]{1,40}$') {
+                    Write-JsonResponse -Response $response -StatusCode 400 -Body ([pscustomobject]@{ error = 'Prefijo de archivo inválido.' })
+                } elseif ($timestamp -notmatch '^\d{14}$') {
+                    Write-JsonResponse -Response $response -StatusCode 400 -Body ([pscustomobject]@{ error = 'Timestamp inválido (se espera yyyyMMddHHmmss).' })
+                } else {
+                    if (-not (Test-Path $filesDir)) {
+                        New-Item -ItemType Directory -Path $filesDir -Force | Out-Null
+                    }
+                    $fileName = "$prefix$timestamp.csv"
+                    $filePath = Join-Path $filesDir $fileName
+                    Set-Content -Path $filePath -Value $content -Encoding UTF8
+                    Write-SecurityLog -LogsDir $logsDir -Message "ARCHIVO DE SALIDA '$fileName' guardado por '$($session.username)'"
+                    Write-JsonResponse -Response $response -StatusCode 200 -Body ([pscustomobject]@{ ok = $true; fileName = $fileName })
                 }
             }
             elseif ($method -eq 'GET' -and $path -eq '/api/parametria') {

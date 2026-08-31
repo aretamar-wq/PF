@@ -102,6 +102,19 @@ aside li.selected { border-color: var(--accent); background: var(--accent-tint);
 #inputsForm label { display: flex; flex-direction: column; gap: 4px; font-size: 0.9rem; }
 #inputsForm input, #inputsForm select, #inputsForm textarea { padding: 6px 8px; border: 1px solid var(--border); border-radius: 8px; font-family: inherit; }
 
+.csv-drop-zone {
+  border: 2px dashed var(--border);
+  border-radius: 12px;
+  padding: 16px;
+  text-align: center;
+  background: var(--surface);
+  transition: border-color 0.15s, background 0.15s;
+  max-width: 480px;
+}
+.csv-drop-zone.dragover { border-color: var(--accent); background: var(--accent-tint); }
+.csv-drop-zone label { display: block; }
+#csvDropHint { margin: 6px 0 0; }
+
 .actions { display: flex; gap: 8px; margin-bottom: 8px; }
 
 button {

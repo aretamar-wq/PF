@@ -4,6 +4,7 @@ const state = {
   selectedFlow: null,
   lastLog: [],
   pfDetailRows: [],
+  errorRows: [],
   token: sessionStorage.getItem('pf_token') || null,
   currentUser: null, // { username, role, displayName, canManageUsers } — se completa en loadMe()
 };
@@ -192,7 +193,7 @@ function selectFlow(name) {
   hideCsvSummary();
   hideSqlResult();
   state.pfDetailRows = [];
-  document.getElementById('downloadPfDetailBtn').disabled = true;
+  state.errorRows = [];
 
   if (isCsvFlow(state.selectedFlow)) {
     form.style.display = 'none';
@@ -578,7 +579,7 @@ async function runFlowFromCsv() {
   hideCsvSummary();
   state.lastLog = [];
   state.pfDetailRows = [];
-  document.getElementById('downloadPfDetailBtn').disabled = true;
+  state.errorRows = [];
 
   // stepCounts[i] cuenta, para el paso flow.steps[i], cuántas filas lo
   // completaron con éxito ('ok') y cuántas no ('error') — ya sea porque ese
@@ -712,12 +713,23 @@ async function runFlowFromCsv() {
       }
       renderCsvSummary(flow, rows.length, stepCounts);
 
+      // Fila fallada: columnas de más/menos, cuenta no encontrada (nunca
+      // llegó a llamar a ningún endpoint), o algún paso terminó en error.
+      // Se guarda la fila tal cual vino en el archivo (aunque esté mal
+      // formada) + el IdMensaje que se le generó, para el archivo
+      // pfouterror-... — ver saveOutputFiles.
+      const rowFailed = rowEntries.some((entry) => entry.status !== 'Success');
+      if (rowFailed) {
+        state.errorRows.push([...row, rowIdMensaje]);
+      }
+
       // El último paso de este flow es el alta del plazo fijo; si terminó
       // bien, su respuesta trae un array "output" con 2 items por plazo fijo
       // (función 1 = capital, función 3 = interés) que comparten operación/
       // vencimiento/tem/tna/importeNeto — se unifican en UNA sola fila por
-      // plazo fijo en state.pfDetailRows para descargar aparte como CSV. La
-      // tabla de log paso a paso ya no se muestra en pantalla para flows CSV
+      // plazo fijo en state.pfDetailRows, para guardar aparte como CSV al
+      // terminar (ver saveOutputFiles). La tabla de log paso a paso ya no se
+      // muestra en pantalla para flows CSV
       // (ver selectFlow); el detalle completo de cada request/response
       // sigue en logs/http.log.
       if (stepEntries) {
@@ -756,14 +768,18 @@ async function runFlowFromCsv() {
           }
         }
       }
-      document.getElementById('downloadPfDetailBtn').disabled = state.pfDetailRows.length === 0;
 
       const prefixed = rowEntries.map((entry) => ({ ...entry, name: `Fila ${rowNumber} — ${entry.name}` }));
       state.lastLog = state.lastLog.concat(prefixed);
       document.getElementById('saveLogBtn').disabled = state.lastLog.length === 0;
     }
 
-    progressEl.textContent = `Listo: ${rows.length} fila(s) procesada(s) en ${formatDurationShort(Date.now() - startedAt)}.`;
+    let doneText = `Listo: ${rows.length} fila(s) procesada(s) en ${formatDurationShort(Date.now() - startedAt)}.`;
+    const savedFiles = await saveOutputFiles();
+    if (savedFiles.length > 0) {
+      doneText += ` Guardado en files/: ${savedFiles.join(', ')}.`;
+    }
+    progressEl.textContent = doneText;
   } catch (err) {
     alert('Error leyendo el CSV: ' + err.message);
   } finally {
@@ -799,22 +815,77 @@ function csvEscape(value) {
   return str;
 }
 
-function downloadPfDetail() {
-  if (state.pfDetailRows.length === 0) return;
+// yyyyMMddHHmmss (sin milisegundos, a diferencia de generateIdMensaje) —
+// nombre de archivo, no necesita esa resolución.
+function generateFileTimestamp() {
+  const now = new Date();
+  const pad = (n) => String(n).padStart(2, '0');
+  return (
+    now.getFullYear().toString() +
+    pad(now.getMonth() + 1) +
+    pad(now.getDate()) +
+    pad(now.getHours()) +
+    pad(now.getMinutes()) +
+    pad(now.getSeconds())
+  );
+}
 
-  const headers = ['fila', 'operacion', 'vencimiento', 'tem', 'tna', 'importeNeto', 'montoCapital', 'montoInteres', 'otros', 'idMensaje'];
-  const lines = [headers.join(',')];
-  for (const row of state.pfDetailRows) {
-    lines.push(headers.map((h) => csvEscape(row[h])).join(','));
+// Guarda un archivo en el servidor, en la carpeta files/ (POST /api/save-output
+// lo crea si no existe) — reemplaza la descarga por el navegador: el archivo
+// queda en una ubicación fija y predecible en vez de en la carpeta de
+// descargas de quien esté corriendo la app.
+async function saveOutputFile(prefix, timestamp, content) {
+  try {
+    const res = await apiFetch('/api/save-output', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ prefix, timestamp, content }),
+    });
+    const data = await res.json();
+    if (!res.ok) {
+      alert(`No se pudo guardar ${prefix}${timestamp}.csv: ` + (data.error || 'error desconocido.'));
+      return null;
+    }
+    return data.fileName;
+  } catch (err) {
+    alert(`Error de red guardando ${prefix}${timestamp}.csv: ` + err.message);
+    return null;
+  }
+}
+
+// Al terminar de procesar el CSV: guarda, si corresponde, hasta 2 archivos
+// con el mismo timestamp (para que se identifiquen como del mismo lote) —
+// pfout-<timestamp>.csv con el detalle de los plazos fijos dados de alta
+// (una fila por PF, igual que antes armaba el botón de descarga) y
+// pfouterror-<timestamp>.csv con la fila de entrada + IdMensaje de cada
+// fila que falló (columnas de más/menos, cuenta no encontrada, o algún
+// paso del banco en error), para poder revisarlas o reintentarlas.
+async function saveOutputFiles() {
+  const savedFiles = [];
+  if (state.pfDetailRows.length === 0 && state.errorRows.length === 0) return savedFiles;
+
+  const timestamp = generateFileTimestamp();
+
+  if (state.pfDetailRows.length > 0) {
+    const headers = ['fila', 'operacion', 'vencimiento', 'tem', 'tna', 'importeNeto', 'montoCapital', 'montoInteres', 'otros', 'idMensaje'];
+    const lines = [headers.join(',')];
+    for (const row of state.pfDetailRows) {
+      lines.push(headers.map((h) => csvEscape(row[h])).join(','));
+    }
+    const fileName = await saveOutputFile('pfout-', timestamp, lines.join('\r\n'));
+    if (fileName) savedFiles.push(fileName);
   }
 
-  const blob = new Blob([lines.join('\r\n')], { type: 'text/csv' });
-  const url = URL.createObjectURL(blob);
-  const a = document.createElement('a');
-  a.href = url;
-  a.download = `plazos-fijos-${new Date().toISOString().replace(/[:.]/g, '-')}.csv`;
-  a.click();
-  URL.revokeObjectURL(url);
+  if (state.errorRows.length > 0) {
+    // Sin fila de encabezado, a propósito: cada fila queda igual a como
+    // vino en el archivo de entrada (que tampoco lleva encabezado) más el
+    // IdMensaje al final.
+    const lines = state.errorRows.map((row) => row.map(csvEscape).join(','));
+    const fileName = await saveOutputFile('pfouterror-', timestamp, lines.join('\r\n'));
+    if (fileName) savedFiles.push(fileName);
+  }
+
+  return savedFiles;
 }
 
 const profileDialog = document.getElementById('profileDialog');
@@ -880,7 +951,49 @@ document.getElementById('saveLogBtn').addEventListener('click', saveLog);
 document.getElementById('testTokenBtn').addEventListener('click', testToken);
 document.getElementById('profileSelect').addEventListener('change', updateTestTokenButtonState);
 document.getElementById('csvFileInput').addEventListener('change', updateRunButtonState);
-document.getElementById('downloadPfDetailBtn').addEventListener('click', downloadPfDetail);
+
+// Drag & drop del CSV: asigna el archivo soltado al input nativo vía
+// DataTransfer y dispara "change" sobre él, en vez de manejar el File por
+// separado — así runFlowFromCsv (que lee csvFileInput.files[0]) y
+// updateRunButtonState (que mira csvFileInput.files.length) funcionan igual
+// que con el selector de archivos de toda la vida, sin tocar esa lógica.
+const csvDropZone = document.getElementById('csvDropZone');
+
+// Sin esto, soltar el archivo fuera de la zona (o en cualquier lado si el
+// usuario erra) hace que el navegador navegue a mostrarlo como si fuera una
+// URL local.
+window.addEventListener('dragover', (event) => event.preventDefault());
+window.addEventListener('drop', (event) => event.preventDefault());
+
+['dragenter', 'dragover'].forEach((eventName) => {
+  csvDropZone.addEventListener(eventName, (event) => {
+    event.preventDefault();
+    csvDropZone.classList.add('dragover');
+  });
+});
+
+csvDropZone.addEventListener('dragleave', (event) => {
+  // dragleave también dispara al pasar sobre el <label>/<input> de adentro;
+  // sin este chequeo la zona parpadea (se saca y se pone el resaltado) todo
+  // el tiempo que el mouse se mueve arriba.
+  if (!csvDropZone.contains(event.relatedTarget)) {
+    csvDropZone.classList.remove('dragover');
+  }
+});
+
+csvDropZone.addEventListener('drop', (event) => {
+  event.preventDefault();
+  csvDropZone.classList.remove('dragover');
+
+  const file = event.dataTransfer.files && event.dataTransfer.files[0];
+  if (!file) return;
+
+  const csvFileInput = document.getElementById('csvFileInput');
+  const dataTransfer = new DataTransfer();
+  dataTransfer.items.add(file);
+  csvFileInput.files = dataTransfer.files;
+  csvFileInput.dispatchEvent(new Event('change'));
+});
 
 const parametriaDialog = document.getElementById('parametriaDialog');
 const parametriaForm = document.getElementById('parametriaForm');

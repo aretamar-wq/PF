@@ -10,3 +10,6 @@ logs/
 # Seguridad local: datos del servidor de Active Directory y la lista real de usuarios
 # habilitados en esta instancia, nunca se versiona (la contraseña de AD nunca se guarda acá)
 security.local.json
+
+# Archivos de salida (pfout-.../pfouterror-...): contienen datos bancarios reales, nunca se versionan
+files/
