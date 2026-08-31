@@ -1,9 +1,15 @@
 :root {
-  color-scheme: light dark;
-  --bg: #f7f7f8;
-  --fg: #1c1c1e;
-  --border: #d0d0d5;
-  --accent: #2563eb;
+  color-scheme: light;
+  --bg: #f5efdd;
+  --surface: #ffffff;
+  --fg: #12203a;
+  --muted-fg: #5b6472;
+  --border: #ded6bd;
+  --navy: #0b2a52;
+  --navy-dark: #071b37;
+  --accent: #2864e8;
+  --accent-hover: #1f52c4;
+  --accent-tint: #e9f0fe;
   --success: #1a7f37;
   --error: #c53030;
   --running: #b45309;
@@ -13,42 +19,58 @@
 
 body {
   margin: 0;
-  font-family: system-ui, -apple-system, "Segoe UI", sans-serif;
+  font-family: "Poppins", system-ui, -apple-system, "Segoe UI", sans-serif;
   background: var(--bg);
   color: var(--fg);
 }
 
+h1, h2, .brand-logo { font-family: "Poppins", system-ui, sans-serif; }
+
+.brand-logo {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-weight: 700;
+  letter-spacing: 0.01em;
+}
+.brand-mark { width: 26px; height: 26px; flex-shrink: 0; }
+
 header {
-  padding: 12px 20px;
-  border-bottom: 1px solid var(--border);
-  background: white;
+  padding: 14px 20px;
+  background: var(--navy);
+  color: #fff;
 }
 
-header h1 { margin: 0 0 8px; font-size: 1.25rem; }
+header h1 { margin: 0 0 10px; font-size: 1.25rem; }
 
-.profile-bar { display: flex; gap: 8px; align-items: center; }
+.profile-bar { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+.profile-bar label { color: rgba(255, 255, 255, 0.85); }
 .profile-bar .spacer { flex: 1; }
+.profile-bar .muted { color: rgba(255, 255, 255, 0.7); font-style: normal; }
 
 #loginScreen {
   min-height: 100vh;
   display: flex;
   align-items: center;
   justify-content: center;
-  background: var(--bg);
+  background: var(--navy);
+  background: radial-gradient(120% 140% at 15% 10%, var(--navy) 0%, var(--navy-dark) 100%);
 }
 #loginForm {
   display: flex;
   flex-direction: column;
   gap: 10px;
   width: 320px;
-  padding: 24px;
-  border: 1px solid var(--border);
-  border-radius: 8px;
-  background: white;
+  padding: 28px;
+  border: none;
+  border-radius: 20px;
+  background: var(--surface);
+  box-shadow: 0 20px 60px rgba(7, 27, 55, 0.35);
 }
-#loginForm h1 { margin: 0 0 4px; font-size: 1.25rem; }
+#loginForm h1 { margin: 0 0 4px; font-size: 1.2rem; color: var(--navy); }
 #loginForm label { display: flex; flex-direction: column; gap: 4px; font-size: 0.9rem; }
-#loginForm input { padding: 6px 8px; border: 1px solid var(--border); border-radius: 4px; font-family: inherit; }
+#loginForm input { padding: 8px 10px; border: 1px solid var(--border); border-radius: 8px; font-family: inherit; }
+#loginForm input:focus { outline: 2px solid var(--accent); outline-offset: 1px; }
 #loginForm button { margin-top: 4px; }
 
 main {
@@ -59,45 +81,57 @@ main {
 
 aside { width: 260px; flex-shrink: 0; }
 
-aside h2 { font-size: 0.95rem; margin: 0 0 8px; }
+aside h2 { font-size: 0.95rem; margin: 0 0 8px; color: var(--navy); }
 
 aside ul { list-style: none; padding: 0; margin: 0; }
 aside li {
   padding: 8px 10px;
   border: 1px solid var(--border);
-  border-radius: 6px;
+  border-radius: 8px;
   margin-bottom: 6px;
   cursor: pointer;
-  background: white;
+  background: var(--surface);
 }
-aside li.selected { border-color: var(--accent); background: #eaf1ff; }
+aside li.selected { border-color: var(--accent); background: var(--accent-tint); color: var(--navy); font-weight: 600; }
 
 #flowDetail { flex: 1; min-width: 0; }
 
-.muted { color: #666; font-style: italic; }
+.muted { color: var(--muted-fg); font-style: italic; }
 
 #inputsForm { display: flex; flex-direction: column; gap: 8px; margin: 12px 0; max-width: 480px; }
 #inputsForm label { display: flex; flex-direction: column; gap: 4px; font-size: 0.9rem; }
-#inputsForm input, #inputsForm select, #inputsForm textarea { padding: 6px 8px; border: 1px solid var(--border); border-radius: 4px; font-family: inherit; }
+#inputsForm input, #inputsForm select, #inputsForm textarea { padding: 6px 8px; border: 1px solid var(--border); border-radius: 8px; font-family: inherit; }
 
 .actions { display: flex; gap: 8px; margin-bottom: 8px; }
 
 button {
-  padding: 8px 14px;
+  padding: 9px 16px;
   border: 1px solid var(--border);
-  border-radius: 6px;
-  background: white;
+  border-radius: 8px;
+  background: var(--surface);
+  color: var(--fg);
+  font-family: inherit;
   cursor: pointer;
 }
-button:hover { background: #f0f0f2; }
-#runBtn { background: var(--accent); color: white; border-color: var(--accent); font-weight: 600; }
+button:hover { background: var(--accent-tint); border-color: var(--accent); }
+#runBtn, #loginSubmitBtn {
+  background: var(--accent);
+  color: #fff;
+  border-color: var(--accent);
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+  font-size: 0.85rem;
+}
+#runBtn:hover, #loginSubmitBtn:hover { background: var(--accent-hover); border-color: var(--accent-hover); }
 #runBtn:disabled, #saveLogBtn:disabled, #testTokenBtn:disabled { opacity: 0.5; cursor: default; }
+#runBtn:disabled:hover { background: var(--accent); }
 
 table {
   width: 100%;
   border-collapse: collapse;
   margin-top: 8px;
-  background: white;
+  background: var(--surface);
 }
 th, td {
   border: 1px solid var(--border);
@@ -107,7 +141,7 @@ th, td {
   vertical-align: top;
   word-break: break-word;
 }
-th { background: #f0f0f2; }
+th { background: var(--accent-tint); color: var(--navy); }
 
 .status-Success { color: var(--success); font-weight: 600; }
 .status-Error { color: var(--error); font-weight: 600; }
@@ -117,8 +151,8 @@ th { background: #f0f0f2; }
   margin: 8px 0;
   padding: 8px 10px;
   border: 1px solid var(--border);
-  border-radius: 6px;
-  background: white;
+  border-radius: 8px;
+  background: var(--surface);
   font-size: 0.9rem;
 }
 .csv-summary div { margin-bottom: 2px; }
@@ -126,26 +160,29 @@ th { background: #f0f0f2; }
 
 dialog {
   border: none;
-  border-radius: 8px;
-  padding: 20px;
+  border-radius: 16px;
+  padding: 22px;
   width: 420px;
   max-height: 85vh;
   overflow-y: auto;
+  font-family: inherit;
 }
-dialog::backdrop { background: rgba(0,0,0,0.4); }
+dialog::backdrop { background: rgba(7, 27, 55, 0.5); }
+dialog h2 { color: var(--navy); margin-top: 0; }
 #profileForm { display: flex; flex-direction: column; gap: 10px; }
 #profileForm label { display: flex; flex-direction: column; gap: 4px; font-size: 0.9rem; }
-#profileForm input, #profileForm select { padding: 6px 8px; border: 1px solid var(--border); border-radius: 4px; }
+#profileForm input, #profileForm select { padding: 6px 8px; border: 1px solid var(--border); border-radius: 8px; }
 #parametriaForm { display: flex; flex-direction: column; gap: 10px; }
 #parametriaForm label { display: flex; flex-direction: column; gap: 4px; font-size: 0.9rem; margin-bottom: 6px; }
 #parametriaForm input, #parametriaForm textarea {
   padding: 6px 8px;
   border: 1px solid var(--border);
-  border-radius: 4px;
+  border-radius: 8px;
   width: 100%;
   font-family: inherit;
 }
-fieldset { border: 1px solid var(--border); border-radius: 6px; padding: 8px 10px; }
+fieldset { border: 1px solid var(--border); border-radius: 10px; padding: 10px 12px; }
+fieldset legend { color: var(--navy); font-weight: 600; padding: 0 6px; }
 .dialog-actions { display: flex; justify-content: flex-end; gap: 8px; margin-top: 8px; align-items: center; }
 
 #usersDialog { width: 560px; max-width: 90vw; }
@@ -154,7 +191,7 @@ fieldset { border: 1px solid var(--border); border-radius: 6px; padding: 8px 10p
 #adConfigForm input, #userForm input, #userForm select {
   padding: 6px 8px;
   border: 1px solid var(--border);
-  border-radius: 4px;
+  border-radius: 8px;
   font-family: inherit;
 }
 #adConfigForm label:has(input[type="checkbox"]),

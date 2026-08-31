@@ -3,12 +3,24 @@
 <head>
   <meta charset="utf-8" />
   <title>BankCoreFlowRunner</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Poppins:wght@400;600;700&display=swap" rel="stylesheet" />
   <link rel="stylesheet" href="/styles.css" />
 </head>
 <body>
   <div id="loginScreen">
     <form id="loginForm">
-      <h1>BankCoreFlowRunner</h1>
+      <h1 class="brand-logo">
+        <svg class="brand-mark" viewBox="0 0 24 24" aria-hidden="true">
+          <circle cx="12" cy="12" r="12" fill="#fff" />
+          <path d="M7 10a5 5 0 0 1 8.6-3.5L17 5" stroke="var(--accent)" stroke-width="2" fill="none" stroke-linecap="round" />
+          <path d="M15.6 7.2 17 5l2.2 1" stroke="var(--accent)" stroke-width="2" fill="none" stroke-linecap="round" stroke-linejoin="round" />
+          <path d="M17 14a5 5 0 0 1-8.6 3.5L7 19" stroke="var(--accent)" stroke-width="2" fill="none" stroke-linecap="round" />
+          <path d="M8.4 16.8 7 19l-2.2-1" stroke="var(--accent)" stroke-width="2" fill="none" stroke-linecap="round" stroke-linejoin="round" />
+        </svg>
+        BankCoreFlowRunner
+      </h1>
       <p class="muted">Iniciá sesión con tu usuario y contraseña de dominio (Active Directory).</p>
       <label>Usuario <input name="username" autocomplete="username" required autofocus /></label>
       <label>Contraseña <input name="password" type="password" autocomplete="current-password" required /></label>
@@ -19,7 +31,16 @@
 
   <div id="appShell" style="display: none;">
     <header>
-      <h1>BankCoreFlowRunner</h1>
+      <h1 class="brand-logo">
+        <svg class="brand-mark" viewBox="0 0 24 24" aria-hidden="true">
+          <circle cx="12" cy="12" r="12" fill="#fff" />
+          <path d="M7 10a5 5 0 0 1 8.6-3.5L17 5" stroke="var(--accent)" stroke-width="2" fill="none" stroke-linecap="round" />
+          <path d="M15.6 7.2 17 5l2.2 1" stroke="var(--accent)" stroke-width="2" fill="none" stroke-linecap="round" stroke-linejoin="round" />
+          <path d="M17 14a5 5 0 0 1-8.6 3.5L7 19" stroke="var(--accent)" stroke-width="2" fill="none" stroke-linecap="round" />
+          <path d="M8.4 16.8 7 19l-2.2-1" stroke="var(--accent)" stroke-width="2" fill="none" stroke-linecap="round" stroke-linejoin="round" />
+        </svg>
+        BankCoreFlowRunner
+      </h1>
       <div class="profile-bar">
         <label for="profileSelect">Perfil:</label>
         <select id="profileSelect"></select>
