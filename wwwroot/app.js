@@ -266,16 +266,50 @@ function updateRunButtonState() {
   document.getElementById('runBtn').disabled = !enabled;
 }
 
-// Parser CSV simple: separa por comas, saca comillas envolventes si las hay
-// (ej. las que agrega Excel al guardar), y descarta líneas vacías. No maneja
-// comas dentro de un campo entrecomillado — ninguno de los campos esperados
-// por estos flows debería necesitarlas.
+// Parsea una línea de CSV respetando comillas envolventes: un campo que
+// arranca con " puede contener comas (no corta ahí) hasta la comilla de
+// cierre, y "" adentro de un campo entrecomillado es una comilla literal
+// (misma regla que usa Excel al exportar). Sin esto, "Apellido y Nombre"
+// con el formato típico "APELLIDO, Nombre" partía la fila en dos columnas
+// de más y desalineaba todo lo que venía después (importe/plazo/etc. en la
+// columna equivocada, sin ningún error visible).
+function parseCsvLine(line) {
+  const cells = [];
+  let cell = '';
+  let inQuotes = false;
+
+  for (let i = 0; i < line.length; i++) {
+    const ch = line[i];
+    if (inQuotes) {
+      if (ch === '"') {
+        if (line[i + 1] === '"') {
+          cell += '"';
+          i++;
+        } else {
+          inQuotes = false;
+        }
+      } else {
+        cell += ch;
+      }
+    } else if (ch === '"' && cell === '') {
+      inQuotes = true;
+    } else if (ch === ',') {
+      cells.push(cell.trim());
+      cell = '';
+    } else {
+      cell += ch;
+    }
+  }
+  cells.push(cell.trim());
+  return cells;
+}
+
 function parseCsvText(text) {
   return text
     .split(/\r\n|\r|\n/)
     .map((line) => line.trim())
     .filter((line) => line.length > 0)
-    .map((line) => line.split(',').map((cell) => cell.trim().replace(/^"(.*)"$/, '$1')));
+    .map(parseCsvLine);
 }
 
 function formatDurationShort(ms) {

@@ -515,9 +515,13 @@ vez por cada fila (ej. `Flows/plazo-fijo-cocos-files-sql.json`). Para esto:
 - Si `Importe` (u otro campo numérico) viene de un CSV separado por comas,
   los decimales tienen que ir con punto (`1500.50`), no con coma, porque la
   coma es el separador de columnas.
-- El parser de CSV de la UI es simple: separa por comas y sólo entiende
-  comillas envolventes tipo `"texto"` (las que agrega Excel al exportar) —
-  no soporta comas dentro de un campo entrecomillado.
+- El parser de CSV de la UI (`parseCsvLine` en `wwwroot/app.js`) respeta
+  comillas envolventes tipo `"texto"` (las que agrega Excel al exportar):
+  un campo entrecomillado **sí** puede contener comas sin que corten la
+  columna — necesario para `Apellido y Nombre` en formato
+  `"APELLIDO, Nombre"`, el más común en Argentina. Una comilla doble `""`
+  dentro de un campo entrecomillado es una comilla literal (misma regla que
+  usa Excel).
 - Mientras procesa el CSV (y al terminar), la UI muestra un resumen con el
   **total de registros** y, por cada paso del flow (ej. Débito en Cuenta
   Corriente, Crédito en Caja de Ahorro, Alta de Plazo Fijo), cuántas filas lo
