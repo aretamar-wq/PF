@@ -71,23 +71,18 @@ function Test-AdCredentials {
     }
 
     try {
-        # System.DirectoryServices.AccountManagement es específico de Windows (usa
-        # las mismas APIs que ADSI) — no está disponible corriendo en Linux/macOS.
-        # El resto de la app puede desarrollarse/probarse fuera de Windows, pero
-        # esta función puntual solo puede ejercitarse en el Windows real donde
-        # corre BankCoreFlowRunner.
-        Add-Type -AssemblyName System.DirectoryServices.AccountManagement -ErrorAction Stop
+        # System.DirectoryServices.Protocols es LDAP puro (a diferencia de
+        # System.DirectoryServices.AccountManagement, que usa ADSI y solo corre en
+        # Windows) — funciona igual en Windows y en Linux/macOS, así que
+        # BankCoreFlowRunner puede autenticar contra el mismo Domain Controller
+        # sin importar en qué SO corra el servidor.
+        Add-Type -AssemblyName System.DirectoryServices.Protocols -ErrorAction Stop
     } catch {
-        return [pscustomobject]@{ ok = $false; message = "No se pudo cargar el soporte de Active Directory en esta máquina (requiere Windows): $($_.Exception.Message)" }
+        return [pscustomobject]@{ ok = $false; message = "No se pudo cargar el soporte de LDAP en esta máquina: $($_.Exception.Message)" }
     }
 
-    $server = [string]$AdConfig.server
-    if ($AdConfig.port) { $server = "$server`:$($AdConfig.port)" }
-
-    $contextOptions = [System.DirectoryServices.AccountManagement.ContextOptions]::Negotiate
-    if ($AdConfig.useSsl) {
-        $contextOptions = $contextOptions -bor [System.DirectoryServices.AccountManagement.ContextOptions]::SecureSocketLayer
-    }
+    $port = if ($AdConfig.port) { [int]$AdConfig.port } else { 389 }
+    $identifier = New-Object System.DirectoryServices.Protocols.LdapDirectoryIdentifier([string]$AdConfig.server, $port)
 
     $upn = if ($Username -like '*@*' -or $Username -like '*\*') {
         $Username
@@ -97,21 +92,32 @@ function Test-AdCredentials {
         $Username
     }
 
-    $pc = $null
+    $connection = $null
     try {
-        $pc = New-Object System.DirectoryServices.AccountManagement.PrincipalContext(
-            [System.DirectoryServices.AccountManagement.ContextType]::Domain, $server)
-        $ok = $pc.ValidateCredentials($upn, $Password, $contextOptions)
-        if ($ok) {
-            return [pscustomobject]@{ ok = $true; message = 'OK' }
+        $connection = New-Object System.DirectoryServices.Protocols.LdapConnection($identifier)
+        $connection.AuthType = [System.DirectoryServices.Protocols.AuthType]::Basic
+        $connection.SessionOptions.ProtocolVersion = 3
+        if ($AdConfig.useSsl) {
+            $connection.SessionOptions.SecureSocketLayer = $true
         }
-        return [pscustomobject]@{ ok = $false; message = 'Usuario o contraseña inválidos en Active Directory.' }
+        # Bind "simple" (usuario/contraseña en texto plano dentro del request LDAP) —
+        # por eso useSsl debería estar prendido en producción, para que ese request
+        # viaje cifrado igual que con LDAPS. La contraseña solo vive en $Password
+        # durante este bind puntual y se descarta enseguida (nunca se persiste).
+        $credential = New-Object System.Net.NetworkCredential($upn, $Password)
+        $connection.Bind($credential)
+        return [pscustomobject]@{ ok = $true; message = 'OK' }
+    } catch [System.DirectoryServices.Protocols.LdapException] {
+        if ($_.Exception.ErrorCode -eq 49) {
+            return [pscustomobject]@{ ok = $false; message = 'Usuario o contraseña inválidos en Active Directory.' }
+        }
+        return [pscustomobject]@{ ok = $false; message = "No se pudo validar contra Active Directory: $($_.Exception.Message)" }
     } catch {
         # El mensaje de la excepción puede incluir detalles de conexión (host/puerto),
         # pero nunca la contraseña (nunca se interpola $Password en ningún lado acá).
         return [pscustomobject]@{ ok = $false; message = "No se pudo validar contra Active Directory: $($_.Exception.Message)" }
     } finally {
-        if ($pc) { $pc.Dispose() }
+        if ($connection) { $connection.Dispose() }
     }
 }
 

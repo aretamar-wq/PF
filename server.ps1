@@ -16,14 +16,15 @@ $scriptRoot = Split-Path -Parent $MyInvocation.MyCommand.Path
 # [System.Net.Http.HttpClientHandler]" apenas se intenta ejecutar un flow.
 Add-Type -AssemblyName System.Net.Http
 
-Import-Module (Join-Path $scriptRoot 'modules\JsonPath.psm1') -Force
-Import-Module (Join-Path $scriptRoot 'modules\VariableSubstitution.psm1') -Force
-Import-Module (Join-Path $scriptRoot 'modules\ProfileStore.psm1') -Force
-Import-Module (Join-Path $scriptRoot 'modules\ParametriaStore.psm1') -Force
-Import-Module (Join-Path $scriptRoot 'modules\FlowStore.psm1') -Force
-Import-Module (Join-Path $scriptRoot 'modules\FlowEngine.psm1') -Force
-Import-Module (Join-Path $scriptRoot 'modules\SecurityStore.psm1') -Force
-Import-Module (Join-Path $scriptRoot 'modules\ProcessedOperationsStore.psm1') -Force
+$modulesDir = Join-Path $scriptRoot 'modules'
+Import-Module (Join-Path $modulesDir 'JsonPath.psm1') -Force
+Import-Module (Join-Path $modulesDir 'VariableSubstitution.psm1') -Force
+Import-Module (Join-Path $modulesDir 'ProfileStore.psm1') -Force
+Import-Module (Join-Path $modulesDir 'ParametriaStore.psm1') -Force
+Import-Module (Join-Path $modulesDir 'FlowStore.psm1') -Force
+Import-Module (Join-Path $modulesDir 'FlowEngine.psm1') -Force
+Import-Module (Join-Path $modulesDir 'SecurityStore.psm1') -Force
+Import-Module (Join-Path $modulesDir 'ProcessedOperationsStore.psm1') -Force
 
 $Global:TokenCache = @{}
 $Global:SecuritySessions = @{}

@@ -37,6 +37,59 @@ runtime adicional.
    - Si el puerto 8787 está ocupado: `powershell -ExecutionPolicy Bypass -File server.ps1 -Port 8899`
 4. Para cerrarla, cerrá la ventana de PowerShell (o Ctrl+C).
 
+## Instalación en Linux (nginx + systemd)
+
+`server.ps1` es un único proceso PowerShell — **no usa PHP para nada**. En un
+servidor Linux con nginx + PHP ya instalados (por ejemplo, sirviendo otros
+sitios), esto se agrega aparte sin tocar el PHP existente: nginx solo hace de
+reverse proxy hacia este proceso, igual que podría hacerlo hacia un backend
+PHP-FPM en otro `server {}`.
+
+Requisitos en el servidor:
+
+- **PowerShell 7+ para Linux** (`pwsh`) — no es Windows PowerShell 5.1, hay
+  que instalar el paquete de Microsoft para tu distro
+  ([instrucciones oficiales](https://learn.microsoft.com/powershell/scripting/install/installing-powershell-on-linux)).
+- **unixODBC** (`apt install unixodbc` / `yum install unixODBC`) si el flow
+  de Alta de Plazo Fijos va a correr — necesita un driver ODBC para Sybase/SAP
+  ASE instalado en la máquina (típicamente **FreeTDS** en Linux, con su
+  propio `Driver=` distinto al de Windows). Ajustar el connection string en
+  Parametría de acuerdo al driver instalado — ver "Módulo de parametría".
+- Conectividad de red hacia el core bancario, el servidor Sybase y el
+  Domain Controller de Active Directory (mismos hosts/puertos que en
+  Windows).
+
+Pasos:
+
+1. Copiar el repo al servidor (por ejemplo `/opt/bankcoreflowrunner`).
+2. Completar `profiles.local.json`, `parametria.local.json` y
+   `security.local.json` igual que en Windows (ver las secciones
+   correspondientes más abajo) — estos archivos no viajan con el repo.
+3. Instalar el servicio con **`deploy/bankcoreflowrunner.service`** (unidad
+   systemd — corre `server.ps1` como usuario sin privilegios, reinicia solo
+   si se cae, y solo escucha en `127.0.0.1:8787`, nunca expuesto directo a
+   la red). El archivo trae los pasos de instalación en su propio
+   comentario.
+4. Publicarlo con **`deploy/nginx-bankcoreflowrunner.conf`** (reverse proxy
+   nginx → `127.0.0.1:8787`, probado contra nginx 1.18). Incluye un bloque
+   HTTPS comentado para producción — recomendado, porque el login manda la
+   contraseña de AD en el body del POST.
+
+> **Login contra Active Directory en Linux:** el bind LDAP usa
+> `System.DirectoryServices.Protocols`, que es multiplataforma (a diferencia
+> de `System.DirectoryServices.AccountManagement`, que solo funciona en
+> Windows) — el login funciona igual contra el mismo Domain Controller desde
+> Linux o Windows. Si el Domain Controller usa un certificado de una CA
+> interna y tildás "Usar LDAPS (SSL)" en la config de AD, esa CA tiene que
+> estar en el almacén de confianza del servidor Linux o el bind va a fallar
+> por certificado no confiable.
+
+> **Un usuario a la vez:** como dice "Limitaciones conocidas" más abajo, el
+> servidor atiende un request HTTP por vez — no está pensado como servicio
+> con muchos usuarios concurrentes. Si varias personas van a usarlo al mismo
+> tiempo desde este deployment Linux, tenerlo en cuenta (un flow largo
+> corriendo bloquea al resto hasta que termina).
+
 ## Qué resuelve
 
 - Login obligatorio contra **Active Directory** (la contraseña nunca se
@@ -84,6 +137,9 @@ modules/
   ProcessedOperationsStore.psm1  Registro de operaciones ya procesadas, evita duplicados (ver "Prevención de operaciones duplicadas")
 wwwroot/
   index.html, app.js, styles.css   Front-end (vanilla JS, sin build step)
+deploy/
+  bankcoreflowrunner.service   Unidad systemd (ver "Instalación en Linux")
+  nginx-bankcoreflowrunner.conf  Reverse proxy nginx -> 127.0.0.1:8787 (ver "Instalación en Linux")
 Flows/                   *.json de flows (ver "Cómo definir un flow nuevo")
 files/                   Archivos de salida pfout-.../pfouterror-... (no versionado, se crea solo)
 profiles.sample.json      Plantilla de perfiles (sin secretos)
@@ -187,13 +243,16 @@ bancarios reales); el detalle completo de cada request/response sigue en
 
 ### Limitaciones conocidas
 
-- La validación contra AD usa
-  `System.DirectoryServices.AccountManagement` (`Test-AdCredentials` en
-  `modules/SecurityStore.psm1`), que es específico de Windows — igual que el
-  resto de la app, no funciona corriendo en Linux/macOS.
-- Como el resto de BankCoreFlowRunner, esto está pensado para uso local
-  (`http://localhost:...`): el token viaja por HTTP plano, aceptable en ese
-  contexto pero no pensado para exponerse en red.
+- La validación contra AD usa `System.DirectoryServices.Protocols` (LDAP
+  puro, `Test-AdCredentials` en `modules/SecurityStore.psm1`) — funciona
+  igual en Windows y en Linux/macOS, siempre que haya conectividad de red
+  hacia el Domain Controller.
+- Pensado originalmente para uso local en Windows (`http://localhost:...`),
+  donde el token/login viajan por HTTP plano dentro de la propia máquina —
+  aceptable en ese contexto. Si se expone en red (por ejemplo, el
+  deployment Linux de "Instalación en Linux (nginx + systemd)"), usar el
+  bloque HTTPS de `deploy/nginx-bankcoreflowrunner.conf` para que ese
+  tráfico no viaje en claro entre el navegador y el servidor.
 
 ## Configurar perfiles de conexión
 
