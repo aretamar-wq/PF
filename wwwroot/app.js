@@ -747,7 +747,9 @@ async function runFlowFromCsv() {
               const otros = output.filter((item) => item.funcion !== 1 && item.funcion !== 3);
               const first = output[0];
               state.pfDetailRows.push({
-                fila: rowNumber,
+                numeroComprobante: row[4],
+                cuit: row[0],
+                apellidoNombre: row[1],
                 operacion: first.operacion,
                 vencimiento: first.vencimiento,
                 tem: first.tem,
@@ -867,7 +869,7 @@ async function saveOutputFiles() {
   const timestamp = generateFileTimestamp();
 
   if (state.pfDetailRows.length > 0) {
-    const headers = ['fila', 'operacion', 'vencimiento', 'tem', 'tna', 'importeNeto', 'montoCapital', 'montoInteres', 'otros', 'idMensaje'];
+    const headers = ['numeroComprobante', 'cuit', 'apellidoNombre', 'operacion', 'vencimiento', 'tem', 'tna', 'importeNeto', 'montoCapital', 'montoInteres', 'otros', 'idMensaje'];
     const lines = [headers.join(',')];
     for (const row of state.pfDetailRows) {
       lines.push(headers.map((h) => csvEscape(row[h])).join(','));

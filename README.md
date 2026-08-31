@@ -556,16 +556,17 @@ identifiquen como del mismo archivo procesado:
   origen que llegó a completarse con éxito. La respuesta trae un array
   `output` con 2 items por plazo fijo (función 1 = capital, función 3 =
   interés) que comparten `operacion`/`vencimiento`/`tem`/`tna`/`importeNeto`
-  — se unifican en una sola fila con columnas `fila` (la fila del CSV de
-  origen), `operacion`, `vencimiento`, `tem`, `tna`, `importeNeto`,
-  `montoCapital`, `montoInteres`, `otros` (si algún item viene con una
-  función distinta de 1 o 3, no se pierde: queda listado ahí en vez de en
-  una columna propia) e `idMensaje` al final — el mismo valor generado para
-  esa fila (ver `{{idMensajeGenerado}}`), para poder cruzar cada plazo fijo
-  dado de alta con su `IdMensaje` real. **Con encabezado.** Asume que el
-  último step del flow es el que da de alta el plazo fijo y devuelve ese
-  formato — no es genérico para cualquier otro flow CSV que se agregue en
-  el futuro.
+  — se unifican en una sola fila con columnas `numeroComprobante`, `cuit` y
+  `apellidoNombre` (tomados de la fila de entrada, columnas 5, 1 y 2 del
+  CSV de origen respectivamente), `operacion`, `vencimiento`, `tem`, `tna`,
+  `importeNeto`, `montoCapital`, `montoInteres`, `otros` (si algún item
+  viene con una función distinta de 1 o 3, no se pierde: queda listado ahí
+  en vez de en una columna propia) e `idMensaje` al final — el mismo valor
+  generado para esa fila (ver `{{idMensajeGenerado}}`), para poder cruzar
+  cada plazo fijo dado de alta con su `IdMensaje` real. **Con encabezado.**
+  Asume que el último step del flow es el que da de alta el plazo fijo y
+  devuelve ese formato — no es genérico para cualquier otro flow CSV que se
+  agregue en el futuro.
 - **`pfouterror-<timestamp>.csv`** — una fila por cada fila del CSV de
   origen que **no** terminó de darse de alta (columnas de más/menos, cuenta
   no encontrada en Sybase, o cualquier paso del banco en error), con la
