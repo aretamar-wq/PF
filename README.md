@@ -613,6 +613,11 @@ siempre por su propio intento fallido. El registro se guarda en un solo
 `POST /api/register-operations` al terminar de procesar todo el archivo
 (no una llamada por fila), con todas las operaciones exitosas de ese lote.
 
+Cada vez que `POST /api/check-operations` encuentra una o más operaciones
+duplicadas se deja constancia en `logs/security.log`, con el usuario que
+subió el archivo y el detalle de cada `(cuit, numeroComprobante)`
+bloqueado (misma línea de tiempo que logins, ejecuciones de flows, etc.).
+
 ### Variables de sistema (fecha/hora sin pedirlas al usuario)
 
 Además de los inputs del usuario y las variables extraídas de pasos previos,

@@ -454,6 +454,10 @@ try {
                     }
                 }
                 $duplicates = @(Find-DuplicateOperations -RootDir $scriptRoot -Operations $operations)
+                if ($duplicates.Count -gt 0) {
+                    $detalle = ($duplicates | ForEach-Object { "cuit='$($_.cuit)' comprobante='$($_.numeroComprobante)'" }) -join '; '
+                    Write-SecurityLog -LogsDir $logsDir -Message "OPERACIONES DUPLICADAS DETECTADAS: $($duplicates.Count) por '$($session.username)' (bloqueadas, no se ejecutan) -> $detalle"
+                }
                 Write-JsonResponse -Response $response -StatusCode 200 -Body ([pscustomobject]@{ duplicates = $duplicates })
             }
             elseif ($method -eq 'POST' -and $path -eq '/api/register-operations') {
