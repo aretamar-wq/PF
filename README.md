@@ -75,6 +75,39 @@ Pasos:
    HTTPS comentado para producción — recomendado, porque el login manda la
    contraseña de AD en el body del POST.
 
+### Notas específicas de RHEL/CentOS/Rocky/Alma
+
+- **Paquetes**: `pwsh` viene del repo de Microsoft
+  (`sudo dnf install -y https://packages.microsoft.com/config/rhel/<versión>/packages-microsoft-prod.rpm`
+  y después `sudo dnf install -y powershell` — ver la
+  [guía oficial](https://learn.microsoft.com/powershell/scripting/install/install-rhel)
+  para el número de versión de RHEL exacto). `nginx` está en el repo
+  AppStream (`sudo dnf install -y nginx`). Para el driver de Sybase:
+  `sudo dnf install -y unixODBC freetds` (freetds puede requerir el repo
+  EPEL: `sudo dnf install -y epel-release` antes).
+- **Ubicación del config de nginx**: RHEL no trae `sites-available`/
+  `sites-enabled` por defecto — copiar `deploy/nginx-bankcoreflowrunner.conf`
+  directo a `/etc/nginx/conf.d/bankcoreflowrunner.conf` (nginx.conf ya
+  incluye todo `/etc/nginx/conf.d/*.conf`), sin symlink.
+- **SELinux** (la causa más común de "nginx anda pero da 502"): por
+  default, el dominio de nginx (`httpd_t`) tiene bloqueado hacer conexiones
+  salientes a puertos no estándar — incluido el `proxy_pass` hacia
+  `127.0.0.1:8787` de este mismo backend. Sin este paso, nginx devuelve
+  **502 Bad Gateway** aunque `server.ps1` esté corriendo bien:
+  ```bash
+  sudo setsebool -P httpd_can_network_connect 1
+  ```
+  (`getenforce` para confirmar si SELinux está en `Enforcing`; `sudo tail -f
+  /var/log/audit/audit.log | grep denied` mientras probás el sitio, si algo
+  más queda bloqueado).
+- **firewalld**: por default bloquea el tráfico entrante a 80/443 desde
+  afuera del propio servidor:
+  ```bash
+  sudo firewall-cmd --permanent --add-service=http
+  sudo firewall-cmd --permanent --add-service=https   # si vas a usar el bloque TLS
+  sudo firewall-cmd --reload
+  ```
+
 > **Login contra Active Directory en Linux:** el bind LDAP usa
 > `System.DirectoryServices.Protocols`, que es multiplataforma (a diferencia
 > de `System.DirectoryServices.AccountManagement`, que solo funciona en

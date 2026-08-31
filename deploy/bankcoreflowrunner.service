@@ -2,7 +2,11 @@
 #
 # Instalación (como root):
 #   1. Copiar el repo a /opt/bankcoreflowrunner (o el path que uses en ExecStart/WorkingDirectory).
-#   2. adduser --system --group --no-create-home bankcoreflowrunner
+#   2. useradd --system --no-create-home --shell /usr/sbin/nologin bankcoreflowrunner
+#      (crea también el grupo bankcoreflowrunner por default; comando
+#      portable entre Debian/Ubuntu y RHEL/CentOS/Rocky/Alma — a diferencia
+#      de "adduser", que en Debian es un wrapper con otra sintaxis y en RHEL
+#      ni siquiera viene instalado)
 #   3. chown -R bankcoreflowrunner:bankcoreflowrunner /opt/bankcoreflowrunner
 #   4. cp deploy/bankcoreflowrunner.service /etc/systemd/system/
 #   5. systemctl daemon-reload && systemctl enable --now bankcoreflowrunner
