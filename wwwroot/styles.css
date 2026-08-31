@@ -27,13 +27,9 @@ body {
 h1, h2, .brand-logo { font-family: "Poppins", system-ui, sans-serif; }
 
 .brand-logo {
-  display: flex;
-  align-items: center;
-  gap: 8px;
   font-weight: 700;
   letter-spacing: 0.01em;
 }
-.brand-mark { width: 26px; height: 26px; flex-shrink: 0; }
 
 header {
   padding: 14px 20px;
