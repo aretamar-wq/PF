@@ -683,10 +683,16 @@ este archivo: "Plazo Fijo Cocos Files" lo genera solo por fila
 `Flows/plazo-fijo-cocos-files-sql.json` hace lo que "Recupera cuentas (SQL)
 Files" + "Plazo Fijo Cocos Files" hacían en dos pasos manuales (descargar
 el archivo enriquecido y volver a subirlo), pero en una sola corrida. El
-CSV de entrada tiene 4 columnas, sin encabezado: `cuit, importe, plazo,
-numeroComprobante` (mismo formato que "Recupera cuentas (SQL) Files", sin
-las columnas de cuenta). `idMensaje` no es columna del CSV: se genera solo
-por fila (`{{idMensajeGenerado}}`, ver "Variables de sistema").
+CSV de entrada tiene 6 columnas, sin encabezado, en este orden: `CUIT,
+Apellido y Nombre, Monto, Plazo, Nro_Comprobante, Circuito`. `Apellido y
+Nombre` y `Circuito` son solo de referencia — se leen del archivo (como
+inputs `apellidoNombre`/`circuito`) pero ningún step los usa en el body de
+ningún llamado; quedan disponibles por si hicieran falta más adelante.
+`idMensaje` no es columna del CSV: se genera solo por fila
+(`{{idMensajeGenerado}}`, ver "Variables de sistema"). Esto ya no coincide
+columna a columna con "Recupera cuentas (SQL) Files" (que sigue teniendo 4
+columnas: `cuit, importe, plazo, numeroComprobante`) — son formatos de
+entrada independientes.
 
 **El flow en sí solo tiene 3 steps HTTP** (débito en Cuenta Corriente,
 crédito en Caja de Ahorro, alta de Plazo Fijo) — **no** tiene ningún step
@@ -698,7 +704,7 @@ consulta a Sybase para todos juntos (reusando el flow "Recupera cuentas
 de una consulta por fila, o incluso una por cada CUIT repetido. El
 resultado se guarda en un `Map` en memoria (`cuit -> {cuecodSistema5,
 cuecodSistema4}`) y, al procesar cada fila, esos dos valores se agregan
-como inputs extra (`cuecodSistema5`/`cuecodSistema4`) además de las 4
+como inputs extra (`cuecodSistema5`/`cuecodSistema4`) además de las 6
 columnas del CSV — el motor no exige que un input declarado en `flow.inputs`
 sea la única fuente de variables, así que esto funciona sin declararlos ahí
 (si estuvieran en `inputs`, la UI los pediría como columnas del CSV, que ya
