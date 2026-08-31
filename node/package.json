@@ -1,0 +1,16 @@
+{
+  "name": "bankcoreflowrunner-node",
+  "version": "1.0.0",
+  "private": true,
+  "description": "BankCoreFlowRunner — backend Node.js alternativo a server.ps1, para deployments Linux sin PowerShell.",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js"
+  },
+  "engines": {
+    "node": ">=18"
+  },
+  "dependencies": {
+    "ldapts": "^9.0.0"
+  }
+}

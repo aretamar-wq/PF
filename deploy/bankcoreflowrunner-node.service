@@ -1,0 +1,46 @@
+# Unidad systemd para correr el backend Node.js de BankCoreFlowRunner
+# (node/server.js) — alternativa a bankcoreflowrunner.service (PowerShell) para
+# servidores Linux que prefieren no instalar pwsh. Ambos backends sirven la
+# MISMA wwwroot/ y comparten Flows/ y los *.local.json de la raíz del repo:
+# elegí uno de los dos, no hace falta (ni conviene) correr los dos a la vez
+# escuchando el mismo puerto.
+#
+# Instalación (como root):
+#   1. Copiar el repo a /opt/bankcoreflowrunner.
+#   2. cd /opt/bankcoreflowrunner/node && npm install --omit=dev
+#   3. useradd --system --no-create-home --shell /usr/sbin/nologin bankcoreflowrunner
+#   4. chown -R bankcoreflowrunner:bankcoreflowrunner /opt/bankcoreflowrunner
+#   5. cp deploy/bankcoreflowrunner-node.service /etc/systemd/system/
+#   6. systemctl daemon-reload && systemctl enable --now bankcoreflowrunner-node
+#   7. journalctl -u bankcoreflowrunner-node -f
+#
+# Requiere Node.js 18+ instalado en el servidor (usa fetch global) — ver
+# "Instalación en Linux" en el README para el paso a paso completo, incluida
+# la aclaración sobre la conexión a Sybase (node/lib/sybaseClient.js, todavía
+# sin cablear a la API intermedia real).
+#
+# El listener de server.js solo escucha en 127.0.0.1:8787 (no en 0.0.0.0) —
+# nginx es el único punto de entrada expuesto a la red, ver
+# deploy/nginx-bankcoreflowrunner-node.conf.
+
+[Unit]
+Description=BankCoreFlowRunner (Node.js)
+After=network.target
+
+[Service]
+Type=simple
+User=bankcoreflowrunner
+Group=bankcoreflowrunner
+WorkingDirectory=/opt/bankcoreflowrunner/node
+ExecStart=/usr/bin/node /opt/bankcoreflowrunner/node/server.js --port 8787
+Restart=on-failure
+RestartSec=5
+
+# logs/, files/ y los *.local.json quedan en la raíz del repo (un nivel arriba
+# de WorkingDirectory) — necesitan ser escribibles por este usuario (ya
+# cubierto por el chown del paso 4).
+NoNewPrivileges=true
+PrivateTmp=true
+
+[Install]
+WantedBy=multi-user.target

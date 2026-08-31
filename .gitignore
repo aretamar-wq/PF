@@ -13,3 +13,7 @@ security.local.json
 
 # Archivos de salida (pfout-.../pfouterror-...): contienen datos bancarios reales, nunca se versionan
 files/
+
+# Backend Node.js (alternativa a server.ps1, ver README > "Instalación en Linux"):
+# dependencias instaladas, nunca se versionan (package-lock.json sí se versiona)
+node/node_modules/

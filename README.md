@@ -39,11 +39,26 @@ runtime adicional.
 
 ## Instalación en Linux (nginx + systemd)
 
-`server.ps1` es un único proceso PowerShell — **no usa PHP para nada**. En un
-servidor Linux con nginx + PHP ya instalados (por ejemplo, sirviendo otros
-sitios), esto se agrega aparte sin tocar el PHP existente: nginx solo hace de
-reverse proxy hacia este proceso, igual que podría hacerlo hacia un backend
-PHP-FPM en otro `server {}`.
+Ninguno de los dos backends usa PHP para nada. En un servidor Linux con
+nginx + PHP ya instalados (por ejemplo, sirviendo otros sitios), esto se
+agrega aparte sin tocar el PHP existente: nginx solo hace de reverse proxy
+hacia el backend elegido, igual que podría hacerlo hacia un backend PHP-FPM
+en otro `server {}`.
+
+Hay **dos backends intercambiables**, que sirven exactamente la misma
+`wwwroot/`, los mismos `Flows/*.json` y los mismos `*.local.json` — el
+frontend no sabe ni le importa cuál de los dos tiene enfrente. Elegí uno,
+**no hace falta correr los dos a la vez** en el mismo servidor:
+
+- **PowerShell** (`server.ps1`, el mismo motor que Windows) — conviene si ya
+  vas a instalar `pwsh` en el servidor de todos modos, o si preferís no
+  agregar Node.js como dependencia nueva.
+- **Node.js** (`node/server.js`) — conviene si el servidor ya tiene Node.js
+  o si preferís no instalar PowerShell en Linux. Ver el aviso sobre Sybase
+  más abajo antes de elegir esta opción si el flow de Alta de Plazo Fijos
+  es imprescindible desde el día uno.
+
+### Opción A: backend PowerShell
 
 Requisitos en el servidor:
 
@@ -75,7 +90,7 @@ Pasos:
    HTTPS comentado para producción — recomendado, porque el login manda la
    contraseña de AD en el body del POST.
 
-### Notas específicas de RHEL/CentOS/Rocky/Alma
+#### Notas específicas de RHEL/CentOS/Rocky/Alma (backend PowerShell)
 
 - **Paquetes**: `pwsh` viene del repo de Microsoft
   (`sudo dnf install -y https://packages.microsoft.com/config/rhel/<versión>/packages-microsoft-prod.rpm`
@@ -93,7 +108,7 @@ Pasos:
   default, el dominio de nginx (`httpd_t`) tiene bloqueado hacer conexiones
   salientes a puertos no estándar — incluido el `proxy_pass` hacia
   `127.0.0.1:8787` de este mismo backend. Sin este paso, nginx devuelve
-  **502 Bad Gateway** aunque `server.ps1` esté corriendo bien:
+  **502 Bad Gateway** aunque el backend esté corriendo bien:
   ```bash
   sudo setsebool -P httpd_can_network_connect 1
   ```
@@ -108,20 +123,99 @@ Pasos:
   sudo firewall-cmd --reload
   ```
 
-> **Login contra Active Directory en Linux:** el bind LDAP usa
-> `System.DirectoryServices.Protocols`, que es multiplataforma (a diferencia
-> de `System.DirectoryServices.AccountManagement`, que solo funciona en
-> Windows) — el login funciona igual contra el mismo Domain Controller desde
-> Linux o Windows. Si el Domain Controller usa un certificado de una CA
-> interna y tildás "Usar LDAPS (SSL)" en la config de AD, esa CA tiene que
-> estar en el almacén de confianza del servidor Linux o el bind va a fallar
-> por certificado no confiable.
+### Opción B: backend Node.js
 
-> **Un usuario a la vez:** como dice "Limitaciones conocidas" más abajo, el
-> servidor atiende un request HTTP por vez — no está pensado como servicio
-> con muchos usuarios concurrentes. Si varias personas van a usarlo al mismo
-> tiempo desde este deployment Linux, tenerlo en cuenta (un flow largo
-> corriendo bloquea al resto hasta que termina).
+Todo el código vive en `node/` — ver "Backend Node.js (`node/`)" un poco más
+abajo para el detalle de qué está portado y qué no.
+
+Requisitos en el servidor:
+
+- **Node.js 18 o superior** (usa `fetch` global — no hace falta instalar
+  ningún paquete HTTP client aparte). En RHEL/CentOS/Rocky/Alma:
+  `sudo dnf module install -y nodejs:20` (o el módulo LTS disponible en tu
+  versión); en Debian/Ubuntu, el paquete `nodejs` del repo del sistema suele
+  quedar viejo — conviene el repo de [NodeSource](https://github.com/nodesource/distributions).
+- Conectividad de red hacia el core bancario y el Domain Controller de
+  Active Directory (igual que la Opción A). Sybase queda aparte — ver el
+  aviso de abajo.
+
+Pasos:
+
+1. Copiar el repo al servidor (por ejemplo `/opt/bankcoreflowrunner`).
+2. Completar `profiles.local.json`, `parametria.local.json` y
+   `security.local.json` en la **raíz del repo** (no dentro de `node/`) —
+   son los mismos archivos que usa el backend PowerShell.
+3. `cd /opt/bankcoreflowrunner/node && npm install --omit=dev` (instala
+   `ldapts`, la única dependencia externa).
+4. Instalar el servicio con **`deploy/bankcoreflowrunner-node.service`**
+   (unidad systemd — corre `node server.js` como usuario sin privilegios,
+   solo escucha en `127.0.0.1:8787`). El archivo trae los pasos de
+   instalación en su propio comentario.
+5. Publicarlo con **`deploy/nginx-bankcoreflowrunner-node.conf`** (reverse
+   proxy nginx → `127.0.0.1:8787`, probado contra nginx 1.18/1.24). Incluye
+   un bloque HTTPS comentado para producción.
+
+Las mismas notas de RHEL de la Opción A aplican tal cual acá (SELinux
+`httpd_can_network_connect`, firewalld, `conf.d/` en vez de
+`sites-available`) — son cosas de nginx, no cambian según el backend.
+
+> **Conexión a Sybase todavía no cableada en el backend Node.js.** El
+> backend PowerShell se conecta a Sybase por ODBC directo
+> (`System.Data.Odbc`); Node.js no tiene un driver ODBC/Sybase maduro y
+> mantenido, así que acá la conexión está pensada para pasar por un
+> servicio/API intermedio en vez de ODBC directo. Hasta que se cablee esa
+> integración real, `node/lib/sybaseClient.js` devuelve un error explícito
+> tanto en el botón "Probar conexión" de Parametría como en cualquier step
+> `"type": "sql"` (incluida la dependencia interna "Recupera cuentas (SQL)"
+> que usa el flow de Alta de Plazo Fijos) — el resto de la app (login,
+> flows HTTP normales, gestión de usuarios/perfiles/parametría, prevención
+> de duplicados) funciona igual que en PowerShell. Cablear la integración
+> real es un cambio acotado a ese único archivo — no hace falta tocar el
+> resto del backend Node.
+
+### Backend Node.js (`node/`)
+
+Port completo del backend a Node.js (sin dependencias de frameworks web —
+usa el módulo `http` nativo, igual de "a mano" que el router de
+`server.ps1`), pensado para el mismo contrato de API que ya consume
+`wwwroot/app.js`:
+
+```
+node/
+  server.js              Entry point: mismas rutas /api/* + estáticos que server.ps1
+  package.json           Única dependencia externa: ldapts (bind LDAP)
+  lib/
+    jsonPath.js               Port de modules/JsonPath.psm1
+    variableSubstitution.js   Port de modules/VariableSubstitution.psm1
+    profileStore.js           Port de modules/ProfileStore.psm1
+    parametriaStore.js        Port de modules/ParametriaStore.psm1
+    flowStore.js              Port de modules/FlowStore.psm1
+    flowEngine.js             Port de modules/FlowEngine.psm1 (fetch en vez de HttpClient)
+    securityStore.js          Port de modules/SecurityStore.psm1 (ldapts en vez de LDAP .NET)
+    processedOperationsStore.js  Port de modules/ProcessedOperationsStore.psm1
+    sybaseClient.js           Sin equivalente PowerShell — ver el aviso de Sybase arriba
+```
+
+Cada archivo de `node/lib/` es un port 1:1 del `.psm1` equivalente (mismo
+comportamiento, mismos nombres de campo en las respuestas JSON) — se
+verificó ejecutando el mismo flow HTTP de punta a punta (login LDAP real,
+extractVariables, omitIfNull, OAuth2, prevención de duplicados, guardado de
+archivos) contra un servidor de prueba, y además con el `wwwroot/app.js`
+real corriendo en un navegador sin ningún cambio.
+
+> **Login contra Active Directory en Linux:** tanto el bind LDAP de
+> PowerShell (`System.DirectoryServices.Protocols`) como el de Node.js
+> (`ldapts`) son multiplataforma — el login funciona igual contra el mismo
+> Domain Controller sin importar qué backend elijas. Si el Domain
+> Controller usa un certificado de una CA interna y tildás "Usar LDAPS
+> (SSL)" en la config de AD, esa CA tiene que estar en el almacén de
+> confianza del servidor Linux o el bind va a fallar por certificado no
+> confiable.
+
+> **Un usuario a la vez:** como dice "Limitaciones conocidas" más abajo,
+> ninguno de los dos backends está pensado como servicio con muchos
+> usuarios concurrentes ejecutando flows largos al mismo tiempo. Si varias
+> personas van a usar este deployment Linux a la vez, tenerlo en cuenta.
 
 ## Qué resuelve
 
@@ -168,12 +262,15 @@ modules/
   FlowEngine.psm1        Ejecuta un flow paso a paso, incluye el caché de token OAuth2
   SecurityStore.psm1     Login (AD) + sesiones + usuarios/roles + auditoría (ver "Módulo de seguridad")
   ProcessedOperationsStore.psm1  Registro de operaciones ya procesadas, evita duplicados (ver "Prevención de operaciones duplicadas")
+node/                    Backend Node.js alternativo (ver "Backend Node.js (node/)")
 wwwroot/
-  index.html, app.js, styles.css   Front-end (vanilla JS, sin build step)
+  index.html, app.js, styles.css   Front-end (vanilla JS, sin build step) — compartido por los dos backends
 deploy/
-  bankcoreflowrunner.service   Unidad systemd (ver "Instalación en Linux")
-  nginx-bankcoreflowrunner.conf  Reverse proxy nginx -> 127.0.0.1:8787 (ver "Instalación en Linux")
-Flows/                   *.json de flows (ver "Cómo definir un flow nuevo")
+  bankcoreflowrunner.service         Unidad systemd, backend PowerShell (ver "Instalación en Linux")
+  nginx-bankcoreflowrunner.conf      Reverse proxy nginx, backend PowerShell (ver "Instalación en Linux")
+  bankcoreflowrunner-node.service    Unidad systemd, backend Node.js (ver "Instalación en Linux")
+  nginx-bankcoreflowrunner-node.conf Reverse proxy nginx, backend Node.js (ver "Instalación en Linux")
+Flows/                   *.json de flows (ver "Cómo definir un flow nuevo") — compartido por los dos backends
 files/                   Archivos de salida pfout-.../pfouterror-... (no versionado, se crea solo)
 profiles.sample.json      Plantilla de perfiles (sin secretos)
 parametria.sample.json   Plantilla de parametría (ver "Módulo de parametría")
@@ -888,13 +985,20 @@ duplicadas" — viven en la misma carpeta, tampoco se versionan.
   Sybase en `parametria.local.json`) se guardan en texto plano en disco. Son
   archivos locales, no se versionan, pero no están cifrados.
 - Los steps `"type": "sql"` requieren un driver ODBC de Sybase/SAP ASE ya
-  instalado en la máquina — la app no lo instala ni lo empaqueta. Tampoco
-  escapan el SQL armado por `query` (mismo mecanismo de texto plano que
-  `pathTemplate`/`bodyTemplate`); pensado para inputs ya confiables, no para
-  datos externos sin validar (ver "Steps de tipo SQL" más arriba).
-- El servidor atiende un request HTTP a la vez (`HttpListener.GetContext()`
-  sincrónico) — pensado para un solo usuario ejecutando flows manualmente,
-  no para uso concurrente ni como servicio productivo expuesto a la red.
+  instalado en la máquina (backend PowerShell) — la app no lo instala ni lo
+  empaqueta. Tampoco escapan el SQL armado por `query` (mismo mecanismo de
+  texto plano que `pathTemplate`/`bodyTemplate`); pensado para inputs ya
+  confiables, no para datos externos sin validar (ver "Steps de tipo SQL"
+  más arriba). En el **backend Node.js** esto todavía no está cableado en
+  absoluto (ni siquiera vía ODBC) — ver el aviso de Sybase en "Instalación
+  en Linux" y `node/lib/sybaseClient.js`.
+- El **backend PowerShell** atiende un request HTTP a la vez
+  (`HttpListener.GetContext()` sincrónico) — pensado para un solo usuario
+  ejecutando flows manualmente, no para uso concurrente. El **backend
+  Node.js** sí atiende requests en paralelo (I/O asíncrono nativo), pero
+  ninguno de los dos backends fue pensado ni probado como servicio
+  productivo con muchos usuarios concurrentes ejecutando flows largos al
+  mismo tiempo.
 - El diálogo de perfiles de la UI no expone los campos de OAuth2 más
   avanzados (`tokenParams`, `tokenHeaders`, `tokenAccessTokenPath`, etc.) —
   se completan editando `profiles.local.json` directamente.
