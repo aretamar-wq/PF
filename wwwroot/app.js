@@ -352,22 +352,24 @@ function isSqlFlow(flow) {
 }
 
 // Mismo formato que modules/FlowEngine.psm1 genera para {{idMensajeGenerado}}
-// (PFC + yyyyMMddHHmmss). Se genera acá (no solo en el servidor) y se manda
-// como input por fila para que "Plazo Fijo Cocos Files (SQL)" lo use (un
-// input del usuario pisa la variable de sistema del mismo nombre) — así el
-// cliente sabe el valor exacto que se usó en cada fila, para poder
+// (PFC + yyyyMMddHHmmssfff, con milisegundos al final para que no se repita
+// entre filas de un mismo archivo). Se genera acá (no solo en el servidor) y
+// se manda como input por fila para que "Plazo Fijo Cocos Files (SQL)" lo
+// use (un input del usuario pisa la variable de sistema del mismo nombre) —
+// así el cliente sabe el valor exacto que se usó en cada fila, para poder
 // agregarlo al final de "Descargar detalle de Plazos Fijos..." (el
 // servidor no lo devuelve en la respuesta).
 function generateIdMensaje() {
   const now = new Date();
-  const pad = (n) => String(n).padStart(2, '0');
+  const pad = (n, len = 2) => String(n).padStart(len, '0');
   const stamp =
     now.getFullYear().toString() +
     pad(now.getMonth() + 1) +
     pad(now.getDate()) +
     pad(now.getHours()) +
     pad(now.getMinutes()) +
-    pad(now.getSeconds());
+    pad(now.getSeconds()) +
+    pad(now.getMilliseconds(), 3);
   return `PFC${stamp}`;
 }
 

@@ -562,9 +562,12 @@ todo flow tiene disponibles automáticamente:
 - `{{nowCompact}}` — fecha y hora actual sin separadores, `yyyyMMddHHmm`
   (útil para IDs de mensaje tipo `202608251243`).
 - `{{idMensajeGenerado}}` — `IdMensaje` generado automáticamente,
-  `PFC` + fecha y hora actual sin separadores con segundos,
-  `yyyyMMddHHmmss` (ej. `PFC20260828143205`). `Invoke-Flow` la recalcula en
-  cada corrida (una por fila en un flow CSV) como valor por defecto, pero
+  `PFC` + fecha y hora actual sin separadores con segundos y milisegundos,
+  `yyyyMMddHHmmssfff` (ej. `PFC20260828143205123`). Los milisegundos al
+  final son para que no se repita entre filas de un mismo archivo (con solo
+  segundos, dos filas procesadas dentro del mismo segundo tendrían el mismo
+  valor). `Invoke-Flow` la recalcula en cada corrida (una por fila en un
+  flow CSV) como valor por defecto, pero
   "Plazo Fijo Cocos Files (SQL)" la genera del lado del cliente
   (`wwwroot/app.js`, `generateIdMensaje`) y la manda como input de la fila
   (un input pisa la variable de sistema del mismo nombre) — así el cliente

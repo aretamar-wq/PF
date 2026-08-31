@@ -415,7 +415,7 @@ function Invoke-Flow {
         nowDateTime       = $now.ToString('yyyy-MM-dd HH:mm:ss')
         nowTime           = $now.ToString('HH:mm:ss')
         nowCompact        = $now.ToString('yyyyMMddHHmm')
-        idMensajeGenerado = 'PFC' + $now.ToString('yyyyMMddHHmmss')
+        idMensajeGenerado = 'PFC' + $now.ToString('yyyyMMddHHmmssfff')
     }
     $parametriaVariables = Get-ParametriaVariables -Parametria $Parametria
     foreach ($key in $parametriaVariables.Keys) {
