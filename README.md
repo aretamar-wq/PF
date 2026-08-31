@@ -11,7 +11,7 @@ navegador. No hay que compilar nada ni instalar .NET, Node, Python ni ningún
 runtime adicional.
 
 > **Importante:** hoy la app está reducida a un único flow operativo,
-> `Flows/plazo-fijo-cocos-files-sql.json` ("Plazo Fijo Cocos Files (SQL)"),
+> `Flows/plazo-fijo-cocos-files-sql.json` ("Alta de Plazo Fijos - File"),
 > más una dependencia interna que no aparece en la lista
 > (`Flows/recupera-cuentas-sql.json`, ver "Módulo de flows ocultos"). Los
 > demás flows de versiones anteriores (ejemplos con endpoints ficticios,
@@ -322,9 +322,9 @@ con nombre fijo (no hace falta declararlos como inputs):
 - `{{plazoFijoCodigoProducto}}`, `{{plazoFijoCodigoMovimiento}}`
 
 `renglon1` existió acá para Cuenta Corriente y Caja de Ahorro, pero se sacó:
-"Plazo Fijo Cocos Files (SQL)" (el único flow operativo hoy) arma esos
+"Alta de Plazo Fijos - File" (el único flow operativo hoy) arma esos
 `Renglon1`/`Renglon2`/`Renglon3` directamente en su propio `bodyTemplate`
-(fijos o por fila, según el paso — ver "Flow 'Plazo Fijo Cocos Files (SQL)'"
+(fijos o por fila, según el paso — ver "Flow 'Alta de Plazo Fijos - File'"
 más abajo), no desde Parametría.
 Si necesitás otra combinación de campos parametrizados, agregá una nueva
 categoría a `parametria.local.json`/`parametria.sample.json` y a
@@ -404,7 +404,7 @@ request HTTP. En ese caso no usa `method`/`pathTemplate`/`headers`/
   válido). Útil cuando un step **anterior** en la misma cadena no depende de
   esa variable y se ejecutaría igual sin ella — por ejemplo, un débito que
   no debería dispararse si un step SQL previo no encontró a qué cuenta
-  acreditar después. Ningún flow lo usa hoy ("Plazo Fijo Cocos Files (SQL)"
+  acreditar después. Ningún flow lo usa hoy ("Alta de Plazo Fijos - File"
   resuelve ese mismo caso distinto, sin step SQL propio — ver más abajo),
   pero queda disponible para el que lo necesite.
 
@@ -456,7 +456,7 @@ los flows de ejemplo):
   corresponda, resuelva al literal JSON `null` (no a texto vacío ni a un
   `{{...}}` sin reemplazar, que rompería el JSON) — con `omitIfNull:
   ["codigoCuenta"]` en el step, esa clave se borra del body antes de
-  mandarlo si terminó en `null`. Ver "Plazo Fijo Cocos Files (SQL)" más
+  mandarlo si terminó en `null`. Ver "Alta de Plazo Fijos - File" más
   abajo para un ejemplo real (`codigoCuenta` de la cuenta de Plazo Fijo,
   opcional para el banco).
 - `extractVariables` mapea `nombreDeVariable -> path` dentro del JSON de
@@ -600,7 +600,7 @@ todo flow tiene disponibles automáticamente:
   segundos, dos filas procesadas dentro del mismo segundo tendrían el mismo
   valor). `Invoke-Flow` la recalcula en cada corrida (una por fila en un
   flow CSV) como valor por defecto, pero
-  "Plazo Fijo Cocos Files (SQL)" la genera del lado del cliente
+  "Alta de Plazo Fijos - File" la genera del lado del cliente
   (`wwwroot/app.js`, `generateIdMensaje`) y la manda como input de la fila
   (un input pisa la variable de sistema del mismo nombre) — así el cliente
   conoce el valor exacto usado en cada fila y lo puede agregar a "Descargar
@@ -660,12 +660,12 @@ de que el driver ODBC infiera bien el tipo — para un identificador
 
 Tiene `"hidden": true` (ver "Cómo definir un flow nuevo"): no aparece en la
 lista de flows de la UI porque no está pensado para elegirse a mano — lo usa
-"Plazo Fijo Cocos Files (SQL)" por atrás (`wwwroot/app.js`, función
+"Alta de Plazo Fijos - File" por atrás (`wwwroot/app.js`, función
 `fetchAccountsByCuit`) para buscar, en una sola consulta, las cuentas de
 todos los CUIT de un archivo antes de procesar ninguna fila. Sigue siendo
 ejecutable por nombre vía `/api/run` si hiciera falta correrlo suelto.
 
-### Flow "Plazo Fijo Cocos Files (SQL)"
+### Flow "Alta de Plazo Fijos - File"
 
 `Flows/plazo-fijo-cocos-files-sql.json` es hoy el único flow operativo de la
 app: carga un archivo `.csv` con operaciones de Plazo Fijo y, por cada fila,

@@ -355,7 +355,7 @@ function isSqlFlow(flow) {
 // Mismo formato que modules/FlowEngine.psm1 genera para {{idMensajeGenerado}}
 // (PFC + yyyyMMddHHmmssfff, con milisegundos al final para que no se repita
 // entre filas de un mismo archivo). Se genera acá (no solo en el servidor) y
-// se manda como input por fila para que "Plazo Fijo Cocos Files (SQL)" lo
+// se manda como input por fila para que "Alta de Plazo Fijos - File" lo
 // use (un input del usuario pisa la variable de sistema del mismo nombre) —
 // así el cliente sabe el valor exacto que se usó en cada fila, para poder
 // agregarlo al final de "Descargar detalle de Plazos Fijos..." (el
@@ -379,7 +379,7 @@ function generateIdMensaje() {
 // sola vez para todo el archivo, antes del loop de filas (ver
 // fetchAccountsByCuit / runFlowFromCsv), en vez de una consulta por fila.
 function isPlazoFijoCocosFilesSqlFlow(flow) {
-  return !!flow && flow.name === 'Plazo Fijo Cocos Files (SQL)';
+  return !!flow && flow.name === 'Alta de Plazo Fijos - File';
 }
 
 // Junta los CUIT únicos de todas las filas (primera columna) y hace UNA
@@ -597,7 +597,7 @@ async function runFlowFromCsv() {
       return;
     }
 
-    // Para "Plazo Fijo Cocos Files (SQL)": UNA sola consulta a Sybase con
+    // Para "Alta de Plazo Fijos - File": UNA sola consulta a Sybase con
     // todos los CUIT del archivo, antes de procesar ninguna fila — en vez
     // de una consulta por fila (o por CUIT repetido). Si esto falla, se
     // aborta todo el archivo: sin las cuentas no se puede procesar ninguna
