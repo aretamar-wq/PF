@@ -1,6 +1,7 @@
 {
   "name": "Recupera cuentas (SQL)",
-  "description": "Trae, por cada nrodoc y sistcod (código de sistema 4/5, moneda 0, estado de cuenta 1/2), la cuecod más chica de tcl_VinculoCli_Cue + tgl_cuentas (mismo criterio que el flow 'Recupera cuentas' vía API, pero consultando la base Sybase directamente, sin duplicados: una fila por combinación nrodoc+sistcod). Ejecuta contra la conexión Sybase configurada en Parametría.",
+  "description": "Trae, por cada nrodoc y sistcod (código de sistema 4/5, moneda 0, estado de cuenta 1/2), la cuecod más chica de tcl_VinculoCli_Cue + tgl_cuentas, consultando la base Sybase directamente, sin duplicados: una fila por combinación nrodoc+sistcod. Ejecuta contra la conexión Sybase configurada en Parametría. No aparece en la lista de flows (\"hidden\": true): lo usa 'Plazo Fijo Cocos Files (SQL)' por atrás para buscar cuentas en bloque (ver wwwroot/app.js, función fetchAccountsByCuit) — se puede seguir ejecutando por nombre vía /api/run aunque no se vea en la UI.",
+  "hidden": true,
   "inputs": [
     { "variableName": "nrodoc", "label": "Número(s) de documento (uno o varios separados por coma)" }
   ],

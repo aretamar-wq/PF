@@ -10,11 +10,14 @@ sencilla (HTML/CSS/JS, sin frameworks ni dependencias) para manejarla desde el
 navegador. No hay que compilar nada ni instalar .NET, Node, Python ni ningún
 runtime adicional.
 
-> **Importante:** los flows en `Flows/*.json` para consulta de saldo,
-> movimientos y transferencia son **ejemplos** con endpoints ficticios — hay
-> que editarlos para que coincidan con las APIs reales. El flow
-> `consulta-plazos-fijos.json` y la autenticación OAuth2 del perfil `IBS` sí
-> están armados contra endpoints reales que nos pasaron.
+> **Importante:** hoy la app está reducida a un único flow operativo,
+> `Flows/plazo-fijo-cocos-files-sql.json` ("Plazo Fijo Cocos Files (SQL)"),
+> más una dependencia interna que no aparece en la lista
+> (`Flows/recupera-cuentas-sql.json`, ver "Módulo de flows ocultos"). Los
+> demás flows de versiones anteriores (ejemplos con endpoints ficticios,
+> variantes manuales/CSV previas de Plazo Fijo Cocos, consultas sueltas)
+> se borraron del repo — el historial de git los tiene si hace falta
+> recuperar alguno como referencia.
 
 ## Cómo correrla (sin instalar nada)
 
@@ -49,8 +52,8 @@ runtime adicional.
 - Log de ejecución paso a paso (estado, HTTP status, duración,
   respuesta/error) en la propia página, exportable a `.txt` desde el
   navegador. La respuesta que la página muestra corta a los 200.000
-  caracteres (antes 800; se subió porque algunas respuestas, como la de
-  "Recupera cuentas" con muchas cuentas, superan ampliamente los 800); el
+  caracteres (antes 800; se subió porque algunas respuestas con muchas
+  cuentas superan ampliamente los 800); el
   detalle completo de cada request/response de negocio (no de la
   obtención de token) queda siempre entero, sin cortar, en
   `logs/http.log` — ver "Logs en disco" más abajo.
@@ -170,8 +173,13 @@ token expire ni a que la persona vuelva a loguearse.
 `logs/security.log` (mismo directorio que `logs/http.log`, no versionado)
 registra, con fecha/hora: logins exitosos y fallidos (usuario, nunca la
 contraseña), el bootstrap del primer admin, altas/bajas/ediciones de
-usuarios (quién lo hizo y a quién), cambios en la configuración de AD, y
-ejecuciones de flow denegadas por rol.
+usuarios (quién lo hizo y a quién), cambios en la configuración de AD,
+ejecuciones de flow denegadas por rol, y **cada ejecución de un flow**
+(usuario, rol, flow, perfil, y cuántos pasos terminaron ok/error) — para un
+flow CSV, una línea por fila/operación, así queda trazado quién ejecutó
+cada Plazo Fijo dado de alta. Nunca incluye los inputs de la fila ni la
+respuesta del banco (pueden traer datos bancarios reales); el detalle
+completo de cada request/response sigue en `logs/http.log`.
 
 ### Limitaciones conocidas
 
@@ -289,9 +297,8 @@ El botón **"Parametría..."** (al lado de "Probar token") abre un formulario
 para configurar valores fijos que varios flows necesitan y que casi nunca
 cambian de una ejecución a otra, agrupados por tipo de cuenta:
 
-- **Cuenta Corriente**: código de cuenta, código de sistema, transacción,
-  renglón 1.
-- **Caja de Ahorro**: código de sistema, transacción, renglón 1 (el código de
+- **Cuenta Corriente**: código de cuenta, código de sistema, transacción.
+- **Caja de Ahorro**: código de sistema, transacción (el código de
   cuenta sigue siendo manual en cada flow, porque cambia por operación).
 - **Plazo Fijo**: código de producto, código de movimiento.
 - **Conexión Sybase**: connection string, usuario y contraseña — ver
@@ -307,14 +314,15 @@ igual mecánica que los perfiles: el archivo local **no se versiona**, está en
 Dentro de un flow, estos valores están disponibles como variables de sistema
 con nombre fijo (no hace falta declararlos como inputs):
 
-- `{{ctaCteCodigoCuenta}}`, `{{ctaCteCodigoSistema}}`, `{{ctaCteTransaccion}}`, `{{ctaCteRenglon1}}`
-- `{{cajaAhorroCodigoSistema}}`, `{{cajaAhorroTransaccion}}`, `{{cajaAhorroRenglon1}}`
+- `{{ctaCteCodigoCuenta}}`, `{{ctaCteCodigoSistema}}`, `{{ctaCteTransaccion}}`
+- `{{cajaAhorroCodigoSistema}}`, `{{cajaAhorroTransaccion}}`
 - `{{plazoFijoCodigoProducto}}`, `{{plazoFijoCodigoMovimiento}}`
 
-Por eso "Débito - Cuenta Corriente" (`Flows/debito-credito-cuenta-corriente.json`)
-y "Crédito - Caja de Ahorro" (`Flows/debito-credito-caja-de-ahorro.json`) son
-dos flows separados en vez de uno solo con un selector: cada uno referencia
-directamente las variables de su categoría.
+`renglon1` existió acá para Cuenta Corriente y Caja de Ahorro, pero se sacó:
+"Plazo Fijo Cocos Files (SQL)" (el único flow operativo hoy) arma esos
+`Renglon1`/`Renglon2`/`Renglon3` directamente en su propio `bodyTemplate`
+(fijos o por fila, según el paso — ver "Flow 'Plazo Fijo Cocos Files (SQL)'"
+más abajo), no desde Parametría.
 Si necesitás otra combinación de campos parametrizados, agregá una nueva
 categoría a `parametria.local.json`/`parametria.sample.json` y a
 `Get-ParametriaVariables` en `modules/FlowEngine.psm1`.
@@ -390,11 +398,12 @@ request HTTP. En ese caso no usa `method`/`pathTemplate`/`headers`/
   necesite recién fallaría ahí (y solo si el placeholder `{{...}}` sin
   reemplazar termina rompiendo el JSON — no siempre pasa, ej. dentro de un
   campo entre comillas queda como string "raro" pero sigue siendo JSON
-  válido). Usalo cuando un step **anterior** en la misma cadena no depende
-  de esa variable y se ejecutaría igual sin ella (ver "Plazo Fijo Cocos
-  Files (SQL)" más abajo: sin `requireVariables`, un cuit sin cuenta
-  encontrada igual dispararía el débito en Cuenta Corriente antes de que
-  fallara el crédito o el alta).
+  válido). Útil cuando un step **anterior** en la misma cadena no depende de
+  esa variable y se ejecutaría igual sin ella — por ejemplo, un débito que
+  no debería dispararse si un step SQL previo no encontró a qué cuenta
+  acreditar después. Ningún flow lo usa hoy ("Plazo Fijo Cocos Files (SQL)"
+  resuelve ese mismo caso distinto, sin step SQL propio — ver más abajo),
+  pero queda disponible para el que lo necesite.
 
 **Riesgo de inyección SQL:** `query` se arma con el mismo mecanismo de
 reemplazo de texto plano que usan `pathTemplate`/`bodyTemplate` — no
@@ -459,44 +468,23 @@ los flows de ejemplo):
   lo ignora si lo definís (ver "Limitaciones conocidas").
 - Un flow con `"enabled": false` en el JSON se ignora por completo: no
   aparece en la lista de la UI ni se puede ejecutar (ni por nombre desde
-  `/api/run`). Útil para dejar en el repo flows de ejemplo o en desuso sin
-  que aparezcan como opciones activas. Sin ese campo (o con `true`), el flow
-  está activo — es el comportamiento de siempre. Los flows de ejemplo con
-  endpoints ficticios (`balance-inquiry.json`, `transactions-history.json`,
-  `transfer.json`) y `consulta-plazos-fijos.json` están marcados
-  `"enabled": false` por default; los activos hoy son `alta-plazo-fijo.json`,
-  `debito-credito-cuenta-corriente.json`, `debito-credito-caja-de-ahorro.json`,
-  `plazo-fijo-cocos.json`, `plazo-fijo-cocos-files.json` y
-  `recupera-cuentas.json` (`numeroDocumento` e `idMensaje` manuales).
-
-### Panel de cuentas de "Recupera cuentas"
-
-Después de correr el flow **"Recupera cuentas"** con éxito, debajo del log
-aparece un panel con las cuentas de código de sistema **4** y **5** y código
-de estado de cuenta **1 o 2** que trae la respuesta
-(`output[].codigoSistema`/`output[].codigoCuenta`/`output[].codigoMoneda`/
-`output[].codigoEstadoCuenta`), sin duplicados — la misma cuenta puede
-aparecer muchas veces en la respuesta (una por cada operación histórica),
-pero acá se muestra una sola vez por cada combinación código de sistema +
-código de cuenta + código de moneda (si la misma cuenta existiera en más de
-una moneda, no se pierde). Sirve para copiar
-rápidamente los `codigoCuenta` que después se usan como input manual en
-"Plazo Fijo Cocos"/"Plazo Fijo Cocos Files". Está acoplado por nombre a este
-flow puntual (`state.selectedFlow.name === 'Recupera cuentas'` en
-`wwwroot/app.js`), no es un mecanismo genérico para cualquier flow.
-
-Para este mismo flow tampoco se muestra la tabla de log paso a paso (sería
-un volcado de JSON enorme e ilegible) — solo el panel filtrado de arriba. El
-detalle completo de la respuesta sigue disponible en `logs/http.log` y en
-"Guardar log..." (que exporta el log completo a `.txt` aunque la tabla no se
-vea en pantalla).
+  `/api/run`). Útil para dejar en el repo un flow de ejemplo o en desuso sin
+  que aparezca como opción activa ni se pueda disparar por accidente. Sin ese
+  campo (o con `true`), el flow está activo — es el comportamiento de
+  siempre. Ninguno de los dos flows que quedan hoy lo usa.
+- `"hidden": true` es distinto: saca al flow de la lista que muestra la UI
+  (`GET /api/flows`, filtrado en `server.ps1`), pero lo sigue dejando
+  ejecutable por nombre vía `/api/run` (`Get-Flows` no lo filtra ahí) — para
+  una dependencia interna que otro flow llama por atrás y que no tiene
+  sentido que alguien elija a mano. Es el caso de
+  `Flows/recupera-cuentas-sql.json` (ver "Flow 'Recupera cuentas (SQL)'" más
+  abajo): existe, se puede ejecutar, pero no aparece en la lista de la UI.
 
 ### Flows que cargan sus inputs desde un archivo CSV (carga masiva)
 
 Un flow pensado para tipear a mano puede tener una versión "Files" que, en
 vez de mostrar un formulario, pide un archivo `.csv` y ejecuta el flow una
-vez por cada fila (ej. `Flows/plazo-fijo-cocos-files.json`, copia de
-`Flows/plazo-fijo-cocos.json`). Para esto:
+vez por cada fila (ej. `Flows/plazo-fijo-cocos-files-sql.json`). Para esto:
 
 ```json
 {
@@ -543,8 +531,8 @@ vez por cada fila (ej. `Flows/plazo-fijo-cocos-files.json`, copia de
   (o incluso a mitad de proceso), descarga un `.csv` con **una fila por cada
   plazo fijo dado de alta** (no una fila por cada item que devuelve la API),
   tomando la respuesta del **último paso** del flow (para
-  `Plazo Fijo Cocos Files`, la alta del plazo fijo) de cada fila del CSV de
-  origen que llegó a completarse con éxito. La respuesta trae un array
+  "Plazo Fijo Cocos Files (SQL)", la alta del plazo fijo) de cada fila del
+  CSV de origen que llegó a completarse con éxito. La respuesta trae un array
   `output` con 2 items por plazo fijo (función 1 = capital, función 3 =
   interés) que comparten `operacion`/`vencimiento`/`tem`/`tna`/`importeNeto`
   — se unifican en una sola fila con columnas `fila` (la fila del CSV de
@@ -573,22 +561,17 @@ todo flow tiene disponibles automáticamente:
   `PFC` + fecha y hora actual sin separadores con segundos,
   `yyyyMMddHHmmss` (ej. `PFC20260828143205`). `Invoke-Flow` la recalcula en
   cada corrida (una por fila en un flow CSV) como valor por defecto, pero
-  para los flows CSV que la usan (`Flows/plazo-fijo-cocos-files.json` y
-  `Flows/plazo-fijo-cocos-files-sql.json`) la UI (`wwwroot/app.js`,
-  `generateIdMensaje`) la genera del lado del cliente y la manda como input
-  de la fila (un input pisa la variable de sistema del mismo nombre) — así
-  el cliente conoce el valor exacto usado en cada fila y lo puede agregar a
-  "Descargar detalle de Plazos Fijos..." (el servidor no lo devuelve en la
-  respuesta). En ninguno de los dos, `idMensaje` es ya una columna del CSV
-  de entrada — antes había que tipearlo/traerlo en el archivo, ahora se
-  genera solo por fila.
+  "Plazo Fijo Cocos Files (SQL)" la genera del lado del cliente
+  (`wwwroot/app.js`, `generateIdMensaje`) y la manda como input de la fila
+  (un input pisa la variable de sistema del mismo nombre) — así el cliente
+  conoce el valor exacto usado en cada fila y lo puede agregar a "Descargar
+  detalle de Plazos Fijos..." (el servidor no lo devuelve en la respuesta).
+  `idMensaje` no es una columna del CSV de entrada: se genera solo por fila.
 
 Útil para campos como `FechaMovimiento`/`FechaNegocio`/`FechayHoraMensaje`
 que el sistema debe completar solo, sin que el usuario los tenga que tipear
-(ver `Flows/debito-credito-cuenta-corriente.json`). En los demás flows
-(los que no son CSV batch de Plazo Fijo Cocos), `idMensaje` sigue siendo
-manual — `{{nowCompact}}`/`{{idMensajeGenerado}}` quedan disponibles para
-el que los necesite.
+(ver `Flows/plazo-fijo-cocos-files-sql.json`). `{{nowCompact}}` queda
+disponible para el que lo necesite, aunque hoy ningún flow lo usa.
 
 ### Inputs con opciones fijas (selector en vez de campo de texto)
 
@@ -614,26 +597,15 @@ siempre, una caja de texto.
 
 Con `"type": "textarea"` el input se renderiza como una caja de texto
 multilínea (4 filas) en vez de un `<input>` de una sola línea — útil para
-texto largo, como una consulta SQL (ver `Flows/consulta-sql.json`).
-
-### Flow "Consulta SQL (Sybase)"
-
-`Flows/consulta-sql.json` es un flow de un solo input (`query`, tipo
-`textarea`) y un solo step `"type": "sql"` con `"query": "{{query}}"` — deja
-correr **cualquier** consulta que escribas contra la conexión Sybase
-configurada en Parametría, sin transformarla ni validarla. Es intencional
-(un flow "consola SQL"), pero por eso mismo es el punto de la app con más
-riesgo si se ejecuta algo mal escrito — no hay `expectedStatusCode` que
-valga (no aplica a SQL) ni ninguna otra verificación más que "no tiró una
-excepción".
+texto largo, como una consulta SQL escrita a mano. Ninguno de los dos flows
+que quedan hoy usa `select` ni `textarea`, pero ambos tipos siguen
+disponibles para el próximo flow que se agregue.
 
 ### Flow "Recupera cuentas (SQL)"
 
-`Flows/recupera-cuentas-sql.json` es una consulta SQL fija (a diferencia de
-"Consulta SQL (Sybase)") que trae, por cada `nrodoc` + `sistcod` (código de
-sistema 4/5, moneda 0, estado de cuenta 1/2 — mismo criterio que ya usa el
-panel de "Recupera cuentas" vía API, pero yendo directo a la base), la
-`cuecod` más chica, sin duplicados (`GROUP BY nrodoc, sistcod` +
+`Flows/recupera-cuentas-sql.json` es una consulta SQL fija que trae, por
+cada `nrodoc` + `sistcod` (código de sistema 4/5, moneda 0, estado de cuenta
+1/2), la `cuecod` más chica, sin duplicados (`GROUP BY nrodoc, sistcod` +
 `MIN(cuecod)`). El único input manual es `nrodoc`, que se pega tal cual
 dentro del `IN (...)` de la consulta — admite uno o varios números de
 documento separados por coma (ej. `20308626971` o
@@ -647,52 +619,25 @@ de 32 bits en vez de uno más ancho. Devolverlo como texto evita depender
 de que el driver ODBC infiera bien el tipo — para un identificador
 (no algo con lo que se hagan cuentas) no hay ninguna desventaja.
 
-### Flow "Recupera cuentas (SQL) Files"
-
-`Flows/recupera-cuentas-sql-files.json` es la versión CSV batch de
-"Recupera cuentas (SQL)": `inputMode: "csv"`, 4 inputs (`cuit`, `importe`,
-`plazo`, `numeroComprobante`) que tienen que coincidir con las 4 columnas
-del CSV de entrada, sin encabezado (`idMensaje` no es columna acá: esta
-consulta SQL nunca la usó, era solo un pasamano). Por cada fila corre la
-misma consulta (agrupada por `sistcod`, `MIN(cuecod)`) filtrando por ese
-`cuit`.
-
-A diferencia de otros flows CSV, además del resumen ok/error por paso trae
-un botón **"Descargar archivo con cuentas agregadas..."**: arma un `.csv`
-con **la fila original de cada fila procesada** (las 4 columnas de entrada,
-tal cual estaban) más 2 columnas al final — `cuecodSistema5` y
-`cuecodSistema4` — con la cuenta encontrada para cada sistema (vacío si no
-se encontró ninguna para ese sistema en esa fila). A diferencia de
-"Descargar detalle de Plazos Fijos..." (que arma filas nuevas, una por
-plazo fijo dado de alta), acá se preserva 1:1 la fila de entrada — incluida
-una fila cuya consulta falló, con las dos columnas nuevas en blanco — para
-no perder la correspondencia con el archivo original.
-
-El archivo de salida (`cuit, importe, plazo, numeroComprobante,
-cuecodSistema5, cuecodSistema4`, **sin fila de encabezado** — a propósito,
-para poder subirlo tal cual) tiene **el mismo orden de columnas** que
-espera `Flows/plazo-fijo-cocos-files.json` como entrada — se puede
-descargar acá y subir directo en "Plazo Fijo Cocos Files" sin reordenar
-nada (`cuecodSistema5` = código de cuenta de Caja de Ahorro,
-`cuecodSistema4` = código de cuenta de Plazo Fijo). `idMensaje` no viaja en
-este archivo: "Plazo Fijo Cocos Files" lo genera solo por fila
-(`{{idMensajeGenerado}}`, ver "Variables de sistema").
+Tiene `"hidden": true` (ver "Cómo definir un flow nuevo"): no aparece en la
+lista de flows de la UI porque no está pensado para elegirse a mano — lo usa
+"Plazo Fijo Cocos Files (SQL)" por atrás (`wwwroot/app.js`, función
+`fetchAccountsByCuit`) para buscar, en una sola consulta, las cuentas de
+todos los CUIT de un archivo antes de procesar ninguna fila. Sigue siendo
+ejecutable por nombre vía `/api/run` si hiciera falta correrlo suelto.
 
 ### Flow "Plazo Fijo Cocos Files (SQL)"
 
-`Flows/plazo-fijo-cocos-files-sql.json` hace lo que "Recupera cuentas (SQL)
-Files" + "Plazo Fijo Cocos Files" hacían en dos pasos manuales (descargar
-el archivo enriquecido y volver a subirlo), pero en una sola corrida. El
-CSV de entrada tiene 6 columnas, sin encabezado, en este orden: `CUIT,
-Apellido y Nombre, Monto, Plazo, Nro_Comprobante, Circuito`. `Apellido y
-Nombre` y `Circuito` son solo de referencia — se leen del archivo (como
-inputs `apellidoNombre`/`circuito`) pero ningún step los usa en el body de
-ningún llamado; quedan disponibles por si hicieran falta más adelante.
-`idMensaje` no es columna del CSV: se genera solo por fila
-(`{{idMensajeGenerado}}`, ver "Variables de sistema"). Esto ya no coincide
-columna a columna con "Recupera cuentas (SQL) Files" (que sigue teniendo 4
-columnas: `cuit, importe, plazo, numeroComprobante`) — son formatos de
-entrada independientes.
+`Flows/plazo-fijo-cocos-files-sql.json` es hoy el único flow operativo de la
+app: carga un archivo `.csv` con operaciones de Plazo Fijo y, por cada fila,
+busca las cuentas del cliente en Sybase, debita de Cuenta Corriente,
+acredita en Caja de Ahorro y da de alta el Plazo Fijo. El CSV de entrada
+tiene 6 columnas, sin encabezado, en este orden: `CUIT, Apellido y Nombre,
+Monto, Plazo, Nro_Comprobante, Circuito`. `Circuito` es solo de referencia
+— se lee del archivo (input `circuito`) pero ningún step lo usa en el body
+de ningún llamado. `Apellido y Nombre` (input `apellidoNombre`) sí se usa —
+ver más abajo. `idMensaje` no es columna del CSV: se genera solo por fila
+(`{{idMensajeGenerado}}`, ver "Variables de sistema").
 
 **El flow en sí solo tiene 3 steps HTTP** (débito en Cuenta Corriente,
 crédito en Caja de Ahorro, alta de Plazo Fijo) — **no** tiene ningún step
@@ -717,26 +662,36 @@ sin saber a qué cuenta acreditar. Si no se encontró `cuecodSistema4`
 (cuenta administrativa de Plazo Fijo, campo opcional para el banco), la
 fila sigue igual, pasando el texto literal `null` para esa variable — el
 alta de Plazo Fijo se arma con `"codigoCuenta": null` (JSON válido) y el
-step usa `"omitIfNull": ["codigoCuenta"]` (nuevo campo opcional de un step
-HTTP, en `modules/FlowEngine.psm1`) para borrar esa clave del body antes de
+step usa `"omitIfNull": ["codigoCuenta"]` (campo opcional de un step HTTP,
+en `modules/FlowEngine.psm1`) para borrar esa clave del body antes de
 mandarlo, en vez de mandarla vacía o en `null` — el banco espera que
 directamente no aparezca. Con cuenta encontrada, `codigoCuenta` sigue
-yendo como número sin comillas (`"codigoCuenta": 2104`), igual que en
-"Plazo Fijo Cocos"/"Plazo Fijo Cocos Files".
+yendo como número sin comillas (`"codigoCuenta": 2104`).
 
 Si algún valor de la primera columna no es puramente numérico, se aborta
 el archivo entero antes de mandar ninguna consulta (defensa contra
 inyección SQL al armar la lista de CUIT para el `IN (...)`).
 
+**Renglon1/Renglon2/Renglon3** de los dos pasos de débito/crédito no salen
+de Parametría (ver "Módulo de parametría" más arriba: ese campo se sacó):
+
+- Paso 1, débito en Cuenta Corriente — armados por fila, con datos del
+  cliente: `Renglon1` = `"Benef.: CUIL Nro.:" + cuit`, `Renglon2` =
+  `"Nom.:" + apellidoNombre`, `Renglon3` fijo en `"Ref.: VAR"`.
+- Paso 2, crédito en Caja de Ahorro — fijos, iguales en todas las filas (el
+  "Orig." de la operación es siempre Cocos Capital S.A., no el cliente):
+  `Renglon1` = `"Orig.: CUIL Nro.: 30708424478"`, `Renglon2` =
+  `"Nom.: Cocos Capital S.A."`, `Renglon3` = `"Ref: VAR"` (sin el punto
+  después de "Ref", a diferencia del paso 1 — así lo pidieron).
+
 ### Panel de resultado de un step SQL
 
-Para cualquier flow cuyo último step sea `"type": "sql"` (no solo
-"Recupera cuentas (SQL)" — también aplica a "Consulta SQL (Sybase)" y a
-cualquier otro que se agregue), la tabla de log paso a paso tampoco se
-muestra: en su lugar aparece una tabla HTML con el array `rows` de la
-respuesta (columnas = las que devuelve la consulta, en el mismo orden). El
-detalle completo sigue disponible en `logs/http.log` y en "Guardar
-log...".
+Para cualquier flow cuyo último step sea `"type": "sql"` (hoy solo
+"Recupera cuentas (SQL)", oculto de la lista pero renderiza igual si se
+corre por nombre) la tabla de log paso a paso tampoco se muestra: en su
+lugar aparece una tabla HTML con el array `rows` de la respuesta (columnas
+= las que devuelve la consulta, en el mismo orden). El detalle completo
+sigue disponible en `logs/http.log` y en "Guardar log...".
 
 ## Logs en disco
 

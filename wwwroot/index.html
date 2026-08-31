@@ -51,7 +51,6 @@
           <p id="csvProgress" class="muted"></p>
           <div id="csvSummary" class="csv-summary" style="display: none;"></div>
           <button id="downloadPfDetailBtn" disabled>Descargar detalle de Plazos Fijos...</button>
-          <button id="downloadEnrichedCsvBtn" disabled>Descargar archivo con cuentas agregadas...</button>
         </div>
         <div class="actions">
           <button id="runBtn" disabled>Ejecutar flow</button>
@@ -59,7 +58,6 @@
         </div>
         <p id="readOnlyNotice" class="muted" style="display: none;">Tu usuario tiene rol de solo lectura: podés ver flows y perfiles, pero no ejecutar nada.</p>
 
-        <div id="recuperaCuentasResult" class="csv-summary" style="display: none;"></div>
         <div id="sqlResultPanel" style="display: none;"></div>
 
         <table id="logTable">
@@ -114,13 +112,11 @@
         <label>Código de cuenta <input name="cuentaCorriente.codigoCuenta" /></label>
         <label>Código de sistema <input name="cuentaCorriente.codigoSistema" /></label>
         <label>Transacción <input name="cuentaCorriente.transaccion" /></label>
-        <label>Renglón 1 <input name="cuentaCorriente.renglon1" /></label>
       </fieldset>
       <fieldset>
         <legend>Caja de Ahorro</legend>
         <label>Código de sistema <input name="cajaDeAhorro.codigoSistema" /></label>
         <label>Transacción <input name="cajaDeAhorro.transaccion" /></label>
-        <label>Renglón 1 <input name="cajaDeAhorro.renglon1" /></label>
       </fieldset>
       <fieldset>
         <legend>Plazo Fijo</legend>

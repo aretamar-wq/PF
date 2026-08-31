@@ -192,13 +192,11 @@ function Get-ParametriaVariables {
         $variables['ctaCteCodigoCuenta']  = [string]$Parametria.cuentaCorriente.codigoCuenta
         $variables['ctaCteCodigoSistema'] = [string]$Parametria.cuentaCorriente.codigoSistema
         $variables['ctaCteTransaccion']   = [string]$Parametria.cuentaCorriente.transaccion
-        $variables['ctaCteRenglon1']      = [string]$Parametria.cuentaCorriente.renglon1
     }
 
     if ($Parametria.cajaDeAhorro) {
         $variables['cajaAhorroCodigoSistema'] = [string]$Parametria.cajaDeAhorro.codigoSistema
         $variables['cajaAhorroTransaccion']   = [string]$Parametria.cajaDeAhorro.transaccion
-        $variables['cajaAhorroRenglon1']       = [string]$Parametria.cajaDeAhorro.renglon1
     }
 
     if ($Parametria.plazoFijo) {

@@ -351,7 +351,11 @@ try {
                 Write-JsonResponse -Response $response -StatusCode 200 -Body ([pscustomobject]@{ ok = $true })
             }
             elseif ($method -eq 'GET' -and $path -eq '/api/flows') {
-                $flows = @(Get-Flows -FlowsDir $flowsDir)
+                # "hidden": true saca un flow de esta lista sin sacarle la posibilidad de
+                # ejecutarlo por nombre vía /api/run (Get-Flows de esa ruta no filtra nada) —
+                # lo usa 'Recupera cuentas (SQL)', una dependencia interna de 'Plazo Fijo
+                # Cocos Files (SQL)' que no está pensada para elegirse a mano en la UI.
+                $flows = @(Get-Flows -FlowsDir $flowsDir) | Where-Object { -not $_.hidden }
                 $summary = @($flows | ForEach-Object {
                     [pscustomobject][ordered]@{
                         name        = $_.name
@@ -390,6 +394,16 @@ try {
 
                     $parametria = Get-Parametria -RootDir $scriptRoot
                     $log = @(Invoke-Flow -Profile $selectedProfile -Flow $selectedFlow -InputValues $inputValues -LogsDir $logsDir -Parametria $parametria)
+
+                    # Una entrada por cada corrida de /api/run (para un flow CSV, una por fila
+                    # del archivo — cada operación bancaria individual queda trazada a quién la
+                    # ejecutó, no solo a qué flow/perfil). Nunca incluye los inputs ni la
+                    # respuesta (pueden traer datos bancarios reales) — el detalle completo de
+                    # cada request/response sigue en logs/http.log.
+                    $okSteps = @($log | Where-Object { $_.status -eq 'Success' }).Count
+                    $errorSteps = @($log | Where-Object { $_.status -ne 'Success' }).Count
+                    Write-SecurityLog -LogsDir $logsDir -Message "EJECUCIÓN flow='$($selectedFlow.name)' perfil='$($selectedProfile.name)' usuario='$($session.username)' rol='$($session.role)' pasos_ok=$okSteps pasos_error=$errorSteps"
+
                     Write-JsonResponse -Response $response -StatusCode 200 -Body $log
                 }
             }

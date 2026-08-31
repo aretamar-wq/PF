@@ -8,12 +8,10 @@ function Get-DefaultParametria {
             codigoCuenta  = ''
             codigoSistema = ''
             transaccion   = ''
-            renglon1      = ''
         }
         cajaDeAhorro = [pscustomobject]@{
             codigoSistema = ''
             transaccion   = ''
-            renglon1      = ''
         }
         plazoFijo = [pscustomobject]@{
             codigoProducto   = ''

@@ -4,7 +4,6 @@ const state = {
   selectedFlow: null,
   lastLog: [],
   pfDetailRows: [],
-  enrichedCsvRows: [],
   token: sessionStorage.getItem('pf_token') || null,
   currentUser: null, // { username, role, displayName, canManageUsers } — se completa en loadMe()
 };
@@ -191,12 +190,9 @@ function selectFlow(name) {
   csvFileInput.value = '';
   document.getElementById('csvProgress').textContent = '';
   hideCsvSummary();
-  hideRecuperaCuentasResult();
   hideSqlResult();
   state.pfDetailRows = [];
   document.getElementById('downloadPfDetailBtn').disabled = true;
-  state.enrichedCsvRows = [];
-  document.getElementById('downloadEnrichedCsvBtn').disabled = true;
 
   if (isCsvFlow(state.selectedFlow)) {
     form.style.display = 'none';
@@ -212,13 +208,11 @@ function selectFlow(name) {
   } else {
     form.style.display = '';
     csvSection.style.display = 'none';
-    // "Recupera cuentas" y cualquier flow con un step SQL tampoco muestran la
-    // tabla de log: la respuesta es un volcado de JSON (o una tabla) más
-    // legible en su propio panel (#recuperaCuentasResult / #sqlResultPanel)
-    // que como fila de la tabla genérica. El detalle completo sigue en
-    // logs/http.log y en "Guardar log...".
-    document.getElementById('logTable').style.display =
-      isRecuperaCuentasFlow(state.selectedFlow) || isSqlFlow(state.selectedFlow) ? 'none' : '';
+    // Un flow con un step SQL tampoco muestra la tabla de log: la respuesta
+    // es una tabla más legible en su propio panel (#sqlResultPanel) que como
+    // fila de la tabla genérica. El detalle completo sigue en logs/http.log
+    // y en "Guardar log...".
+    document.getElementById('logTable').style.display = isSqlFlow(state.selectedFlow) ? 'none' : '';
 
     for (const input of inputs) {
       const label = document.createElement('label');
@@ -316,91 +310,20 @@ function renderCsvSummary(flow, totalRows, stepCounts) {
   summaryEl.style.display = '';
 }
 
-// Acoplado a este flow puntual por nombre (igual que el detalle de Plazo
-// Fijo): sabemos que su única respuesta trae un array "output" con,
-// entre otras cosas, codigoSistema/codigoCuenta por cada cuenta/operación
-// del cliente.
-function isRecuperaCuentasFlow(flow) {
-  return !!flow && flow.name === 'Recupera cuentas';
-}
-
-function hideRecuperaCuentasResult() {
-  const el = document.getElementById('recuperaCuentasResult');
-  el.style.display = 'none';
-  el.innerHTML = '';
-}
-
-// Filtra el array "output" de la respuesta a las cuentas con código de
-// sistema 4 o 5 y código de estado de cuenta 1 o 2, sin repetir
-// combinaciones código de sistema + código de cuenta + código de moneda ya
-// vistas (la misma cuenta aparece una vez por cada operación
-// histórica en el core, y lo que hace falta acá es la lista de cuentas,
-// no de operaciones).
-function renderRecuperaCuentasResult(entries) {
-  const el = document.getElementById('recuperaCuentasResult');
-  const lastEntry = entries[entries.length - 1];
-  if (!lastEntry || lastEntry.status !== 'Success' || !lastEntry.responseSummary) {
-    hideRecuperaCuentasResult();
-    return;
-  }
-
-  let output;
-  try {
-    const parsed = JSON.parse(lastEntry.responseSummary);
-    output = Array.isArray(parsed.output) ? parsed.output : [];
-  } catch (err) {
-    hideRecuperaCuentasResult();
-    return;
-  }
-
-  const seen = new Set();
-  const rows = [];
-  for (const item of output) {
-    if (item.codigoSistema !== 4 && item.codigoSistema !== 5) continue;
-    if (item.codigoEstadoCuenta !== 1 && item.codigoEstadoCuenta !== 2) continue;
-    const key = `${item.codigoSistema}|${item.codigoCuenta}|${item.codigoMoneda}`;
-    if (seen.has(key)) continue;
-    seen.add(key);
-    rows.push({
-      codigoSistema: item.codigoSistema,
-      codigoCuenta: item.codigoCuenta,
-      codigoMoneda: item.codigoMoneda,
-      codigoEstadoCuenta: item.codigoEstadoCuenta,
-    });
-  }
-
-  if (rows.length === 0) {
-    el.innerHTML = '<div>No se encontraron cuentas con código de sistema 4 o 5 y código de estado de cuenta 1 o 2 en la respuesta.</div>';
-    el.style.display = '';
-    return;
-  }
-
-  const lines = ['<div><strong>Cuentas (código de sistema 4 y 5, código de estado de cuenta 1 y 2)</strong></div>'];
-  for (const row of rows) {
-    lines.push(
-      `<div>Código de sistema ${escapeHtml(row.codigoSistema)}: código de cuenta ${escapeHtml(row.codigoCuenta)}, ` +
-        `código de moneda ${escapeHtml(row.codigoMoneda)}, código de estado de cuenta ${escapeHtml(row.codigoEstadoCuenta)}</div>`
-    );
-  }
-  el.innerHTML = lines.join('');
-  el.style.display = '';
-}
-
-// Genérico para cualquier flow cuyo último step sea "type": "sql" (no
-// acoplado a un flow puntual, a diferencia de isRecuperaCuentasFlow): sirve
-// tanto para "Consulta SQL (Sybase)" como para "Recupera cuentas (SQL)" y
-// cualquier otro flow SQL que se agregue después.
+// Genérico para cualquier flow cuyo último step sea "type": "sql" — hoy solo
+// "Recupera cuentas (SQL)" (oculto de la lista pero se puede correr por
+// nombre), pero sirve para cualquier otro flow SQL que se agregue después.
 function isSqlFlow(flow) {
   return !!flow && Array.isArray(flow.steps) && flow.steps.some((step) => step.type === 'sql');
 }
 
 // Mismo formato que modules/FlowEngine.psm1 genera para {{idMensajeGenerado}}
 // (PFC + yyyyMMddHHmmss). Se genera acá (no solo en el servidor) y se manda
-// como input por fila para que "Plazo Fijo Cocos Files"/"Plazo Fijo Cocos
-// Files (SQL)" lo usen (un input del usuario pisa la variable de sistema del
-// mismo nombre) — así el cliente sabe el valor exacto que se usó en cada
-// fila, para poder agregarlo al final de "Descargar detalle de Plazos
-// Fijos..." (el servidor no lo devuelve en la respuesta).
+// como input por fila para que "Plazo Fijo Cocos Files (SQL)" lo use (un
+// input del usuario pisa la variable de sistema del mismo nombre) — así el
+// cliente sabe el valor exacto que se usó en cada fila, para poder
+// agregarlo al final de "Descargar detalle de Plazos Fijos..." (el
+// servidor no lo devuelve en la respuesta).
 function generateIdMensaje() {
   const now = new Date();
   const pad = (n) => String(n).padStart(2, '0');
@@ -412,13 +335,6 @@ function generateIdMensaje() {
     pad(now.getMinutes()) +
     pad(now.getSeconds());
   return `PFC${stamp}`;
-}
-
-// Acoplado a este flow puntual: sabemos que su respuesta SQL trae
-// {rows: [{sistcod, cuecod}, ...]}, y que arma un archivo de salida
-// "fila original + cuecodSistema5 + cuecodSistema4" (ver runFlowFromCsv).
-function isRecuperaCuentasSqlFilesFlow(flow) {
-  return !!flow && flow.name === 'Recupera cuentas (SQL) Files';
 }
 
 // Acoplado a este flow puntual: no tiene ningún step SQL propio (a
@@ -591,7 +507,6 @@ async function runFlow() {
   const runBtn = document.getElementById('runBtn');
   runBtn.disabled = true;
   document.getElementById('logBody').innerHTML = '';
-  hideRecuperaCuentasResult();
   hideSqlResult();
 
   const form = document.getElementById('inputsForm');
@@ -604,9 +519,7 @@ async function runFlow() {
     state.lastLog = await runOnce(inputs);
     renderLog(state.lastLog);
     document.getElementById('saveLogBtn').disabled = state.lastLog.length === 0;
-    if (isRecuperaCuentasFlow(state.selectedFlow)) {
-      renderRecuperaCuentasResult(state.lastLog);
-    } else if (isSqlFlow(state.selectedFlow)) {
+    if (isSqlFlow(state.selectedFlow)) {
       renderSqlResult(state.lastLog);
     }
   } catch (err) {
@@ -630,8 +543,6 @@ async function runFlowFromCsv() {
   state.lastLog = [];
   state.pfDetailRows = [];
   document.getElementById('downloadPfDetailBtn').disabled = true;
-  state.enrichedCsvRows = [];
-  document.getElementById('downloadEnrichedCsvBtn').disabled = true;
 
   // stepCounts[i] cuenta, para el paso flow.steps[i], cuántas filas lo
   // completaron con éxito ('ok') y cuántas no ('error') — ya sea porque ese
@@ -811,35 +722,6 @@ async function runFlowFromCsv() {
       }
       document.getElementById('downloadPfDetailBtn').disabled = state.pfDetailRows.length === 0;
 
-      // Para "Recupera cuentas (SQL) Files": el último step SQL devuelve
-      // {rows: [{sistcod, cuecod}, ...]} (a lo sumo un row por sistema 5 y
-      // por sistema 4). Se arma la fila original del CSV + cuecodSistema5 +
-      // cuecodSistema4 al final — siempre se agrega la fila (para no perder
-      // la correspondencia 1:1 con el archivo de entrada), aunque no se
-      // haya encontrado cuenta para alguno de los dos sistemas (queda "").
-      if (isRecuperaCuentasSqlFilesFlow(flow)) {
-        let cuecodSistema5 = '';
-        let cuecodSistema4 = '';
-        if (stepEntries) {
-          const lastEntry = stepEntries[stepEntries.length - 1];
-          if (lastEntry && lastEntry.status === 'Success' && lastEntry.responseSummary) {
-            try {
-              const parsed = JSON.parse(lastEntry.responseSummary);
-              const sqlRows = Array.isArray(parsed.rows) ? parsed.rows : [];
-              for (const sqlRow of sqlRows) {
-                if (sqlRow.sistcod === 5) cuecodSistema5 = sqlRow.cuecod == null ? '' : String(sqlRow.cuecod);
-                else if (sqlRow.sistcod === 4) cuecodSistema4 = sqlRow.cuecod == null ? '' : String(sqlRow.cuecod);
-              }
-            } catch (err) {
-              // Respuesta no parseable como JSON: se agrega la fila igual, con
-              // las dos columnas de cuecod en blanco.
-            }
-          }
-        }
-        state.enrichedCsvRows.push([...row, cuecodSistema5, cuecodSistema4]);
-        document.getElementById('downloadEnrichedCsvBtn').disabled = state.enrichedCsvRows.length === 0;
-      }
-
       const prefixed = rowEntries.map((entry) => ({ ...entry, name: `Fila ${rowNumber} — ${entry.name}` }));
       state.lastLog = state.lastLog.concat(prefixed);
       document.getElementById('saveLogBtn').disabled = state.lastLog.length === 0;
@@ -895,24 +777,6 @@ function downloadPfDetail() {
   const a = document.createElement('a');
   a.href = url;
   a.download = `plazos-fijos-${new Date().toISOString().replace(/[:.]/g, '-')}.csv`;
-  a.click();
-  URL.revokeObjectURL(url);
-}
-
-function downloadEnrichedCsv() {
-  if (state.enrichedCsvRows.length === 0) return;
-
-  // Sin fila de encabezado, a propósito: este archivo está pensado para
-  // subirse tal cual como entrada de "Plazo Fijo Cocos Files" (mismo orden
-  // de columnas), que espera un CSV sin encabezado como cualquier otro flow
-  // inputMode: "csv" de esta app.
-  const lines = state.enrichedCsvRows.map((row) => row.map(csvEscape).join(','));
-
-  const blob = new Blob([lines.join('\r\n')], { type: 'text/csv' });
-  const url = URL.createObjectURL(blob);
-  const a = document.createElement('a');
-  a.href = url;
-  a.download = `cuentas-agregadas-${new Date().toISOString().replace(/[:.]/g, '-')}.csv`;
   a.click();
   URL.revokeObjectURL(url);
 }
@@ -981,7 +845,6 @@ document.getElementById('testTokenBtn').addEventListener('click', testToken);
 document.getElementById('profileSelect').addEventListener('change', updateTestTokenButtonState);
 document.getElementById('csvFileInput').addEventListener('change', updateRunButtonState);
 document.getElementById('downloadPfDetailBtn').addEventListener('click', downloadPfDetail);
-document.getElementById('downloadEnrichedCsvBtn').addEventListener('click', downloadEnrichedCsv);
 
 const parametriaDialog = document.getElementById('parametriaDialog');
 const parametriaForm = document.getElementById('parametriaForm');

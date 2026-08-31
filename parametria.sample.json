@@ -2,13 +2,11 @@
   "cuentaCorriente": {
     "codigoCuenta": "",
     "codigoSistema": "",
-    "transaccion": "",
-    "renglon1": ""
+    "transaccion": ""
   },
   "cajaDeAhorro": {
     "codigoSistema": "",
-    "transaccion": "",
-    "renglon1": ""
+    "transaccion": ""
   },
   "plazoFijo": {
     "codigoProducto": "",
