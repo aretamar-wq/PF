@@ -1,6 +1,6 @@
 ﻿#Requires -Version 5.1
 <#
-BankCoreFlowRunner - servidor web local para ejecutar flows contra APIs de un core
+ApiCore - servidor web local para ejecutar flows contra APIs de un core
 bancario. No requiere instalar nada: corre con el PowerShell que ya trae Windows.
 Uso: doble click en Iniciar.bat, o "powershell -ExecutionPolicy Bypass -File server.ps1"
 #>
@@ -150,7 +150,7 @@ try {
     exit 1
 }
 
-Write-Host "BankCoreFlowRunner corriendo en $prefix (Ctrl+C para detener)" -ForegroundColor Green
+Write-Host "ApiCore corriendo en $prefix (Ctrl+C para detener)" -ForegroundColor Green
 try {
     Start-Process $prefix
 } catch {

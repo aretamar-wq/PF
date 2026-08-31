@@ -74,7 +74,7 @@ function Test-AdCredentials {
         # System.DirectoryServices.Protocols es LDAP puro (a diferencia de
         # System.DirectoryServices.AccountManagement, que usa ADSI y solo corre en
         # Windows) — funciona igual en Windows y en Linux/macOS, así que
-        # BankCoreFlowRunner puede autenticar contra el mismo Domain Controller
+        # ApiCore puede autenticar contra el mismo Domain Controller
         # sin importar en qué SO corra el servidor.
         Add-Type -AssemblyName System.DirectoryServices.Protocols -ErrorAction Stop
     } catch {

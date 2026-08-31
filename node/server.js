@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 'use strict';
 
-// BankCoreFlowRunner — backend Node.js (alternativa a server.ps1/PowerShell,
+// ApiCore — backend Node.js (alternativa a server.ps1/PowerShell,
 // pensada para deployments Linux que prefieren no instalar pwsh). Sirve la
 // MISMA wwwroot/ y expone exactamente las mismas rutas /api/* con el mismo
 // contrato JSON que server.ps1 — el frontend (wwwroot/app.js) no sabe ni le
@@ -570,5 +570,5 @@ const server = http.createServer((req, res) => {
 });
 
 server.listen(port, '127.0.0.1', () => {
-  console.log(`BankCoreFlowRunner (Node.js) corriendo en http://localhost:${port}/ (Ctrl+C para detener)`);
+  console.log(`ApiCore (Node.js) corriendo en http://localhost:${port}/ (Ctrl+C para detener)`);
 });

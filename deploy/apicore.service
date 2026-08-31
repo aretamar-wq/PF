@@ -1,0 +1,38 @@
+# Unidad systemd para correr ApiCore como servicio en Linux.
+#
+# Instalación (como root):
+#   1. Copiar el repo a /opt/apicore (o el path que uses en ExecStart/WorkingDirectory).
+#   2. useradd --system --no-create-home --shell /usr/sbin/nologin apicore
+#      (crea también el grupo apicore por default; comando
+#      portable entre Debian/Ubuntu y RHEL/CentOS/Rocky/Alma — a diferencia
+#      de "adduser", que en Debian es un wrapper con otra sintaxis y en RHEL
+#      ni siquiera viene instalado)
+#   3. chown -R apicore:apicore /opt/apicore
+#   4. cp deploy/apicore.service /etc/systemd/system/
+#   5. systemctl daemon-reload && systemctl enable --now apicore
+#   6. journalctl -u apicore -f   (para ver los mismos mensajes que Write-Host/Write-Warning)
+#
+# El listener de server.ps1 solo escucha en localhost:8787 (no en 0.0.0.0) —
+# nginx es el único punto de entrada expuesto a la red, ver
+# deploy/nginx-apicore.conf.
+
+[Unit]
+Description=ApiCore
+After=network.target
+
+[Service]
+Type=simple
+User=apicore
+Group=apicore
+WorkingDirectory=/opt/apicore
+ExecStart=/usr/bin/pwsh -NoProfile -File /opt/apicore/server.ps1 -Port 8787
+Restart=on-failure
+RestartSec=5
+
+# logs/, files/ y los *.local.json quedan bajo WorkingDirectory — necesitan
+# ser escribibles por este usuario (ya cubierto por el chown del paso 3).
+NoNewPrivileges=true
+PrivateTmp=true
+
+[Install]
+WantedBy=multi-user.target

@@ -1,4 +1,4 @@
-# BankCoreFlowRunner
+# ApiCore
 
 Aplicación web local, **portable** (nada para instalar), que ejecuta *flows* —
 secuencias de llamadas a las APIs REST de un core bancario — definidos en
@@ -76,16 +76,16 @@ Requisitos en el servidor:
 
 Pasos:
 
-1. Copiar el repo al servidor (por ejemplo `/opt/bankcoreflowrunner`).
+1. Copiar el repo al servidor (por ejemplo `/opt/apicore`).
 2. Completar `profiles.local.json`, `parametria.local.json` y
    `security.local.json` igual que en Windows (ver las secciones
    correspondientes más abajo) — estos archivos no viajan con el repo.
-3. Instalar el servicio con **`deploy/bankcoreflowrunner.service`** (unidad
+3. Instalar el servicio con **`deploy/apicore.service`** (unidad
    systemd — corre `server.ps1` como usuario sin privilegios, reinicia solo
    si se cae, y solo escucha en `127.0.0.1:8787`, nunca expuesto directo a
    la red). El archivo trae los pasos de instalación en su propio
    comentario.
-4. Publicarlo con **`deploy/nginx-bankcoreflowrunner.conf`** (reverse proxy
+4. Publicarlo con **`deploy/nginx-apicore.conf`** (reverse proxy
    nginx → `127.0.0.1:8787`, probado contra nginx 1.18). Incluye un bloque
    HTTPS comentado para producción — recomendado, porque el login manda la
    contraseña de AD en el body del POST.
@@ -101,8 +101,8 @@ Pasos:
   `sudo dnf install -y unixODBC freetds` (freetds puede requerir el repo
   EPEL: `sudo dnf install -y epel-release` antes).
 - **Ubicación del config de nginx**: RHEL no trae `sites-available`/
-  `sites-enabled` por defecto — copiar `deploy/nginx-bankcoreflowrunner.conf`
-  directo a `/etc/nginx/conf.d/bankcoreflowrunner.conf` (nginx.conf ya
+  `sites-enabled` por defecto — copiar `deploy/nginx-apicore.conf`
+  directo a `/etc/nginx/conf.d/apicore.conf` (nginx.conf ya
   incluye todo `/etc/nginx/conf.d/*.conf`), sin symlink.
 - **SELinux** (la causa más común de "nginx anda pero da 502"): por
   default, el dominio de nginx (`httpd_t`) tiene bloqueado hacer conexiones
@@ -141,17 +141,17 @@ Requisitos en el servidor:
 
 Pasos:
 
-1. Copiar el repo al servidor (por ejemplo `/opt/bankcoreflowrunner`).
+1. Copiar el repo al servidor (por ejemplo `/opt/apicore`).
 2. Completar `profiles.local.json`, `parametria.local.json` y
    `security.local.json` en la **raíz del repo** (no dentro de `node/`) —
    son los mismos archivos que usa el backend PowerShell.
-3. `cd /opt/bankcoreflowrunner/node && npm install --omit=dev` (instala
+3. `cd /opt/apicore/node && npm install --omit=dev` (instala
    `ldapts`, la única dependencia externa).
-4. Instalar el servicio con **`deploy/bankcoreflowrunner-node.service`**
+4. Instalar el servicio con **`deploy/apicore-node.service`**
    (unidad systemd — corre `node server.js` como usuario sin privilegios,
    solo escucha en `127.0.0.1:8787`). El archivo trae los pasos de
    instalación en su propio comentario.
-5. Publicarlo con **`deploy/nginx-bankcoreflowrunner-node.conf`** (reverse
+5. Publicarlo con **`deploy/nginx-apicore-node.conf`** (reverse
    proxy nginx → `127.0.0.1:8787`, probado contra nginx 1.18/1.24). Incluye
    un bloque HTTPS comentado para producción.
 
@@ -266,10 +266,10 @@ node/                    Backend Node.js alternativo (ver "Backend Node.js (node
 wwwroot/
   index.html, app.js, styles.css   Front-end (vanilla JS, sin build step) — compartido por los dos backends
 deploy/
-  bankcoreflowrunner.service         Unidad systemd, backend PowerShell (ver "Instalación en Linux")
-  nginx-bankcoreflowrunner.conf      Reverse proxy nginx, backend PowerShell (ver "Instalación en Linux")
-  bankcoreflowrunner-node.service    Unidad systemd, backend Node.js (ver "Instalación en Linux")
-  nginx-bankcoreflowrunner-node.conf Reverse proxy nginx, backend Node.js (ver "Instalación en Linux")
+  apicore.service         Unidad systemd, backend PowerShell (ver "Instalación en Linux")
+  nginx-apicore.conf      Reverse proxy nginx, backend PowerShell (ver "Instalación en Linux")
+  apicore-node.service    Unidad systemd, backend Node.js (ver "Instalación en Linux")
+  nginx-apicore-node.conf Reverse proxy nginx, backend Node.js (ver "Instalación en Linux")
 Flows/                   *.json de flows (ver "Cómo definir un flow nuevo") — compartido por los dos backends
 files/                   Archivos de salida pfout-.../pfouterror-... (no versionado, se crea solo)
 profiles.sample.json      Plantilla de perfiles (sin secretos)
@@ -292,7 +292,7 @@ usuario habilitado, su nombre de cuenta de AD y qué **rol** tiene acá adentro.
    `.gitignore` — igual que `profiles.local.json`/`parametria.local.json`).
 2. Completá el bloque `ad` con los datos del Domain Controller contra el que
    validar contraseñas — **no hace falta que la PC donde corre
-   BankCoreFlowRunner esté unida al dominio**, alcanza con que llegue por red
+   ApiCore esté unida al dominio**, alcanza con que llegue por red
    al DC (mismo criterio que la conexión a Sybase: apuntás a un host/puerto
    puntual, no se asume nada del entorno):
    ```json
@@ -381,7 +381,7 @@ bancarios reales); el detalle completo de cada request/response sigue en
   donde el token/login viajan por HTTP plano dentro de la propia máquina —
   aceptable en ese contexto. Si se expone en red (por ejemplo, el
   deployment Linux de "Instalación en Linux (nginx + systemd)"), usar el
-  bloque HTTPS de `deploy/nginx-bankcoreflowrunner.conf` para que ese
+  bloque HTTPS de `deploy/nginx-apicore.conf` para que ese
   tráfico no viaje en claro entre el navegador y el servidor.
 
 ## Configurar perfiles de conexión
