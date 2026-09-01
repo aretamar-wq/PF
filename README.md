@@ -159,19 +159,74 @@ Las mismas notas de RHEL de la Opción A aplican tal cual acá (SELinux
 `httpd_can_network_connect`, firewalld, `conf.d/` en vez de
 `sites-available`) — son cosas de nginx, no cambian según el backend.
 
-> **Conexión a Sybase todavía no cableada en el backend Node.js.** El
-> backend PowerShell se conecta a Sybase por ODBC directo
-> (`System.Data.Odbc`); Node.js no tiene un driver ODBC/Sybase maduro y
-> mantenido, así que acá la conexión está pensada para pasar por un
-> servicio/API intermedio en vez de ODBC directo. Hasta que se cablee esa
-> integración real, `node/lib/sybaseClient.js` devuelve un error explícito
-> tanto en el botón "Probar conexión" de Parametría como en cualquier step
-> `"type": "sql"` (incluida la dependencia interna "Recupera cuentas (SQL)"
-> que usa el flow de Alta de Plazo Fijos) — el resto de la app (login,
-> flows HTTP normales, gestión de usuarios/perfiles/parametría, prevención
-> de duplicados) funciona igual que en PowerShell. Cablear la integración
-> real es un cambio acotado a ese único archivo — no hace falta tocar el
-> resto del backend Node.
+### Conexión a Sybase en el backend Node.js
+
+A diferencia del backend PowerShell (ODBC directo vía `System.Data.Odbc`),
+Node.js no tiene ningún driver ODBC/Sybase maduro y mantenido, y SAP no
+provee ningún binding oficial de Node.js para su Open Client/Server ("OCS",
+el sucesor de Sybase OpenClient) — sí para Python, Perl y PHP. La solución
+implementada en `node/lib/sybaseClient.js` es invocar **`isql`** (la
+herramienta de línea de comandos que trae el OCS) **como subproceso** por
+cada query, y parsear su salida.
+
+**Requisitos en el servidor** (además de lo que ya pide la Opción B más
+arriba):
+
+- SAP OCS instalado (probado contra OCS 16.0) — el instalador deja todo en
+  `/opt/sap` por default (configurable, ver más abajo). No hace falta
+  `unixODBC` ni ningún driver ODBC: `sybaseClient.js` habla directo con
+  `isql`.
+- El archivo `interfaces` de Sybase **no hace falta que tenga el server
+  registrado** — `sybaseClient.js` conecta directo por `host:puerto`,
+  tomándolos del mismo `NetworkAddress=host,puerto` que ya tiene el
+  `connectionString` de Parametría (no hay que duplicar esa configuración
+  en ningún otro lado).
+
+**Variables de entorno** (todas opcionales, con default para una instalación
+estándar en `/opt/sap`):
+
+| Variable | Default | Para qué |
+|---|---|---|
+| `SYBASE_HOME` | `/opt/sap` | Raíz de la instalación del OCS |
+| `SYBASE_OCS_DIR` | `OCS-16_0` | Subcarpeta de la versión del OCS instalada |
+| `SYBASE_ISQL_PATH` | `$SYBASE_HOME/$SYBASE_OCS_DIR/bin/isql` | Ruta al binario, por si no sigue la convención de carpetas de arriba |
+| `SYBASE_LANG` | `en_US.UTF-8` | Locale que se le fuerza a `isql` — sin esto falla con "context allocation routine failed... localization files" si el `LANG` del sistema (ej. `es_ES.UTF-8`) no está en `locales.dat` del OCS |
+| `SYBASE_ISQL_TIMEOUT_MS` | `30000` | Corta y mata el proceso `isql` si no respondió en ese tiempo |
+| `SYBASE_ISQL_WIDTH` | `8000` | Ancho de pantalla que se le pide a `isql` (`-w`) — evita que una tabla ancha se corte en varias líneas y rompa el parseo |
+
+Para setearlas, agregá líneas `Environment=` a `deploy/apicore-node.service`
+(por ejemplo `Environment=SYBASE_LANG=es_AR.UTF-8`) y
+`sudo systemctl daemon-reload && sudo systemctl restart apicore-node`.
+
+**Trade-offs conocidos de este enfoque** (aceptados, no son bugs — están
+documentados también como comentario en el propio `sybaseClient.js`):
+
+- La contraseña de Sybase viaja como argumento de línea de comandos (`-P`)
+  del proceso `isql` mientras corre esa query puntual — visible vía
+  `ps aux`/`/proc/<pid>/cmdline` para cualquier otro usuario con acceso al
+  mismo servidor durante esa ventana. Si esto es inaceptable en tu
+  organización, la alternativa es restringir `hidepid=2` en `/proc` a nivel
+  de sistema operativo.
+- El parseo de la tabla de resultados de `isql` es por posición de columna
+  (usa la línea de guiones para ubicar cada columna) — funciona bien con
+  los datos típicos de esta app (códigos de cuenta, DNI, montos), pero un
+  valor con salto de línea embebido rompería el parseo.
+- Solo se parsea el primer result set de la query — los flows de este repo
+  hacen un único `SELECT` por step SQL, no hace falta más.
+
+**Verificar la conectividad antes de correr un flow real:**
+
+```bash
+source /opt/sap/SYBASE.sh
+LANG=en_US.UTF-8 isql -S<host>:<puerto> -U<usuario> -P<clave>
+1> select getdate()
+2> go
+```
+
+Si devuelve la fecha/hora del servidor, la conectividad de base está OK.
+El botón **"Probar conexión"** de Parametría en la propia app hace
+exactamente esta misma prueba (usando el `connectionString` ya guardado),
+así que una vez configurado no hace falta repetir esto a mano.
 
 ### Backend Node.js (`node/`)
 
@@ -193,7 +248,7 @@ node/
     flowEngine.js             Port de modules/FlowEngine.psm1 (fetch en vez de HttpClient)
     securityStore.js          Port de modules/SecurityStore.psm1 (ldapts en vez de LDAP .NET)
     processedOperationsStore.js  Port de modules/ProcessedOperationsStore.psm1
-    sybaseClient.js           Sin equivalente PowerShell — ver el aviso de Sybase arriba
+    sybaseClient.js           Sin equivalente PowerShell — conecta a Sybase vía isql (subproceso), ver "Conexión a Sybase en el backend Node.js" arriba
 ```
 
 Cada archivo de `node/lib/` es un port 1:1 del `.psm1` equivalente (mismo
@@ -996,13 +1051,14 @@ duplicadas" — viven en la misma carpeta, tampoco se versionan.
   Sybase en `parametria.local.json`) se guardan en texto plano en disco. Son
   archivos locales, no se versionan, pero no están cifrados.
 - Los steps `"type": "sql"` requieren un driver ODBC de Sybase/SAP ASE ya
-  instalado en la máquina (backend PowerShell) — la app no lo instala ni lo
-  empaqueta. Tampoco escapan el SQL armado por `query` (mismo mecanismo de
-  texto plano que `pathTemplate`/`bodyTemplate`); pensado para inputs ya
-  confiables, no para datos externos sin validar (ver "Steps de tipo SQL"
-  más arriba). En el **backend Node.js** esto todavía no está cableado en
-  absoluto (ni siquiera vía ODBC) — ver el aviso de Sybase en "Instalación
-  en Linux" y `node/lib/sybaseClient.js`.
+  instalado en la máquina (backend PowerShell) o el Open Client/Server de
+  SAP con `isql` disponible (backend Node.js) — la app no instala ni
+  empaqueta ninguno de los dos. Tampoco escapan el SQL armado por `query`
+  (mismo mecanismo de texto plano que `pathTemplate`/`bodyTemplate`);
+  pensado para inputs ya confiables, no para datos externos sin validar
+  (ver "Steps de tipo SQL" más arriba). El backend Node.js además parsea
+  la salida de texto de `isql` por posición de columna — ver "Conexión a
+  Sybase en el backend Node.js" para el detalle y sus trade-offs conocidos.
 - El **backend PowerShell** atiende un request HTTP a la vez
   (`HttpListener.GetContext()` sincrónico) — pensado para un solo usuario
   ejecutando flows manualmente, no para uso concurrente. El **backend

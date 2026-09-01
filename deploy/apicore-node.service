@@ -15,9 +15,11 @@
 #   7. journalctl -u apicore-node -f
 #
 # Requiere Node.js 18+ instalado en el servidor (usa fetch global) — ver
-# "Instalación en Linux" en el README para el paso a paso completo, incluida
-# la aclaración sobre la conexión a Sybase (node/lib/sybaseClient.js, todavía
-# sin cablear a la API intermedia real).
+# "Instalación en Linux" en el README para el paso a paso completo. Los
+# steps SQL (Sybase) requieren además el Open Client/Server de SAP
+# instalado en el servidor (por default en /opt/sap) — ver "Conexión a
+# Sybase en el backend Node.js" en el README para el detalle y las
+# variables SYBASE_*/Environment= de más abajo.
 #
 # El listener de server.js solo escucha en 127.0.0.1:8787 (no en 0.0.0.0) —
 # nginx es el único punto de entrada expuesto a la red, ver
@@ -35,6 +37,14 @@ WorkingDirectory=/opt/apicore/node
 ExecStart=/usr/bin/node /opt/apicore/node/server.js --port 8787
 Restart=on-failure
 RestartSec=5
+
+# Solo hace falta descomentar/ajustar esto si el Open Client/Server de SAP
+# no está en la ruta estándar (/opt/sap/OCS-16_0) o si el locale del
+# servidor no es en_US.UTF-8 — ver "Conexión a Sybase en el backend
+# Node.js" en el README para el detalle de cada variable.
+#Environment=SYBASE_HOME=/opt/sap
+#Environment=SYBASE_OCS_DIR=OCS-16_0
+#Environment=SYBASE_LANG=en_US.UTF-8
 
 # logs/, files/ y los *.local.json quedan en la raíz del repo (un nivel arriba
 # de WorkingDirectory) — necesitan ser escribibles por este usuario (ya
