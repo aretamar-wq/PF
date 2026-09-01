@@ -132,6 +132,16 @@ function Test-RoleCanManageUsers {
     return $Role -eq 'admin'
 }
 
+function Test-RoleCanManageParametria {
+    # Parametría trae valores de cuenta y, sobre todo, la contraseña de Sybase
+    # (aunque nunca se manda de vuelta al navegador, sí se puede pisar) — mismo
+    # criterio que Test-RoleCanManageUsers: solo admin. 'operador' puede correr
+    # flows y probar el token OAuth2 del perfil elegido, pero no ver ni tocar
+    # Parametría (ni siquiera "Probar conexión" de Sybase).
+    param([Parameter(Mandatory = $true)][string]$Role)
+    return $Role -eq 'admin'
+}
+
 function Test-RoleCanRunFlow {
     param(
         [Parameter(Mandatory = $true)][string]$Role,
@@ -301,7 +311,7 @@ function Write-SecurityLog {
 Export-ModuleMember -Function `
     Get-Security, Save-Security, Get-DefaultSecurity, `
     Test-AdCredentials, `
-    Get-ValidRoles, Test-RoleCanManageUsers, Test-RoleCanRunFlow, `
+    Get-ValidRoles, Test-RoleCanManageUsers, Test-RoleCanManageParametria, Test-RoleCanRunFlow, `
     Get-SecurityUsers, Find-SecurityUser, Test-IsLastEnabledAdmin, Add-OrUpdateSecurityUser, Remove-SecurityUser, `
     New-Session, Get-SessionUser, Remove-Session, `
     Write-SecurityLog

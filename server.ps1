@@ -235,6 +235,7 @@ try {
                     role        = $session.role
                     displayName = $session.displayName
                     canManageUsers = Test-RoleCanManageUsers -Role $session.role
+                    canManageParametria = Test-RoleCanManageParametria -Role $session.role
                 })
             }
             elseif ($method -eq 'GET' -and $path -eq '/api/users') {
@@ -481,6 +482,9 @@ try {
                 Write-JsonResponse -Response $response -StatusCode 200 -Body ([pscustomobject]@{ ok = $true; registered = $operations.Count })
             }
             elseif ($method -eq 'GET' -and $path -eq '/api/parametria') {
+                if (-not (Test-RoleCanManageParametria -Role $session.role)) {
+                    Write-JsonResponse -Response $response -StatusCode 403 -Body ([pscustomobject]@{ error = 'No tenés permiso para ver la parametría.' })
+                } else {
                 $parametria = Get-Parametria -RootDir $scriptRoot
                 # La contraseña de Sybase nunca sale del servidor en texto plano, ni
                 # siquiera hacia la propia UI (mismo criterio que apiKeyOrToken/
@@ -490,8 +494,12 @@ try {
                     $parametria.sybase.password = ''
                 }
                 Write-JsonResponse -Response $response -StatusCode 200 -Body $parametria
+                }
             }
             elseif ($method -eq 'POST' -and $path -eq '/api/parametria') {
+                if (-not (Test-RoleCanManageParametria -Role $session.role)) {
+                    Write-JsonResponse -Response $response -StatusCode 403 -Body ([pscustomobject]@{ error = 'No tenés permiso para editar la parametría.' })
+                } else {
                 $bodyText = Read-RequestBody -Request $request
                 $incoming = $bodyText | ConvertFrom-Json
 
@@ -508,8 +516,12 @@ try {
 
                 Save-Parametria -RootDir $scriptRoot -Parametria $incoming
                 Write-JsonResponse -Response $response -StatusCode 200 -Body ([pscustomobject]@{ ok = $true })
+                }
             }
             elseif ($method -eq 'POST' -and $path -eq '/api/test-sybase') {
+                if (-not (Test-RoleCanManageParametria -Role $session.role)) {
+                    Write-JsonResponse -Response $response -StatusCode 403 -Body ([pscustomobject]@{ error = 'No tenés permiso para probar la conexión de Sybase.' })
+                } else {
                 $bodyText = Read-RequestBody -Request $request
                 $payload = $bodyText | ConvertFrom-Json
 
@@ -527,6 +539,7 @@ try {
 
                 $result = Test-SybaseConnection -ConnectionStringTemplate ([string]$payload.connectionString) -Usuario ([string]$payload.usuario) -Password $password
                 Write-JsonResponse -Response $response -StatusCode 200 -Body $result
+                }
             }
             elseif ($method -eq 'POST' -and $path -eq '/api/test-token') {
                 $bodyText = Read-RequestBody -Request $request

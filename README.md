@@ -323,19 +323,30 @@ usuario habilitado, su nombre de cuenta de AD y qué **rol** tiene acá adentro.
 
 ### Roles
 
-| Rol | Puede ejecutar flows (`POST /api/run`) | Puede administrar usuarios/AD |
-|---|---|---|
-| `admin` | Sí | Sí |
-| `operador` | Sí | No |
-| `lectura` | **No** (ve flows, perfiles, Parametría, pero el botón "Ejecutar flow" queda deshabilitado y el servidor rechaza `/api/run` con 403 igual si se lo llama directo) | No |
+| Rol | Puede ejecutar flows (`POST /api/run`) | Puede administrar usuarios/AD | Puede ver/editar Parametría |
+|---|---|---|---|
+| `admin` | Sí | Sí | Sí |
+| `operador` | Sí | No | **No** |
+| `lectura` | **No** (ve flows y perfiles, pero el botón "Ejecutar flow" queda deshabilitado y el servidor rechaza `/api/run` con 403 igual si se lo llama directo) | No | **No** |
 
-Los roles están fijos en `Test-RoleCanRunFlow`/`Test-RoleCanManageUsers`
-(`modules/SecurityStore.psm1`) — no hay UI para inventar roles nuevos ni para
-restringir un rol a un subconjunto de flows todavía, aunque el código queda
-en un único lugar para agregarlo si hiciera falta. La app nunca deja sin
-ningún admin habilitado: no se puede eliminar, deshabilitar, ni sacarle el
-rol de admin al último administrador habilitado (tanto desde la UI como
-llamando a `/api/users` directo).
+Parametría (botón "Parametría..." en el header, `GET`/`POST /api/parametria`
+y `POST /api/test-sybase`) es **exclusiva de `admin`** — trae valores de
+cuenta y, sobre todo, la contraseña de Sybase (que nunca se manda de vuelta
+al navegador, pero sí se puede pisar sin verla). `operador` puede correr
+flows y usar el botón **"Probar token"** (prueba la obtención del token
+OAuth2 del perfil elegido — no tiene relación con Parametría) con
+normalidad; el botón "Parametría..." directamente no se le muestra, y el
+servidor rechaza esas tres rutas con 403 igual si se llaman directo.
+
+Los roles están fijos en
+`Test-RoleCanRunFlow`/`Test-RoleCanManageUsers`/`Test-RoleCanManageParametria`
+(`modules/SecurityStore.psm1`, con el mismo criterio en
+`node/lib/securityStore.js` para el backend Node.js) — no hay UI para
+inventar roles nuevos ni para restringir un rol a un subconjunto de flows
+todavía, aunque el código queda en un único lugar para agregarlo si hiciera
+falta. La app nunca deja sin ningún admin habilitado: no se puede eliminar,
+deshabilitar, ni sacarle el rol de admin al último administrador habilitado
+(tanto desde la UI como llamando a `/api/users` directo).
 
 ### Sesiones
 

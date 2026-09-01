@@ -95,6 +95,15 @@ function testRoleCanManageUsers(role) {
   return role === 'admin';
 }
 
+// Parametría trae valores de cuenta y, sobre todo, la contraseña de Sybase
+// (aunque nunca se manda de vuelta al navegador, sí se puede pisar) — mismo
+// criterio que testRoleCanManageUsers: solo admin. 'operador' puede correr
+// flows y probar el token OAuth2 del perfil elegido, pero no ver ni tocar
+// Parametría (ni siquiera "Probar conexión" de Sybase).
+function testRoleCanManageParametria(role) {
+  return role === 'admin';
+}
+
 function testRoleCanRunFlow(role) {
   // 'lectura' es solo consulta: puede ver flows/perfiles/logs pero no ejecutar
   // nada. admin/operador pueden correr cualquier flow.
@@ -206,6 +215,7 @@ module.exports = {
   testAdCredentials,
   getValidRoles,
   testRoleCanManageUsers,
+  testRoleCanManageParametria,
   testRoleCanRunFlow,
   getSecurityUsers,
   findSecurityUser,

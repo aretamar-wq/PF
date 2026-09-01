@@ -80,6 +80,7 @@ async function loadMe() {
   document.getElementById('currentUserInfo').textContent =
     `${state.currentUser.displayName || state.currentUser.username} (${state.currentUser.role})`;
   document.getElementById('usersBtn').style.display = state.currentUser.canManageUsers ? '' : 'none';
+  document.getElementById('parametriaBtn').style.display = state.currentUser.canManageParametria ? '' : 'none';
 
   const isReadOnly = state.currentUser.role === 'lectura';
   document.getElementById('readOnlyNotice').style.display = isReadOnly ? '' : 'none';

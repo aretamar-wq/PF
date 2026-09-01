@@ -413,7 +413,11 @@ async function handleRegisterOperations(req, res, session) {
   writeJsonResponse(res, 200, { ok: true, registered: operations.length });
 }
 
-function handleParametriaGet(res) {
+function handleParametriaGet(res, session) {
+  if (!securityStore.testRoleCanManageParametria(session.role)) {
+    writeJsonResponse(res, 403, { error: 'No tenés permiso para ver la parametría.' });
+    return;
+  }
   const parametria = parametriaStore.getParametria(rootDir);
   // La contraseña de Sybase nunca sale del servidor en texto plano, ni siquiera
   // hacia la propia UI: el formulario la deja en blanco y el POST conserva la
@@ -422,7 +426,11 @@ function handleParametriaGet(res) {
   writeJsonResponse(res, 200, parametria);
 }
 
-async function handleParametriaPost(req, res) {
+async function handleParametriaPost(req, res, session) {
+  if (!securityStore.testRoleCanManageParametria(session.role)) {
+    writeJsonResponse(res, 403, { error: 'No tenés permiso para editar la parametría.' });
+    return;
+  }
   const incoming = await readJsonBody(req);
   if (incoming.sybase && !incoming.sybase.password) {
     const existing = parametriaStore.getParametria(rootDir);
@@ -434,7 +442,11 @@ async function handleParametriaPost(req, res) {
   writeJsonResponse(res, 200, { ok: true });
 }
 
-async function handleTestSybase(req, res) {
+async function handleTestSybase(req, res, session) {
+  if (!securityStore.testRoleCanManageParametria(session.role)) {
+    writeJsonResponse(res, 403, { error: 'No tenés permiso para probar la conexión de Sybase.' });
+    return;
+  }
   const payload = await readJsonBody(req);
   let password = String(payload.password || '');
   if (!password) {
@@ -511,6 +523,7 @@ async function handleRequest(req, res) {
         role: session.role,
         displayName: session.displayName,
         canManageUsers: securityStore.testRoleCanManageUsers(session.role),
+        canManageParametria: securityStore.testRoleCanManageParametria(session.role),
       });
       return;
     }
@@ -544,9 +557,9 @@ async function handleRequest(req, res) {
     if (method === 'POST' && pathname === '/api/save-output') return void (await handleSaveOutput(req, res, session));
     if (method === 'POST' && pathname === '/api/check-operations') return void (await handleCheckOperations(req, res, session));
     if (method === 'POST' && pathname === '/api/register-operations') return void (await handleRegisterOperations(req, res, session));
-    if (method === 'GET' && pathname === '/api/parametria') return void handleParametriaGet(res);
-    if (method === 'POST' && pathname === '/api/parametria') return void (await handleParametriaPost(req, res));
-    if (method === 'POST' && pathname === '/api/test-sybase') return void (await handleTestSybase(req, res));
+    if (method === 'GET' && pathname === '/api/parametria') return void handleParametriaGet(res, session);
+    if (method === 'POST' && pathname === '/api/parametria') return void (await handleParametriaPost(req, res, session));
+    if (method === 'POST' && pathname === '/api/test-sybase') return void (await handleTestSybase(req, res, session));
     if (method === 'POST' && pathname === '/api/test-token') return void (await handleTestToken(req, res));
 
     if (method === 'GET') {
