@@ -33,6 +33,7 @@
         <span id="tokenTestResult" class="muted"></span>
         <button id="parametriaBtn">Parametría...</button>
         <button id="usersBtn" style="display: none;">Usuarios...</button>
+        <button id="outputFilesBtn">Archivos de salida...</button>
         <span class="spacer"></span>
         <span id="currentUserInfo" class="muted"></span>
         <button id="logoutBtn">Cerrar sesión</button>
@@ -200,6 +201,22 @@
 
     <div class="dialog-actions">
       <button type="button" id="closeUsersDialogBtn">Cerrar</button>
+    </div>
+  </dialog>
+
+  <dialog id="outputFilesDialog">
+    <h2>Archivos de salida</h2>
+    <p class="muted">Archivos guardados en el servidor al terminar de procesar un CSV (detalle de Plazos Fijos dados de alta y filas que fallaron). Se descargan automáticamente al terminar cada corrida; acá se pueden volver a descargar.</p>
+    <p id="outputFilesEmptyHint" class="muted" style="display: none;">Todavía no hay ningún archivo guardado.</p>
+    <table id="outputFilesTable">
+      <thead>
+        <tr><th>Archivo</th><th>Fecha</th><th>Tamaño</th><th>Acciones</th></tr>
+      </thead>
+      <tbody id="outputFilesTableBody"></tbody>
+    </table>
+    <div class="dialog-actions">
+      <button type="button" id="refreshOutputFilesBtn">Actualizar</button>
+      <button type="button" id="closeOutputFilesDialogBtn">Cerrar</button>
     </div>
   </dialog>
 

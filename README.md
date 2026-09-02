@@ -841,6 +841,27 @@ respectivamente) antes de armar el nombre de archivo — es la única defensa
 contra path traversal en un endpoint que escribe a disco a partir de un
 valor que arma el cliente.
 
+Además de guardarse en `files/`, cada archivo se descarga automáticamente
+al navegador apenas se guarda (`downloadTextFile`, mismo mecanismo Blob +
+`<a download>` que ya usaba "Guardar log..."), sin esperar a que el usuario
+lo pida.
+
+**Panel "Archivos de salida..."** (botón en la barra superior, visible para
+cualquier usuario logueado): lista todo lo que hay guardado en `files/` que
+matchee el patrón `(pfout|pfouterror)-<14 dígitos>.csv` — nombre, fecha y
+tamaño, más recientes primero — y permite volver a descargar cualquiera,
+útil si se cerró el navegador antes de que la descarga automática
+terminara o si hace falta recuperar el de una corrida anterior. Dos rutas
+nuevas, implementadas igual en los dos backends:
+
+- `GET /api/output-files` — devuelve `[{ name, size, mtime }, ...]`.
+- `GET /api/output-files/content?name=<archivo>` — devuelve `{ name,
+  content }` con el contenido completo del archivo (el cliente arma el
+  Blob y dispara la descarga, igual que al terminar un CSV). Valida `name`
+  contra el mismo patrón estricto de arriba antes de tocar el disco —
+  misma defensa contra path traversal que `/api/save-output` — y además
+  registra en el log de seguridad quién descargó qué archivo.
+
 ### Prevención de operaciones duplicadas
 
 Antes de procesar ninguna fila de un CSV, la UI manda al servidor las

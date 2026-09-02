@@ -441,6 +441,37 @@ try {
                     Write-JsonResponse -Response $response -StatusCode 200 -Body ([pscustomobject]@{ ok = $true; fileName = $fileName })
                 }
             }
+            elseif ($method -eq 'GET' -and $path -eq '/api/output-files') {
+                # Lista lo que hay guardado en files/ (ver /api/save-output) para el
+                # panel "Archivos de salida" del front-end — mismo patrón de nombre
+                # (pfout-/pfouterror- + 14 dígitos + .csv) que valida ese endpoint al
+                # guardar, acá para filtrar cualquier otra cosa que haya en la carpeta.
+                $items = @()
+                if (Test-Path $filesDir) {
+                    $items = @(Get-ChildItem -Path $filesDir -File |
+                        Where-Object { $_.Name -match '^(pfout|pfouterror)-\d{14}\.csv$' } |
+                        Sort-Object LastWriteTimeUtc -Descending |
+                        ForEach-Object { [pscustomobject]@{ name = $_.Name; size = $_.Length; mtime = $_.LastWriteTimeUtc.ToString('o') } })
+                }
+                Write-JsonResponse -Response $response -StatusCode 200 -Body $items
+            }
+            elseif ($method -eq 'GET' -and $path -eq '/api/output-files/content') {
+                # Nombre de archivo por querystring: se valida con el mismo patrón
+                # estricto de arriba — única defensa contra path traversal.
+                $name = [string]$request.QueryString['name']
+                if ($name -notmatch '^(pfout|pfouterror)-\d{14}\.csv$') {
+                    Write-JsonResponse -Response $response -StatusCode 400 -Body ([pscustomobject]@{ error = 'Nombre de archivo inválido.' })
+                } else {
+                    $filePath = Join-Path $filesDir $name
+                    if (-not (Test-Path $filePath)) {
+                        Write-JsonResponse -Response $response -StatusCode 404 -Body ([pscustomobject]@{ error = 'No se encontró el archivo.' })
+                    } else {
+                        $content = Get-Content -Path $filePath -Raw -Encoding UTF8
+                        Write-SecurityLog -LogsDir $logsDir -Message "ARCHIVO DE SALIDA '$name' descargado por '$($session.username)'"
+                        Write-JsonResponse -Response $response -StatusCode 200 -Body ([pscustomobject]@{ name = $name; content = $content })
+                    }
+                }
+            }
             elseif ($method -eq 'POST' -and $path -eq '/api/check-operations') {
                 # Antes de procesar un CSV, el cliente manda todas las (cuit,
                 # numeroComprobante) del archivo de una sola vez (no una consulta

@@ -382,6 +382,43 @@ async function handleSaveOutput(req, res, session) {
   writeJsonResponse(res, 200, { ok: true, fileName });
 }
 
+// Mismo patrón de nombre que genera handleSaveOutput (pfout-/pfouterror- +
+// 14 dígitos + .csv) — única defensa contra path traversal al leer un
+// nombre de archivo que llega por querystring.
+const OUTPUT_FILE_NAME_PATTERN = /^(pfout|pfouterror)-\d{14}\.csv$/;
+
+function handleOutputFilesGet(res) {
+  if (!fs.existsSync(filesDir)) {
+    writeJsonResponse(res, 200, []);
+    return;
+  }
+  const files = fs
+    .readdirSync(filesDir)
+    .filter((name) => OUTPUT_FILE_NAME_PATTERN.test(name))
+    .map((name) => {
+      const stat = fs.statSync(path.join(filesDir, name));
+      return { name, size: stat.size, mtime: stat.mtime.toISOString() };
+    })
+    .sort((a, b) => b.mtime.localeCompare(a.mtime));
+  writeJsonResponse(res, 200, files);
+}
+
+function handleOutputFileContentGet(parsedUrl, res, session) {
+  const name = parsedUrl.searchParams.get('name') || '';
+  if (!OUTPUT_FILE_NAME_PATTERN.test(name)) {
+    writeJsonResponse(res, 400, { error: 'Nombre de archivo inválido.' });
+    return;
+  }
+  const filePath = path.join(filesDir, name);
+  if (!fs.existsSync(filePath)) {
+    writeJsonResponse(res, 404, { error: 'No se encontró el archivo.' });
+    return;
+  }
+  const content = fs.readFileSync(filePath, 'utf8');
+  securityStore.writeSecurityLog(logsDir, `ARCHIVO DE SALIDA '${name}' descargado por '${session.username}'`);
+  writeJsonResponse(res, 200, { name, content });
+}
+
 async function handleCheckOperations(req, res, session) {
   const payload = await readJsonBody(req);
   const operations = (payload.operations || []).map((op) => ({
@@ -555,6 +592,8 @@ async function handleRequest(req, res) {
     if (method === 'GET' && pathname === '/api/flows') return void handleFlowsGet(res);
     if (method === 'POST' && pathname === '/api/run') return void (await handleRun(req, res, session));
     if (method === 'POST' && pathname === '/api/save-output') return void (await handleSaveOutput(req, res, session));
+    if (method === 'GET' && pathname === '/api/output-files') return void handleOutputFilesGet(res);
+    if (method === 'GET' && pathname === '/api/output-files/content') return void handleOutputFileContentGet(parsedUrl, res, session);
     if (method === 'POST' && pathname === '/api/check-operations') return void (await handleCheckOperations(req, res, session));
     if (method === 'POST' && pathname === '/api/register-operations') return void (await handleRegisterOperations(req, res, session));
     if (method === 'GET' && pathname === '/api/parametria') return void handleParametriaGet(res, session);

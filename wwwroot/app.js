@@ -944,6 +944,18 @@ function saveLog() {
   URL.revokeObjectURL(url);
 }
 
+// Dispara la descarga del navegador para un archivo de texto ya generado en
+// memoria (mismo patrón que saveLog para el log en .txt).
+function downloadTextFile(fileName, content, mimeType) {
+  const blob = new Blob([content], { type: mimeType || 'text/plain' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = fileName;
+  a.click();
+  URL.revokeObjectURL(url);
+}
+
 function csvEscape(value) {
   const str = value == null ? '' : String(value);
   if (/[",\n]/.test(str)) {
@@ -968,9 +980,9 @@ function generateFileTimestamp() {
 }
 
 // Guarda un archivo en el servidor, en la carpeta files/ (POST /api/save-output
-// lo crea si no existe) — reemplaza la descarga por el navegador: el archivo
-// queda en una ubicación fija y predecible en vez de en la carpeta de
-// descargas de quien esté corriendo la app.
+// lo crea si no existe) — queda en una ubicación fija y predecible, accesible
+// después desde "Archivos de salida" (ver loadOutputFiles) — y además dispara
+// la descarga automática al navegador de quien corrió el flow.
 async function saveOutputFile(prefix, timestamp, content) {
   try {
     const res = await apiFetch('/api/save-output', {
@@ -983,6 +995,7 @@ async function saveOutputFile(prefix, timestamp, content) {
       alert(`No se pudo guardar ${prefix}${timestamp}.csv: ` + (data.error || 'error desconocido.'));
       return null;
     }
+    downloadTextFile(data.fileName, content, 'text/csv');
     return data.fileName;
   } catch (err) {
     alert(`Error de red guardando ${prefix}${timestamp}.csv: ` + err.message);
@@ -1349,6 +1362,61 @@ userForm.addEventListener('submit', async (event) => {
   resetUserForm();
   await loadUsersList();
 });
+
+// --- Archivos de salida (pfout-.../pfouterror-... guardados en files/) -----
+// Además de la descarga automática al terminar un CSV (ver saveOutputFile),
+// este panel deja ver y volver a descargar cualquier archivo ya guardado en
+// el servidor — útil si se cerró el navegador antes de que la descarga
+// terminara, o si hace falta recuperar el de una corrida anterior.
+
+const outputFilesDialog = document.getElementById('outputFilesDialog');
+
+function formatFileSize(bytes) {
+  if (bytes < 1024) return `${bytes} B`;
+  return `${(bytes / 1024).toFixed(1)} KB`;
+}
+
+function renderOutputFilesTable(files) {
+  const tbody = document.getElementById('outputFilesTableBody');
+  tbody.innerHTML = '';
+  for (const file of files) {
+    const tr = document.createElement('tr');
+    tr.innerHTML = `
+      <td>${escapeHtml(file.name)}</td>
+      <td>${new Date(file.mtime).toLocaleString()}</td>
+      <td>${formatFileSize(file.size)}</td>
+      <td><button type="button" class="downloadOutputFileBtn">Descargar</button></td>
+    `;
+    tr.querySelector('.downloadOutputFileBtn').addEventListener('click', () => downloadOutputFile(file.name));
+    tbody.appendChild(tr);
+  }
+  document.getElementById('outputFilesEmptyHint').style.display = files.length === 0 ? '' : 'none';
+}
+
+async function loadOutputFilesList() {
+  const res = await apiFetch('/api/output-files');
+  if (!res.ok) return;
+  renderOutputFilesTable(await res.json());
+}
+
+async function downloadOutputFile(name) {
+  const res = await apiFetch('/api/output-files/content?name=' + encodeURIComponent(name));
+  const data = await res.json();
+  if (!res.ok) {
+    alert(data.error || 'No se pudo descargar el archivo.');
+    return;
+  }
+  downloadTextFile(data.name, data.content, 'text/csv');
+}
+
+async function openOutputFilesDialog() {
+  await loadOutputFilesList();
+  outputFilesDialog.showModal();
+}
+
+document.getElementById('outputFilesBtn').addEventListener('click', openOutputFilesDialog);
+document.getElementById('closeOutputFilesDialogBtn').addEventListener('click', () => outputFilesDialog.close());
+document.getElementById('refreshOutputFilesBtn').addEventListener('click', loadOutputFilesList);
 
 // --- Login / logout ---------------------------------------------------------
 
