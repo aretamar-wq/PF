@@ -207,14 +207,26 @@ function parseIsqlTable(output) {
   return rows;
 }
 
-// Busca un bloque de error de Sybase ("Msg NNNN, Level N, State N:" seguido
-// de las líneas de detalle) en la salida combinada de isql — cubre tanto
-// errores de SQL (tabla/columna inexistente, etc.) como de login (usuario/
-// contraseña inválidos, que Sybase también reporta como un Msg numerado).
+// Busca un bloque de error en la salida combinada de isql. Hay dos formatos
+// posibles y bien distintos:
+//   - Errores del SERVIDOR Sybase: "Msg NNNN, Level N, State N:" (SQL
+//     inválido, tabla inexistente, y también login rechazado por usuario/
+//     contraseña incorrectos — Sybase reporta eso como un Msg numerado más).
+//   - Errores del CLIENTE (las librerías ct-lib/cs-lib/db-lib del OCS, antes
+//     incluso de llegar al servidor) — formato "XX-LIBRARY error: ...", por
+//     ejemplo "CS-LIBRARY error: comn_cryptolib_load(): ... Failed to load
+//     library" cuando falta algo del entorno del OCS (LD_LIBRARY_PATH,
+//     locale, etc.). Sin reconocer también este segundo formato, isql podía
+//     fallar en el connect/login y el resto del código lo interpretaba como
+//     una query que simplemente no encontró filas, en vez de un error real.
 function findSybaseErrorMessage(combinedOutput) {
-  const match = /Msg \d+, Level \d+, State \d+:[\s\S]*?(?=\n\s*\n|\n\S*\d>|$)/.exec(combinedOutput);
-  if (!match) return null;
-  return match[0].replace(/\s+/g, ' ').trim();
+  const msgMatch = /Msg \d+, Level \d+, State \d+:[\s\S]*?(?=\n\s*\n|\n\S*\d>|$)/.exec(combinedOutput);
+  if (msgMatch) return msgMatch[0].replace(/\s+/g, ' ').trim();
+
+  const libMatch = /(CS-LIBRARY|CT-LIBRARY|DB-LIBRARY|BLK-LIBRARY) error:[\s\S]*?(?=\n\s*\n|$)/.exec(combinedOutput);
+  if (libMatch) return libMatch[0].replace(/\s+/g, ' ').trim();
+
+  return null;
 }
 
 async function runQuery(parametriaSybase, sqlBatch) {
@@ -237,8 +249,14 @@ async function runQuery(parametriaSybase, sqlBatch) {
   if (sybaseError) {
     throw new Error(`Error de Sybase: ${sybaseError}`);
   }
-  if (code !== 0 && !stdout.trim()) {
-    throw new Error(`isql (${host}:${port}) terminó con código ${code}. ${stderr.trim() || '(sin salida)'}`);
+  // Cualquier código de salida distinto de cero es una condición anormal —
+  // tratarlo como error SIEMPRE, tenga o no algo en stdout (antes esto solo
+  // se chequeaba cuando stdout estaba vacío, y por eso un error de conexión
+  // que sí escribe texto en stdout, como el de CS-LIBRARY de más arriba,
+  // podía colarse como si fuera "0 filas" en vez de una falla real).
+  if (code !== 0) {
+    const detail = combined.trim().slice(0, 1000) || '(sin salida)';
+    throw new Error(`isql (${host}:${port}) terminó con código ${code}. ${detail}`);
   }
 
   return parseIsqlTable(stdout);
