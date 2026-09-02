@@ -190,6 +190,7 @@ estándar en `/opt/sap`):
 | `SYBASE_HOME` | `/opt/sap` | Raíz de la instalación del OCS |
 | `SYBASE_OCS_DIR` | `OCS-16_0` | Subcarpeta de la versión del OCS instalada |
 | `SYBASE_ISQL_PATH` | `$SYBASE_HOME/$SYBASE_OCS_DIR/bin/isql` | Ruta al binario, por si no sigue la convención de carpetas de arriba |
+| `SYBASE_ENV_SCRIPT` | `$SYBASE_HOME/SYBASE.sh` | Script que arma el entorno del OCS (`SYBASE`/`SYBASE_OCS`/`PATH`/`LD_LIBRARY_PATH`, incluida `lib3p64/`, donde vive la librería de cifrado del login) — `sybaseClient.js` lo "sourcea" en un `bash -c` antes de invocar `isql`, en vez de reconstruir esas variables a mano (armarlas a mano y olvidarse de `lib3p64/` es justo lo que rompía el login con `CS-LIBRARY error: comn_cryptolib_load()... Failed to load library`) |
 | `SYBASE_LANG` | `en_US.UTF-8` | Locale que se le fuerza a `isql` — sin esto falla con "context allocation routine failed... localization files" si el `LANG` del sistema (ej. `es_ES.UTF-8`) no está en `locales.dat` del OCS |
 | `SYBASE_ISQL_TIMEOUT_MS` | `30000` | Corta y mata el proceso `isql` si no respondió en ese tiempo |
 | `SYBASE_ISQL_WIDTH` | `8000` | Ancho de pantalla que se le pide a `isql` (`-w`) — evita que una tabla ancha se corte en varias líneas y rompa el parseo |

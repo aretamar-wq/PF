@@ -42,18 +42,24 @@ const SYBASE_LANG = process.env.SYBASE_LANG || 'en_US.UTF-8';
 const ISQL_PATH = process.env.SYBASE_ISQL_PATH || `${SYBASE_HOME}/${SYBASE_OCS_DIR}/bin/isql`;
 const ISQL_TIMEOUT_MS = Number(process.env.SYBASE_ISQL_TIMEOUT_MS) || 30000;
 const ISQL_DISPLAY_WIDTH = process.env.SYBASE_ISQL_WIDTH || '8000';
+// SYBASE.sh es el script que trae el propio OCS para armar su entorno
+// (SYBASE/SYBASE_OCS/PATH/LD_LIBRARY_PATH) — entre otras cosas agrega
+// lib3p64/ (donde vive la librería de cifrado que usa el handshake de
+// login) además de lib/. En vez de reconstruir esas variables a mano acá
+// (fácil de dejar una carpeta afuera, como pasó con lib3p64 en una
+// versión anterior de este archivo — isql fallaba con "CS-LIBRARY
+// error: comn_cryptolib_load()... Failed to load library"), se invoca
+// isql DENTRO de un bash que sourcea este mismo script primero: así se
+// usa exactamente el mismo mecanismo de entorno que ya probamos a mano
+// y funciona.
+const SYBASE_ENV_SCRIPT = process.env.SYBASE_ENV_SCRIPT || `${SYBASE_HOME}/SYBASE.sh`;
 
-function buildIsqlEnv() {
-  const libDir = `${SYBASE_HOME}/${SYBASE_OCS_DIR}/lib`;
-  const existingLdPath = process.env.LD_LIBRARY_PATH ? `:${process.env.LD_LIBRARY_PATH}` : '';
-  return {
-    ...process.env,
-    SYBASE: SYBASE_HOME,
-    SYBASE_OCS: SYBASE_OCS_DIR,
-    LANG: SYBASE_LANG,
-    LC_ALL: SYBASE_LANG,
-    LD_LIBRARY_PATH: `${libDir}${existingLdPath}`,
-  };
+// Escapa un valor para insertarlo entre comillas simples en un comando de
+// bash sin riesgo de que se interprete como parte del shell (crítico para
+// la contraseña, que puede traer $, `, ", espacios, etc.) — el truco
+// estándar de POSIX para "comilla simple dentro de comilla simple".
+function shellQuote(value) {
+  return `'${String(value).replace(/'/g, "'\\''")}'`;
 }
 
 // parametria.sybase.connectionString sigue el mismo template que usa el
@@ -77,11 +83,27 @@ function parseConnectionString(connectionString) {
 
 function runIsql(host, port, usuario, password, sqlBatch) {
   return new Promise((resolve, reject) => {
-    const args = [`-S${host}:${port}`, `-U${usuario}`, `-P${password}`, '-w', ISQL_DISPLAY_WIDTH];
+    // "-S<host>:<puerto>" tiene que llegar como un único argumento (sin
+    // espacio entre -S y el valor) — concatenar comilla simple pegada al
+    // flag y bash arma un solo token igual, sin romper el quoting.
+    const isqlCommand = [
+      `source ${shellQuote(SYBASE_ENV_SCRIPT)} > /dev/null`,
+      [
+        'exec',
+        shellQuote(ISQL_PATH),
+        `-S${shellQuote(`${host}:${port}`)}`,
+        `-U${shellQuote(usuario)}`,
+        `-P${shellQuote(password)}`,
+        '-w',
+        shellQuote(ISQL_DISPLAY_WIDTH),
+      ].join(' '),
+    ].join(' && ');
 
     let child;
     try {
-      child = spawn(ISQL_PATH, args, { env: buildIsqlEnv() });
+      child = spawn('/bin/bash', ['-c', isqlCommand], {
+        env: { ...process.env, LANG: SYBASE_LANG, LC_ALL: SYBASE_LANG },
+      });
     } catch (err) {
       reject(new Error(`No se pudo ejecutar isql (${ISQL_PATH}): ${err.message}`));
       return;
@@ -124,6 +146,14 @@ function runIsql(host, port, usuario, password, sqlBatch) {
       clearTimeout(timer);
       resolve({ code, stdout, stderr });
     });
+
+    // Si isql ya murió (bash no lo encontró, un flag inválido, se cayó al
+    // arrancar) antes de que termine de escribirle, escribir a su stdin ya
+    // cerrado tira EPIPE como evento 'error' del stream — sin este handler
+    // eso es una excepción no manejada que tumba TODO el proceso Node, no
+    // solo esta query. El 'error' del proceso en sí (unos handlers más
+    // arriba) ya se encarga de rechazar la promesa con un mensaje útil.
+    child.stdin.on('error', () => {});
 
     child.stdin.write(sqlBatch);
     child.stdin.end();
