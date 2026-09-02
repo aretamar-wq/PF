@@ -444,8 +444,14 @@ async function fetchAccountsByCuit(rows) {
     const cuit = String(sqlRow.nrodoc);
     if (!accountsByCuit.has(cuit)) accountsByCuit.set(cuit, {});
     const entry = accountsByCuit.get(cuit);
-    if (sqlRow.sistcod === 5) entry.cuecodSistema5 = sqlRow.cuecod == null ? '' : String(sqlRow.cuecod);
-    else if (sqlRow.sistcod === 4) entry.cuecodSistema4 = sqlRow.cuecod == null ? '' : String(sqlRow.cuecod);
+    // Comparar como string, no como number: el backend PowerShell (ODBC)
+    // devuelve sistcod como número real de .NET (columna INT sin castear en
+    // la query), pero el backend Node.js (parsea texto de isql, sin tipos)
+    // siempre lo devuelve como string — "5" === 5 da false y ninguna fila
+    // matchea nunca, aunque Sybase sí haya encontrado la cuenta.
+    const sistcod = String(sqlRow.sistcod);
+    if (sistcod === '5') entry.cuecodSistema5 = sqlRow.cuecod == null ? '' : String(sqlRow.cuecod);
+    else if (sistcod === '4') entry.cuecodSistema4 = sqlRow.cuecod == null ? '' : String(sqlRow.cuecod);
   }
   return accountsByCuit;
 }
