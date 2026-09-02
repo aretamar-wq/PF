@@ -8,7 +8,7 @@
     { "variableName": "importe", "label": "Monto" },
     { "variableName": "plazo", "label": "Plazo (días)" },
     { "variableName": "numeroComprobante", "label": "Nro_Comprobante" },
-    { "variableName": "circuito", "label": "Circuito" }
+    { "variableName": "circuito", "label": "Circuito (0 = flujo completo, 1 = solo alta de Plazo Fijo)" }
   ],
   "steps": [
     {

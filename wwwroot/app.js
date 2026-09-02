@@ -337,11 +337,12 @@ function renderCsvSummary(flow, totalRows, stepCounts) {
   const summaryEl = document.getElementById('csvSummary');
   const lines = [`<div><strong>Total de registros: ${totalRows}</strong></div>`];
   flow.steps.forEach((step, idx) => {
-    const { ok, error } = stepCounts[idx];
+    const { ok, error, skipped } = stepCounts[idx];
+    const skippedHtml = skipped > 0 ? ` / <span>${skipped} sin ejecutar (Circuito = 1)</span>` : '';
     lines.push(
       `<div>${escapeHtml(step.name)}: ` +
         `<span class="status-Success">${ok} correcto(s)</span> / ` +
-        `<span class="status-Error">${error} con error</span></div>`
+        `<span class="status-Error">${error} con error</span>${skippedHtml}</div>`
     );
   });
   summaryEl.innerHTML = lines.join('');
@@ -384,6 +385,14 @@ function generateIdMensaje() {
 function isPlazoFijoCocosFilesSqlFlow(flow) {
   return !!flow && flow.name === 'Alta de Plazo Fijos - File';
 }
+
+// Cuando la columna Circuito de una fila viene en 1, no se ejecutan los
+// steps de débito en Cuenta Corriente ni crédito en Caja de Ahorro: se corre
+// este flow oculto, que tiene solo el step "3. Alta de Plazo Fijo" (mismo
+// body). Las cuentas (cuecodSistema5/cuecodSistema4) igual se resuelven para
+// TODAS las filas antes del loop, vía fetchAccountsByCuit — no depende de
+// Circuito.
+const PLAZO_FIJO_SOLO_ALTA_FLOW_NAME = 'Alta de Plazo Fijo (solo)';
 
 // Manda al servidor las (cuit, numeroComprobante) de TODAS las filas del
 // archivo en una sola consulta (evita duplicar una operación bancaria real
@@ -617,11 +626,13 @@ async function runFlowFromCsv() {
   state.successfulOperations = [];
 
   // stepCounts[i] cuenta, para el paso flow.steps[i], cuántas filas lo
-  // completaron con éxito ('ok') y cuántas no ('error') — ya sea porque ese
+  // completaron con éxito ('ok'), cuántas no ('error') — ya sea porque ese
   // paso falló, porque no llegó a ejecutarse (un paso anterior de la misma
   // fila falló), o porque la fila entera no se pudo correr (columnas de
-  // más/menos, o un error de red/servidor antes de tener respuesta).
-  const stepCounts = flow.steps.map(() => ({ ok: 0, error: 0 }));
+  // más/menos, o un error de red/servidor antes de tener respuesta) — y
+  // cuántas se saltearon a propósito ('skipped', fila con Circuito = 1: no
+  // se ejecutan los steps de débito/crédito, solo el alta de Plazo Fijo).
+  const stepCounts = flow.steps.map(() => ({ ok: 0, error: 0, skipped: 0 }));
 
   try {
     const text = await readFileAsText(file);
@@ -683,7 +694,12 @@ async function runFlowFromCsv() {
       const row = rows[i];
       const rowIdMensaje = generateIdMensaje();
       let rowEntries;
-      let stepEntries = null; // solo se llena con la respuesta real de /api/run, alineada 1:1 con flow.steps
+      let stepEntries = null; // solo se llena con la respuesta real de /api/run, alineada con expectedStepIndices
+      // Por default (Circuito = 0, o fila que ni llega a leer Circuito) se
+      // corren los 3 steps del flow. Circuito = 1 corre solo el step 3 (ver
+      // más abajo) — expectedStepIndices son los índices de flow.steps que
+      // esta fila debía correr, usados también para el resumen por step.
+      let expectedStepIndices = flow.steps.map((_, idx) => idx);
 
       if (row.length !== flow.inputs.length) {
         rowEntries = [
@@ -703,6 +719,23 @@ async function runFlowFromCsv() {
           inputs[inputDef.variableName] = row[idx];
         });
         inputs.idMensajeGenerado = rowIdMensaje;
+
+        // Circuito = 0: flujo completo (débito CC + crédito CA + alta de PF,
+        // como siempre). Circuito = 1: solo se recuperan las cuentas (ya
+        // resueltas para todas las filas por fetchAccountsByCuit) y se
+        // ejecuta únicamente la API de alta de Plazo Fijo, sin tocar Cuenta
+        // Corriente ni Caja de Ahorro. Cualquier otro valor es inválido.
+        let circuitoError = null;
+        let runSoloAlta = false;
+        if (isPlazoFijoCocosFilesSqlFlow(flow)) {
+          const circuito = (row[row.length - 1] || '').trim();
+          if (circuito === '1') {
+            runSoloAlta = true;
+            expectedStepIndices = [flow.steps.length - 1];
+          } else if (circuito !== '0') {
+            circuitoError = `El campo Circuito debe ser 0 o 1 (vino "${row[row.length - 1]}").`;
+          }
+        }
 
         // Cuentas ya resueltas por fetchAccountsByCuit (una sola consulta
         // para todo el archivo, antes del loop) — cuecodSistema5 (Caja de
@@ -744,7 +777,7 @@ async function runFlowFromCsv() {
           }
         }
 
-        if (duplicateError || accountLookupError) {
+        if (duplicateError || accountLookupError || circuitoError) {
           rowEntries = [
             {
               name: `Fila ${rowNumber}`,
@@ -753,12 +786,14 @@ async function runFlowFromCsv() {
               responseSummary: null,
               httpStatusCode: null,
               durationMs: 0,
-              errorMessage: duplicateError || accountLookupError,
+              errorMessage: duplicateError || accountLookupError || circuitoError,
             },
           ];
         } else {
           try {
-            rowEntries = await runOnce(inputs);
+            rowEntries = runSoloAlta
+              ? await runFlowByName(PLAZO_FIJO_SOLO_ALTA_FLOW_NAME, inputs)
+              : await runOnce(inputs);
             stepEntries = rowEntries;
           } catch (err) {
             rowEntries = [
@@ -777,7 +812,11 @@ async function runFlowFromCsv() {
       }
 
       for (let s = 0; s < flow.steps.length; s++) {
-        const entry = stepEntries ? stepEntries[s] : null;
+        if (!expectedStepIndices.includes(s)) {
+          stepCounts[s].skipped++;
+          continue;
+        }
+        const entry = stepEntries ? stepEntries[expectedStepIndices.indexOf(s)] : null;
         const ok = !!entry && entry.status === 'Success';
         if (ok) stepCounts[s].ok++;
         else stepCounts[s].error++;

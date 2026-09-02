@@ -963,11 +963,31 @@ app: carga un archivo `.csv` con operaciones de Plazo Fijo y, por cada fila,
 busca las cuentas del cliente en Sybase, debita de Cuenta Corriente,
 acredita en Caja de Ahorro y da de alta el Plazo Fijo. El CSV de entrada
 tiene 6 columnas, sin encabezado, en este orden: `CUIT, Apellido y Nombre,
-Monto, Plazo, Nro_Comprobante, Circuito`. `Circuito` es solo de referencia
-— se lee del archivo (input `circuito`) pero ningún step lo usa en el body
-de ningún llamado. `Apellido y Nombre` (input `apellidoNombre`) sí se usa —
-ver más abajo. `idMensaje` no es columna del CSV: se genera solo por fila
+Monto, Plazo, Nro_Comprobante, Circuito`. `Apellido y Nombre` (input
+`apellidoNombre`) se usa en el `Renglon2` del paso de débito — ver más abajo.
+`idMensaje` no es columna del CSV: se genera solo por fila
 (`{{idMensajeGenerado}}`, ver "Variables de sistema").
+
+`Circuito` decide, fila por fila, cuáles de los 3 steps se ejecutan (ver
+`wwwroot/app.js`, función `runFlowFromCsv`):
+
+- `0`: flujo completo, como antes — débito en Cuenta Corriente, crédito en
+  Caja de Ahorro y alta de Plazo Fijo.
+- `1`: solo la API de alta de Plazo Fijo — no se debita Cuenta Corriente ni
+  se acredita Caja de Ahorro. Las cuentas (`cuecodSistema5`/`cuecodSistema4`)
+  se siguen resolviendo igual que para cualquier fila (`fetchAccountsByCuit`
+  las busca para **todos** los CUIT del archivo antes del loop, sin importar
+  Circuito); esta fila simplemente no ejecuta los dos primeros steps. El
+  step de alta se corre por nombre vía `/api/run` contra
+  `Flows/plazo-fijo-cocos-files-solo-alta.json` ("Alta de Plazo Fijo
+  (solo)"), un flow oculto (`"hidden": true`, no aparece en la lista) con el
+  mismo step 3, body y `omitIfNull` que el flow completo.
+- Cualquier otro valor: la fila queda directamente en error (`El campo
+  Circuito debe ser 0 o 1...`), sin llamar a ningún endpoint del banco.
+
+El resumen por step (`#csvSummary`) refleja esto: una fila con Circuito = 1
+suma "sin ejecutar (Circuito = 1)" en los steps 1 y 2 en vez de contarlos
+como error.
 
 **El flow en sí solo tiene 3 steps HTTP** (débito en Cuenta Corriente,
 crédito en Caja de Ahorro, alta de Plazo Fijo) — **no** tiene ningún step
