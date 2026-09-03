@@ -1,17 +1,18 @@
 [
   {
-    "name": "Sandbox",
-    "baseUrl": "https://sandbox.coreapi.example.com/v1",
-    "authType": "Bearer",
-    "apiKeyHeaderName": "X-Api-Key",
-    "apiKeyOrToken": ""
-  },
-  {
-    "name": "IBS",
+    "name": "Testing IBS-Link",
     "baseUrl": "https://ibs-twapi03.voii.com.ar/ibsapi",
     "authType": "OAuth2ClientCredentials",
     "tokenUrl": "https://ibs-twapi03.voii.com.ar/ibsapi/Token",
     "clientId": "",
     "clientSecret": ""
+  },
+  {
+    "name": "Testing Nova-Link",
+    "baseUrl": "https://nova-link.voii.com.ar:7443",
+    "authType": "None",
+    "clientCertPath": "",
+    "clientKeyPath": "",
+    "clientCertPassphrase": ""
   }
 ]

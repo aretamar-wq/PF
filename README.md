@@ -461,24 +461,28 @@ header/token de ApiKey o Bearer). Para crearlo:
 copy profiles.sample.json profiles.local.json
 ```
 
-La plantilla trae dos ejemplos:
+La plantilla trae los dos perfiles de testing que ya se usan hoy — uno por
+cada servidor distinto contra el que corre algún flow (ver "Configurar
+perfiles de conexión" más abajo para por qué "Transferencia DEBIN" necesita
+el segundo, aparte del primero):
 
 ```json
 [
   {
-    "name": "Sandbox",
-    "baseUrl": "https://sandbox.coreapi.example.com/v1",
-    "authType": "Bearer",
-    "apiKeyHeaderName": "X-Api-Key",
-    "apiKeyOrToken": ""
-  },
-  {
-    "name": "IBS",
+    "name": "Testing IBS-Link",
     "baseUrl": "https://ibs-twapi03.voii.com.ar/ibsapi",
     "authType": "OAuth2ClientCredentials",
     "tokenUrl": "https://ibs-twapi03.voii.com.ar/ibsapi/Token",
     "clientId": "",
     "clientSecret": ""
+  },
+  {
+    "name": "Testing Nova-Link",
+    "baseUrl": "https://nova-link.voii.com.ar:7443",
+    "authType": "None",
+    "clientCertPath": "",
+    "clientKeyPath": "",
+    "clientCertPassphrase": ""
   }
 ]
 ```
@@ -521,8 +525,8 @@ UI, fieldset "Certificado cliente (TLS mutuo)":
   privada está encriptada — igual que `apiKeyOrToken`/`clientSecret`, se dejan
   vacío para no cambiarla al editar el perfil.
 
-Dejar estos dos campos vacíos (el caso de todos los perfiles existentes,
-Sandbox/IBS) es exactamente el comportamiento de antes: sin TLS mutuo, mismo
+Dejar estos dos campos vacíos (el caso de "Testing IBS-Link" y de cualquier
+otro perfil sin TLS mutuo) es exactamente el comportamiento de antes: mismo
 `fetch`/`HttpClient` de siempre. Un perfil **sin** certificado cliente nunca
 se ve afectado por este cambio.
 
@@ -1112,18 +1116,19 @@ de Parametría (ver "Módulo de parametría" más arriba: ese campo se sacó):
 
 `Flows/transferencia-debin.json` transfiere plata vía DEBIN/CVU contra un
 servicio **distinto** del resto de los flows: Nova-Link
-(`POST /api/debin/cuenta/credin`), no el core bancario (IBS/Sandbox). No es un
-flow CSV — un input por campo, una transferencia por corrida.
+(`POST /api/debin/cuenta/credin`), no el core bancario (Testing IBS-Link). No
+es un flow CSV — un input por campo, una transferencia por corrida.
 
-**El servidor es un Perfil de conexión aparte.** Como cualquier otro flow, la
+**El servidor es un Perfil de conexión aparte: "Testing Nova-Link"** (ya
+viene en `profiles.sample.json`, junto con "Testing IBS-Link" — ver
+"Configurar perfiles de conexión" más arriba). Como cualquier otro flow, la
 URL se arma como `<baseUrl del perfil seleccionado>` + `pathTemplate`
-(`/api/debin/cuenta/credin`) — así que antes de correrlo hay que crear (con
-"Nuevo...") o elegir en "Perfil" uno cuya URL base apunte a Nova-Link (ej.
-`https://nova-link.voii.com.ar:7443`), **no** el perfil que uses para
-"Alta de Plazo Fijos - File". Si Nova-Link devuelve error de conexión, lo
-primero a revisar es que el perfil correcto esté seleccionado. Si además
-exige TLS mutuo, ese mismo perfil es donde se configuran las rutas al
-certificado cliente — ver "Certificado cliente (TLS mutuo)" más arriba.
+(`/api/debin/cuenta/credin`) — así que antes de correrlo hay que elegir en
+"Perfil" **"Testing Nova-Link"**, no "Testing IBS-Link" (el que usa "Alta de
+Plazo Fijos - File"). Si Nova-Link devuelve error de conexión, lo primero a
+revisar es que el perfil correcto esté seleccionado. Si además exige TLS
+mutuo, ese mismo perfil es donde se configuran las rutas al certificado
+cliente — ver "Certificado cliente (TLS mutuo)" más arriba.
 
 **Cuenta de débito (origen) fija, cuenta de crédito (destino) por
 transferencia:**
