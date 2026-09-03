@@ -207,10 +207,15 @@
   <dialog id="outputFilesDialog">
     <h2>Archivos de salida</h2>
     <p class="muted">Archivos guardados en el servidor al terminar de procesar un CSV (detalle de Plazos Fijos dados de alta y filas que fallaron). Se descargan automáticamente al terminar cada corrida; acá se pueden volver a descargar.</p>
-    <p id="outputFilesEmptyHint" class="muted" style="display: none;">Todavía no hay ningún archivo guardado.</p>
+    <div class="dialog-actions">
+      <label>Desde <input type="date" id="outputFilesFromDate" /></label>
+      <label>Hasta <input type="date" id="outputFilesToDate" /></label>
+      <button type="button" id="clearOutputFilesFilterBtn">Limpiar filtro</button>
+    </div>
+    <p id="outputFilesEmptyHint" class="muted" style="display: none;">No hay ningún archivo guardado para el filtro elegido.</p>
     <table id="outputFilesTable">
       <thead>
-        <tr><th>Archivo</th><th>Fecha</th><th>Tamaño</th><th>Acciones</th></tr>
+        <tr><th>Archivo</th><th>Tipo</th><th>Fecha</th><th>Tamaño</th><th>Acciones</th></tr>
       </thead>
       <tbody id="outputFilesTableBody"></tbody>
     </table>

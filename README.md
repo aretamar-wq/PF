@@ -848,11 +848,17 @@ lo pida.
 
 **Panel "Archivos de salida..."** (botón en la barra superior, visible para
 cualquier usuario logueado): lista todo lo que hay guardado en `files/` que
-matchee el patrón `(pfout|pfouterror)-<14 dígitos>.csv` — nombre, fecha y
-tamaño, más recientes primero — y permite volver a descargar cualquiera,
+matchee el patrón `(pfout|pfouterror)-<14 dígitos>.csv` — nombre, tipo
+("Detalle de Plazos Fijos" para `pfout-...`, "Filas con error" para
+`pfouterror-...`), fecha y tamaño, más recientes primero — y permite volver
+a descargar cualquiera (incluido `pfout-...`, no solo `pfouterror-...`),
 útil si se cerró el navegador antes de que la descarga automática
-terminara o si hace falta recuperar el de una corrida anterior. Dos rutas
-nuevas, implementadas igual en los dos backends:
+terminara o si hace falta recuperar el de una corrida anterior. Tiene
+filtro por rango de fechas (Desde/Hasta, ambos límites inclusive,
+comparados contra la fecha de modificación del archivo en hora local) —
+se aplica en el cliente sobre la misma lista que ya trajo `/api/output-files`,
+sin volver a pedirle nada al servidor. Dos rutas nuevas, implementadas
+igual en los dos backends:
 
 - `GET /api/output-files` — devuelve `[{ name, size, mtime }, ...]`.
 - `GET /api/output-files/content?name=<archivo>` — devuelve `{ name,

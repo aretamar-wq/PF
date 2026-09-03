@@ -1370,10 +1370,19 @@ userForm.addEventListener('submit', async (event) => {
 // terminara, o si hace falta recuperar el de una corrida anterior.
 
 const outputFilesDialog = document.getElementById('outputFilesDialog');
+const outputFilesFromDate = document.getElementById('outputFilesFromDate');
+const outputFilesToDate = document.getElementById('outputFilesToDate');
+let allOutputFiles = []; // última lista traída del servidor, sin filtrar — el filtro de fecha se aplica en el cliente
 
 function formatFileSize(bytes) {
   if (bytes < 1024) return `${bytes} B`;
   return `${(bytes / 1024).toFixed(1)} KB`;
+}
+
+// pfout-... = detalle de plazos fijos dados de alta; pfouterror-... = filas
+// que fallaron (ver "Archivos de salida (files/)" en el README).
+function outputFileTypeLabel(name) {
+  return name.startsWith('pfouterror-') ? 'Filas con error' : 'Detalle de Plazos Fijos';
 }
 
 function renderOutputFilesTable(files) {
@@ -1383,6 +1392,7 @@ function renderOutputFilesTable(files) {
     const tr = document.createElement('tr');
     tr.innerHTML = `
       <td>${escapeHtml(file.name)}</td>
+      <td>${escapeHtml(outputFileTypeLabel(file.name))}</td>
       <td>${new Date(file.mtime).toLocaleString()}</td>
       <td>${formatFileSize(file.size)}</td>
       <td><button type="button" class="downloadOutputFileBtn">Descargar</button></td>
@@ -1393,10 +1403,30 @@ function renderOutputFilesTable(files) {
   document.getElementById('outputFilesEmptyHint').style.display = files.length === 0 ? '' : 'none';
 }
 
+// Compara solo la parte de fecha (yyyy-mm-dd, hora local) de file.mtime contra
+// los <input type="date"> Desde/Hasta — ambos límites inclusive.
+function applyOutputFilesFilter() {
+  const from = outputFilesFromDate.value;
+  const to = outputFilesToDate.value;
+  const filtered = allOutputFiles.filter((file) => {
+    const fileDate = formatDateOnlyLocal(new Date(file.mtime));
+    if (from && fileDate < from) return false;
+    if (to && fileDate > to) return false;
+    return true;
+  });
+  renderOutputFilesTable(filtered);
+}
+
+function formatDateOnlyLocal(date) {
+  const pad = (n) => String(n).padStart(2, '0');
+  return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}`;
+}
+
 async function loadOutputFilesList() {
   const res = await apiFetch('/api/output-files');
   if (!res.ok) return;
-  renderOutputFilesTable(await res.json());
+  allOutputFiles = await res.json();
+  applyOutputFilesFilter();
 }
 
 async function downloadOutputFile(name) {
@@ -1410,6 +1440,8 @@ async function downloadOutputFile(name) {
 }
 
 async function openOutputFilesDialog() {
+  outputFilesFromDate.value = '';
+  outputFilesToDate.value = '';
   await loadOutputFilesList();
   outputFilesDialog.showModal();
 }
@@ -1417,6 +1449,13 @@ async function openOutputFilesDialog() {
 document.getElementById('outputFilesBtn').addEventListener('click', openOutputFilesDialog);
 document.getElementById('closeOutputFilesDialogBtn').addEventListener('click', () => outputFilesDialog.close());
 document.getElementById('refreshOutputFilesBtn').addEventListener('click', loadOutputFilesList);
+document.getElementById('clearOutputFilesFilterBtn').addEventListener('click', () => {
+  outputFilesFromDate.value = '';
+  outputFilesToDate.value = '';
+  applyOutputFilesFilter();
+});
+outputFilesFromDate.addEventListener('change', applyOutputFilesFilter);
+outputFilesToDate.addEventListener('change', applyOutputFilesFilter);
 
 // --- Login / logout ---------------------------------------------------------
 
