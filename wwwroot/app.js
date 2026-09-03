@@ -1053,6 +1053,8 @@ function openProfileDialog(existing) {
     profileForm.elements.apiKeyHeaderName.value = existing.apiKeyHeaderName || '';
     profileForm.elements.tokenUrl.value = existing.tokenUrl || '';
     profileForm.elements.clientId.value = existing.clientId || '';
+    profileForm.elements.clientCertPath.value = existing.clientCertPath || '';
+    profileForm.elements.clientKeyPath.value = existing.clientKeyPath || '';
   } else {
     profileForm.elements.name.readOnly = false;
     profileForm.elements.authType.value = 'Bearer';

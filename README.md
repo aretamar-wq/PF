@@ -501,6 +501,43 @@ se vaya a commitear** (ni en `Flows/*.json`, ni en `profiles.sample.json`) —
 más avanzados (`tokenParams`, `tokenHeaders`, `tokenAccessTokenPath`, etc.)
 todavía no tienen UI propia y se completan por archivo.
 
+### Certificado cliente (TLS mutuo)
+
+Un perfil puede además presentar un certificado cliente en la conexión TLS
+(mTLS) — hoy hace falta para el flow "Transferencia DEBIN" contra Nova-Link,
+que exige TLS mutuo. Se configura desde el diálogo "Nuevo.../Editar..." de la
+UI, fieldset "Certificado cliente (TLS mutuo)":
+
+- **Ruta al certificado** (`clientCertPath`) y **ruta a la clave privada**
+  (`clientKeyPath`) — rutas a archivos ya presentes en el disco del servidor
+  (la app no sube ni gestiona el archivo, solo lee esas rutas), en formato
+  **PEM** (el certificado empieza con `-----BEGIN CERTIFICATE-----`; la clave
+  privada, con `-----BEGIN PRIVATE KEY-----` o `-----BEGIN RSA PRIVATE
+  KEY-----`). Si lo que entregaron es un certificado en otro formato (`.pfx`/
+  `.p12` combinado, o un `.yaml`/config que envuelve el certificado en vez de
+  ser el certificado en sí) hay que extraerlo a estos dos archivos PEM antes
+  de apuntar acá — no hay conversión automática.
+- **Passphrase de la clave** (`clientCertPassphrase`), solo si la clave
+  privada está encriptada — igual que `apiKeyOrToken`/`clientSecret`, se dejan
+  vacío para no cambiarla al editar el perfil.
+
+Dejar estos dos campos vacíos (el caso de todos los perfiles existentes,
+Sandbox/IBS) es exactamente el comportamiento de antes: sin TLS mutuo, mismo
+`fetch`/`HttpClient` de siempre. Un perfil **sin** certificado cliente nunca
+se ve afectado por este cambio.
+
+Implementación (mismo comportamiento en los dos backends): en Node,
+`node/lib/flowEngine.js` arma el request a mano con el módulo `https` nativo
+en vez de con `fetch` cuando el perfil tiene `clientCertPath`+`clientKeyPath`
+(fetch no expone un client certificate sin pasar por un dispatcher de undici,
+no siempre disponible como módulo público según la versión de Node). En
+PowerShell, `modules/FlowEngine.psm1` carga el certificado con
+`X509Certificate2.CreateFromPemFile` (o `CreateFromEncryptedPemFile` si hay
+passphrase) y lo agrega a `HttpClientHandler.ClientCertificates` — se
+reexporta a PFX en memoria después de cargarlo porque el certificado efímero
+que devuelve `CreateFromPemFile` directo suele fallar el handshake TLS en
+Windows (workaround conocido, no hace falta en Linux pero tampoco molesta).
+
 ### Parametrizar cómo se obtiene el token OAuth2
 
 Por default (sin agregar nada más al perfil), la obtención de token hace
@@ -561,6 +598,11 @@ cambian de una ejecución a otra, agrupados por tipo de cuenta:
 - **Caja de Ahorro**: código de sistema, transacción (el código de
   cuenta sigue siendo manual en cada flow, porque cambia por operación).
 - **Plazo Fijo**: código de producto, código de movimiento.
+- **Transferencias DEBIN**: cuenta de débito (origen) fija — CUIT, CBU,
+  banco, sucursal, titular — más `idUsuario`/`concepto`/`moneda`, todos
+  fijos para toda transferencia. Los usa "Transferencia DEBIN" — ver más
+  abajo. La cuenta de crédito (destino) NO está acá: se completa a mano en
+  cada transferencia, porque cambia por operación.
 - **Conexión Sybase**: connection string, usuario y contraseña — ver
   "Conexión a una base Sybase (para steps SQL)" más abajo. A diferencia de
   las demás categorías, esto no es un conjunto de variables `{{...}}` para
@@ -577,15 +619,20 @@ con nombre fijo (no hace falta declararlos como inputs):
 - `{{ctaCteCodigoCuenta}}`, `{{ctaCteCodigoSistema}}`, `{{ctaCteTransaccion}}`
 - `{{cajaAhorroCodigoSistema}}`, `{{cajaAhorroTransaccion}}`
 - `{{plazoFijoCodigoProducto}}`, `{{plazoFijoCodigoMovimiento}}`
+- `{{debinDebitoCuit}}`, `{{debinDebitoCbu}}`, `{{debinDebitoBanco}}`,
+  `{{debinDebitoSucursal}}`, `{{debinDebitoTitular}}`, `{{debinIdUsuario}}`,
+  `{{debinConcepto}}`, `{{debinMoneda}}`
 
 `renglon1` existió acá para Cuenta Corriente y Caja de Ahorro, pero se sacó:
-"Alta de Plazo Fijos - File" (el único flow operativo hoy) arma esos
-`Renglon1`/`Renglon2`/`Renglon3` directamente en su propio `bodyTemplate`
-(fijos o por fila, según el paso — ver "Flow 'Alta de Plazo Fijos - File'"
-más abajo), no desde Parametría.
+"Alta de Plazo Fijos - File" arma esos `Renglon1`/`Renglon2`/`Renglon3`
+directamente en su propio `bodyTemplate` (fijos o por fila, según el paso —
+ver "Flow 'Alta de Plazo Fijos - File'" más abajo), no desde Parametría.
 Si necesitás otra combinación de campos parametrizados, agregá una nueva
 categoría a `parametria.local.json`/`parametria.sample.json` y a
-`Get-ParametriaVariables` en `modules/FlowEngine.psm1`.
+`Get-ParametriaVariables` en `modules/FlowEngine.psm1` (y su equivalente
+`getParametriaVariables` en `node/lib/flowEngine.js` — los dos backends
+comparten el mismo `parametria.local.json`, así que tienen que quedar en
+sincronía).
 
 ### Conexión a una base Sybase (para steps SQL)
 
@@ -1060,6 +1107,48 @@ de Parametría (ver "Módulo de parametría" más arriba: ese campo se sacó):
   `Renglon1` = `"Orig.: CUIL Nro.: 30708424478"`, `Renglon2` =
   `"Nom.: Cocos Capital S.A."`, `Renglon3` = `"Ref: VAR"` (sin el punto
   después de "Ref", a diferencia del paso 1 — así lo pidieron).
+
+### Flow "Transferencia DEBIN"
+
+`Flows/transferencia-debin.json` transfiere plata vía DEBIN/CVU contra un
+servicio **distinto** del resto de los flows: Nova-Link
+(`POST /api/debin/cuenta/credin`), no el core bancario (IBS/Sandbox). No es un
+flow CSV — un input por campo, una transferencia por corrida.
+
+**El servidor es un Perfil de conexión aparte.** Como cualquier otro flow, la
+URL se arma como `<baseUrl del perfil seleccionado>` + `pathTemplate`
+(`/api/debin/cuenta/credin`) — así que antes de correrlo hay que crear (con
+"Nuevo...") o elegir en "Perfil" uno cuya URL base apunte a Nova-Link (ej.
+`https://nova-link.voii.com.ar:7443`), **no** el perfil que uses para
+"Alta de Plazo Fijos - File". Si Nova-Link devuelve error de conexión, lo
+primero a revisar es que el perfil correcto esté seleccionado. Si además
+exige TLS mutuo, ese mismo perfil es donde se configuran las rutas al
+certificado cliente — ver "Certificado cliente (TLS mutuo)" más arriba.
+
+**Cuenta de débito (origen) fija, cuenta de crédito (destino) por
+transferencia:**
+
+- `debito.*` (quién manda la plata) sale de Parametría > "Transferencias
+  DEBIN" — misma cuenta para todas las transferencias, igual que
+  `idUsuario`/`concepto`/`moneda`. Hay que completarla ahí antes de la
+  primera transferencia real (queda vacía por default, igual que el resto de
+  Parametría).
+- `credito.*` (quién la recibe) — CUIT, CBU, banco, sucursal y titular del
+  destinatario — se completa a mano en cada corrida: son los inputs del
+  formulario.
+- `importe`, `idComprobante` (número de comprobante) y `mismoTitular`
+  (selector Sí/No, si origen y destino son la misma persona/cuenta) también
+  son inputs por transferencia. `ClienteId` y `datosGenerador` (IP,
+  dispositivo, geolocalización — datos de un cliente final que esta app no
+  tiene, por ser una integración servidor a servidor) van fijos en el
+  `bodyTemplate`, iguales a como los manda cualquier corrida.
+
+La respuesta trae el resultado de la evaluación de la transferencia en
+`params.response.respuesta` (`codigo`/`descripcion`/`id`/`estado`) — se
+extraen como variables (`extractVariables`: `codigoRespuesta`,
+`descripcionRespuesta`, `idRespuesta`) por si un flow futuro necesita
+encadenar algo con ese resultado; hoy no los usa nada más, quedan
+disponibles en el log igual que cualquier respuesta.
 
 ### Panel de resultado de un step SQL
 

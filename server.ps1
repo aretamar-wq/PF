@@ -101,6 +101,13 @@ function Get-MaskedProfile {
         tokenUrl         = $Profile.tokenUrl
         clientId         = $Profile.clientId
         hasClientSecret  = -not [string]::IsNullOrEmpty($Profile.clientSecret)
+        # TLS mutuo (ver "Transferencia DEBIN" / Nova-Link en el README): rutas
+        # a certificado y clave privada en el disco del servidor, no un
+        # secreto en sí — se muestran completas. La passphrase de la clave (si
+        # la tiene) sí se enmascara, mismo criterio que apiKeyOrToken/clientSecret.
+        clientCertPath          = $Profile.clientCertPath
+        clientKeyPath           = $Profile.clientKeyPath
+        hasClientCertPassphrase = -not [string]::IsNullOrEmpty($Profile.clientCertPassphrase)
     }
 }
 
@@ -326,20 +333,24 @@ try {
                 }
 
                 $updated = [ordered]@{
-                    name             = $incoming.name
-                    baseUrl          = $incoming.baseUrl
-                    authType         = $incoming.authType
-                    apiKeyHeaderName = $incoming.apiKeyHeaderName
-                    apiKeyOrToken    = $incoming.apiKeyOrToken
-                    tokenUrl         = $incoming.tokenUrl
-                    clientId         = $incoming.clientId
-                    clientSecret     = $incoming.clientSecret
+                    name                 = $incoming.name
+                    baseUrl              = $incoming.baseUrl
+                    authType             = $incoming.authType
+                    apiKeyHeaderName     = $incoming.apiKeyHeaderName
+                    apiKeyOrToken        = $incoming.apiKeyOrToken
+                    tokenUrl             = $incoming.tokenUrl
+                    clientId             = $incoming.clientId
+                    clientSecret         = $incoming.clientSecret
+                    clientCertPath       = $incoming.clientCertPath
+                    clientKeyPath        = $incoming.clientKeyPath
+                    clientCertPassphrase = $incoming.clientCertPassphrase
                 }
 
                 if ($existingIndex -ge 0) {
                     # Si el form no mandó un secreto nuevo, conservar el que ya había guardado.
                     if ([string]::IsNullOrEmpty($updated.apiKeyOrToken)) { $updated.apiKeyOrToken = $profiles[$existingIndex].apiKeyOrToken }
                     if ([string]::IsNullOrEmpty($updated.clientSecret)) { $updated.clientSecret = $profiles[$existingIndex].clientSecret }
+                    if ([string]::IsNullOrEmpty($updated.clientCertPassphrase)) { $updated.clientCertPassphrase = $profiles[$existingIndex].clientCertPassphrase }
                     $profiles[$existingIndex] = [pscustomobject]$updated
                 } else {
                     $profiles += [pscustomobject]$updated

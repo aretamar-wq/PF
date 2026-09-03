@@ -109,6 +109,13 @@ function getMaskedProfile(profileObj) {
     tokenUrl: profileObj.tokenUrl,
     clientId: profileObj.clientId,
     hasClientSecret: !!profileObj.clientSecret,
+    // TLS mutuo (ver "Transferencia DEBIN" / Nova-Link en el README): rutas a
+    // certificado y clave privada en el disco del servidor, no un secreto en
+    // sí — se muestran completas. La passphrase de la clave (si la tiene) sí
+    // se enmascara, mismo criterio que apiKeyOrToken/clientSecret.
+    clientCertPath: profileObj.clientCertPath,
+    clientKeyPath: profileObj.clientKeyPath,
+    hasClientCertPassphrase: !!profileObj.clientCertPassphrase,
   };
 }
 
@@ -271,12 +278,16 @@ async function handleProfilesPost(req, res) {
     tokenUrl: incoming.tokenUrl,
     clientId: incoming.clientId,
     clientSecret: incoming.clientSecret,
+    clientCertPath: incoming.clientCertPath,
+    clientKeyPath: incoming.clientKeyPath,
+    clientCertPassphrase: incoming.clientCertPassphrase,
   };
 
   if (existingIndex >= 0) {
     // Si el form no mandó un secreto nuevo, conservar el que ya había guardado.
     if (!updated.apiKeyOrToken) updated.apiKeyOrToken = profiles[existingIndex].apiKeyOrToken;
     if (!updated.clientSecret) updated.clientSecret = profiles[existingIndex].clientSecret;
+    if (!updated.clientCertPassphrase) updated.clientCertPassphrase = profiles[existingIndex].clientCertPassphrase;
     profiles[existingIndex] = updated;
   } else {
     profiles.push(updated);

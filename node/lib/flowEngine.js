@@ -7,6 +7,7 @@
 
 const fs = require('fs');
 const path = require('path');
+const https = require('https');
 const { getJsonPathValue } = require('./jsonPath');
 const { expandTemplate } = require('./variableSubstitution');
 const { formatLocal, formatDateOnly, formatTimeOnly, formatCompact, formatCompactMillis } = require('./dateUtil');
@@ -52,6 +53,65 @@ function buildTokenRequestBody(contentType, params) {
     .map(([k, v]) => `${k}=${v}`)
     .join('&');
   return { body: raw, contentType };
+}
+
+function readCertFile(filePath, label, profileObj) {
+  if (!fs.existsSync(filePath)) {
+    throw new Error(`No se encontró el archivo de ${label} '${filePath}' del perfil '${profileObj.name}'.`);
+  }
+  return fs.readFileSync(filePath);
+}
+
+// Perfiles con clientCertPath/clientKeyPath (TLS mutuo — hoy, el único caso
+// es el flow "Transferencia DEBIN" contra Nova-Link) no pueden usar el fetch
+// global de Node: hace falta un agente https con el certificado cliente
+// cargado, algo que fetch no expone directamente sin pasar por undici (no
+// siempre disponible como módulo público según la versión de Node) — para
+// ese caso puntual se arma el request a mano con el módulo https nativo, en
+// vez de con fetch. Devuelve algo con la misma forma mínima que ya usa el
+// resto del código de un Response de fetch (status + text()); el resto de
+// los perfiles (sin esos dos campos) siguen usando fetch tal cual.
+function requestWithClientCert(url, options, profileObj) {
+  return new Promise((resolve, reject) => {
+    const parsedUrl = new URL(url);
+    if (parsedUrl.protocol !== 'https:') {
+      reject(new Error(`El perfil '${profileObj.name}' tiene certificado cliente configurado, pero la URL '${url}' no es https.`));
+      return;
+    }
+
+    const reqOptions = {
+      method: options.method,
+      headers: options.headers,
+      hostname: parsedUrl.hostname,
+      port: parsedUrl.port || 443,
+      path: `${parsedUrl.pathname}${parsedUrl.search}`,
+      cert: readCertFile(profileObj.clientCertPath, 'certificado cliente', profileObj),
+      key: readCertFile(profileObj.clientKeyPath, 'clave privada', profileObj),
+    };
+    if (profileObj.clientCertPassphrase) reqOptions.passphrase = profileObj.clientCertPassphrase;
+
+    const req = https.request(reqOptions, (res) => {
+      const chunks = [];
+      res.on('data', (chunk) => chunks.push(chunk));
+      res.on('end', () => {
+        resolve({
+          status: res.statusCode,
+          ok: res.statusCode >= 200 && res.statusCode < 300,
+          text: async () => Buffer.concat(chunks).toString('utf8'),
+        });
+      });
+    });
+    req.on('error', reject);
+    if (options.body !== undefined && options.body !== null) req.write(options.body);
+    req.end();
+  });
+}
+
+function doFetch(url, options, profileObj) {
+  if (profileObj && profileObj.clientCertPath && profileObj.clientKeyPath) {
+    return requestWithClientCert(url, options, profileObj);
+  }
+  return fetch(url, options);
 }
 
 async function getOrRefreshAccessToken(profileObj) {
@@ -105,7 +165,7 @@ async function getOrRefreshAccessToken(profileObj) {
   const fetchOptions = { method: tokenMethod, headers };
   if (bodyAllowed) fetchOptions.body = body;
 
-  const response = await fetch(profileObj.tokenUrl, fetchOptions);
+  const response = await doFetch(profileObj.tokenUrl, fetchOptions, profileObj);
   const responseBody = await response.text();
 
   if (!response.ok) {
@@ -164,6 +224,16 @@ function getParametriaVariables(parametria) {
   if (parametria.plazoFijo) {
     variables.plazoFijoCodigoProducto = String(parametria.plazoFijo.codigoProducto || '');
     variables.plazoFijoCodigoMovimiento = String(parametria.plazoFijo.codigoMovimiento || '');
+  }
+  if (parametria.debin) {
+    variables.debinDebitoCuit = String(parametria.debin.debitoCuit || '');
+    variables.debinDebitoCbu = String(parametria.debin.debitoCbu || '');
+    variables.debinDebitoBanco = String(parametria.debin.debitoBanco || '');
+    variables.debinDebitoSucursal = String(parametria.debin.debitoSucursal || '');
+    variables.debinDebitoTitular = String(parametria.debin.debitoTitular || '');
+    variables.debinIdUsuario = String(parametria.debin.idUsuario || '');
+    variables.debinConcepto = String(parametria.debin.concepto || '');
+    variables.debinMoneda = String(parametria.debin.moneda || '');
   }
   return variables;
 }
@@ -352,7 +422,7 @@ async function invokeHttpStep(step, flowObj, variables, profileObj, logsDir, ent
   const fetchOptions = { method, headers };
   if (bodyText !== null) fetchOptions.body = bodyText;
 
-  const response = await fetch(url, fetchOptions);
+  const response = await doFetch(url, fetchOptions, profileObj);
   const responseBody = await response.text();
 
   const responseLogText = [

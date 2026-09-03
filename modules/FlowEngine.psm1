@@ -1,6 +1,45 @@
 ﻿# Ejecuta un flow: encadena requests HTTP sustituyendo variables ({{var}}) entre pasos.
 # Requiere que JsonPath.psm1 y VariableSubstitution.psm1 ya estén importados en la sesión.
 
+# Perfiles con clientCertPath/clientKeyPath (TLS mutuo — hoy, el único caso es
+# el flow "Transferencia DEBIN" contra Nova-Link) arman el HttpClientHandler
+# con el certificado cliente cargado; el resto de los perfiles (sin esos dos
+# campos) quedan exactamente igual que antes. Se re-exporta el certificado a
+# PFX en memoria después de cargarlo en vez de usar directo el X509Certificate2
+# efímero que devuelve CreateFromPemFile: en Windows, ese certificado efímero
+# suele fallar el handshake TLS (el keyset no queda asociado correctamente) —
+# el roundtrip a PFX es el workaround conocido para eso, y no molesta en Linux.
+function New-ProfileHttpClientHandler {
+    param([Parameter(Mandatory = $true)] $Profile)
+
+    $handler = New-Object System.Net.Http.HttpClientHandler
+
+    $certPath = [string]$Profile.clientCertPath
+    $keyPath = [string]$Profile.clientKeyPath
+    if (-not [string]::IsNullOrWhiteSpace($certPath) -and -not [string]::IsNullOrWhiteSpace($keyPath)) {
+        if (-not (Test-Path $certPath)) {
+            throw "No se encontró el archivo de certificado cliente '$certPath' del perfil '$($Profile.name)'."
+        }
+        if (-not (Test-Path $keyPath)) {
+            throw "No se encontró el archivo de clave privada '$keyPath' del perfil '$($Profile.name)'."
+        }
+
+        $passphrase = [string]$Profile.clientCertPassphrase
+        $ephemeralCert = if ([string]::IsNullOrEmpty($passphrase)) {
+            [System.Security.Cryptography.X509Certificates.X509Certificate2]::CreateFromPemFile($certPath, $keyPath)
+        } else {
+            [System.Security.Cryptography.X509Certificates.X509Certificate2]::CreateFromEncryptedPemFile($certPath, $passphrase, $keyPath)
+        }
+        $pfxBytes = $ephemeralCert.Export([System.Security.Cryptography.X509Certificates.X509ContentType]::Pfx)
+        $cert = New-Object System.Security.Cryptography.X509Certificates.X509Certificate2($pfxBytes, [string]$null, [System.Security.Cryptography.X509Certificates.X509KeyStorageFlags]::Exportable)
+
+        [void]$handler.ClientCertificates.Add($cert)
+        $handler.ClientCertificateOptions = [System.Net.Http.ClientCertificateOption]::Manual
+    }
+
+    return $handler
+}
+
 function Build-TokenRequestContent {
     param(
         [string]$ContentType,
@@ -204,6 +243,17 @@ function Get-ParametriaVariables {
         $variables['plazoFijoCodigoMovimiento'] = [string]$Parametria.plazoFijo.codigoMovimiento
     }
 
+    if ($Parametria.debin) {
+        $variables['debinDebitoCuit']     = [string]$Parametria.debin.debitoCuit
+        $variables['debinDebitoCbu']      = [string]$Parametria.debin.debitoCbu
+        $variables['debinDebitoBanco']    = [string]$Parametria.debin.debitoBanco
+        $variables['debinDebitoSucursal'] = [string]$Parametria.debin.debitoSucursal
+        $variables['debinDebitoTitular']  = [string]$Parametria.debin.debitoTitular
+        $variables['debinIdUsuario']      = [string]$Parametria.debin.idUsuario
+        $variables['debinConcepto']       = [string]$Parametria.debin.concepto
+        $variables['debinMoneda']         = [string]$Parametria.debin.moneda
+    }
+
     return $variables
 }
 
@@ -401,7 +451,7 @@ function Invoke-Flow {
         $Parametria
     )
 
-    $handler = New-Object System.Net.Http.HttpClientHandler
+    $handler = New-ProfileHttpClientHandler -Profile $Profile
     $httpClient = New-Object System.Net.Http.HttpClient($handler)
     $httpClient.Timeout = [TimeSpan]::FromSeconds(60)
 
@@ -602,7 +652,7 @@ function Test-TokenAcquisition {
         $Global:TokenCache.Remove($Profile.name)
     }
 
-    $handler = New-Object System.Net.Http.HttpClientHandler
+    $handler = New-ProfileHttpClientHandler -Profile $Profile
     $httpClient = New-Object System.Net.Http.HttpClient($handler)
     $httpClient.Timeout = [TimeSpan]::FromSeconds(30)
 

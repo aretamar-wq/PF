@@ -17,6 +17,16 @@ function Get-DefaultParametria {
             codigoProducto   = ''
             codigoMovimiento = ''
         }
+        debin = [pscustomobject]@{
+            debitoCuit     = ''
+            debitoCbu      = ''
+            debitoBanco    = ''
+            debitoSucursal = ''
+            debitoTitular  = ''
+            idUsuario      = ''
+            concepto       = 'HAB'
+            moneda         = '032'
+        }
         sybase = [pscustomobject]@{
             connectionString = 'Driver={Adaptive Server Enterprise};NetworkAddress=Aconquija4.bv.voii.com.ar,5000;Database=Banksys;Uid={{usuario}};Pwd={{password}}'
             usuario          = ''
