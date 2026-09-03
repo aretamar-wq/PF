@@ -602,11 +602,6 @@ cambian de una ejecución a otra, agrupados por tipo de cuenta:
 - **Caja de Ahorro**: código de sistema, transacción (el código de
   cuenta sigue siendo manual en cada flow, porque cambia por operación).
 - **Plazo Fijo**: código de producto, código de movimiento.
-- **Transferencias DEBIN**: cuenta de débito (origen) fija — CUIT, CBU,
-  banco, sucursal, titular — más `idUsuario`/`concepto`/`moneda`, todos
-  fijos para toda transferencia. Los usa "Transferencia DEBIN" — ver más
-  abajo. La cuenta de crédito (destino) NO está acá: se completa a mano en
-  cada transferencia, porque cambia por operación.
 - **Conexión Sybase**: connection string, usuario y contraseña — ver
   "Conexión a una base Sybase (para steps SQL)" más abajo. A diferencia de
   las demás categorías, esto no es un conjunto de variables `{{...}}` para
@@ -623,9 +618,10 @@ con nombre fijo (no hace falta declararlos como inputs):
 - `{{ctaCteCodigoCuenta}}`, `{{ctaCteCodigoSistema}}`, `{{ctaCteTransaccion}}`
 - `{{cajaAhorroCodigoSistema}}`, `{{cajaAhorroTransaccion}}`
 - `{{plazoFijoCodigoProducto}}`, `{{plazoFijoCodigoMovimiento}}`
-- `{{debinDebitoCuit}}`, `{{debinDebitoCbu}}`, `{{debinDebitoBanco}}`,
-  `{{debinDebitoSucursal}}`, `{{debinDebitoTitular}}`, `{{debinIdUsuario}}`,
-  `{{debinConcepto}}`, `{{debinMoneda}}`
+
+"Transferencia DEBIN" (ver más abajo) no tiene ninguna categoría acá: todos
+sus campos, incluida la cuenta de débito (origen), son inputs del
+formulario — no hay nada fijo para ese flow en Parametría.
 
 `renglon1` existió acá para Cuenta Corriente y Caja de Ahorro, pero se sacó:
 "Alta de Plazo Fijos - File" arma esos `Renglon1`/`Renglon2`/`Renglon3`
@@ -1130,23 +1126,27 @@ revisar es que el perfil correcto esté seleccionado. Si además exige TLS
 mutuo, ese mismo perfil es donde se configuran las rutas al certificado
 cliente — ver "Certificado cliente (TLS mutuo)" más arriba.
 
-**Cuenta de débito (origen) fija, cuenta de crédito (destino) por
-transferencia:**
+**Todos los campos del body son inputs del formulario** — a diferencia del
+resto de los flows, acá no hay nada fijo en Parametría ni hardcodeado en el
+`bodyTemplate` (ni siquiera la cuenta de débito/origen, que en otros bancos
+suele ser fija: acá varió entre los dos ejemplos reales que se usaron para
+armar este flow, así que queda a criterio de quien lo corre en cada
+transferencia). 26 inputs en total:
 
-- `debito.*` (quién manda la plata) sale de Parametría > "Transferencias
-  DEBIN" — misma cuenta para todas las transferencias, igual que
-  `idUsuario`/`concepto`/`moneda`. Hay que completarla ahí antes de la
-  primera transferencia real (queda vacía por default, igual que el resto de
-  Parametría).
-- `credito.*` (quién la recibe) — CUIT, CBU, banco, sucursal y titular del
-  destinatario — se completa a mano en cada corrida: son los inputs del
-  formulario.
-- `importe`, `idComprobante` (número de comprobante) y `mismoTitular`
-  (selector Sí/No, si origen y destino son la misma persona/cuenta) también
-  son inputs por transferencia. `ClienteId` y `datosGenerador` (IP,
-  dispositivo, geolocalización — datos de un cliente final que esta app no
-  tiene, por ser una integración servidor a servidor) van fijos en el
-  `bodyTemplate`, iguales a como los manda cualquier corrida.
+- `credito.*` (CUIT/CBU/banco/sucursal/titular de quién recibe) y `debito.*`
+  (lo mismo, de quién manda la plata).
+- `clienteId`, `concepto`, `idUsuario`, `idComprobante`, `internalCode`,
+  `moneda`, `importe`, `mismoTitular` (selector Sí/No).
+- `ipCliente`, `tipoDispositivo`, `plataforma`, `imsi`, `imei`, `lat`, `lng`,
+  `precision` (van dentro de `datosGenerador` en el body — datos de un
+  cliente final que esta app normalmente no tiene, por ser una integración
+  servidor a servidor; se dejan en blanco salvo que haga falta mandar algo).
+
+Varios de estos campos casi no cambian entre transferencias (`idUsuario`,
+`moneda`, `tipoDispositivo`, `internalCode`, `clienteId`) y por eso tienen
+`defaultValue` precargado en el formulario — pero siguen siendo editables:
+si mañana hace falta que alguno sea distinto por transferencia, no hace
+falta tocar el flow, ya está expuesto.
 
 La respuesta trae el resultado de la evaluación de la transferencia en
 `params.response.respuesta` (`codigo`/`descripcion`/`id`/`estado`) — se
@@ -1154,6 +1154,12 @@ extraen como variables (`extractVariables`: `codigoRespuesta`,
 `descripcionRespuesta`, `idRespuesta`) por si un flow futuro necesita
 encadenar algo con ese resultado; hoy no los usa nada más, quedan
 disponibles en el log igual que cualquier respuesta.
+
+**A propósito:** el `Content-Type` del request es
+`application/x-www-form-urlencoded`, aunque el body sea JSON — así es como
+Nova-Link espera este endpoint (confirmado contra un curl real que funciona
+con esa combinación). No es un error del flow; si Nova-Link cambia esa
+exigencia, es el único header que hay que tocar en `Flows/transferencia-debin.json`.
 
 ### Panel de resultado de un step SQL
 

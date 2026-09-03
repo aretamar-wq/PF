@@ -243,17 +243,6 @@ function Get-ParametriaVariables {
         $variables['plazoFijoCodigoMovimiento'] = [string]$Parametria.plazoFijo.codigoMovimiento
     }
 
-    if ($Parametria.debin) {
-        $variables['debinDebitoCuit']     = [string]$Parametria.debin.debitoCuit
-        $variables['debinDebitoCbu']      = [string]$Parametria.debin.debitoCbu
-        $variables['debinDebitoBanco']    = [string]$Parametria.debin.debitoBanco
-        $variables['debinDebitoSucursal'] = [string]$Parametria.debin.debitoSucursal
-        $variables['debinDebitoTitular']  = [string]$Parametria.debin.debitoTitular
-        $variables['debinIdUsuario']      = [string]$Parametria.debin.idUsuario
-        $variables['debinConcepto']       = [string]$Parametria.debin.concepto
-        $variables['debinMoneda']         = [string]$Parametria.debin.moneda
-    }
-
     return $variables
 }
 

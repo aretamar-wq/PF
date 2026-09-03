@@ -225,16 +225,6 @@ function getParametriaVariables(parametria) {
     variables.plazoFijoCodigoProducto = String(parametria.plazoFijo.codigoProducto || '');
     variables.plazoFijoCodigoMovimiento = String(parametria.plazoFijo.codigoMovimiento || '');
   }
-  if (parametria.debin) {
-    variables.debinDebitoCuit = String(parametria.debin.debitoCuit || '');
-    variables.debinDebitoCbu = String(parametria.debin.debitoCbu || '');
-    variables.debinDebitoBanco = String(parametria.debin.debitoBanco || '');
-    variables.debinDebitoSucursal = String(parametria.debin.debitoSucursal || '');
-    variables.debinDebitoTitular = String(parametria.debin.debitoTitular || '');
-    variables.debinIdUsuario = String(parametria.debin.idUsuario || '');
-    variables.debinConcepto = String(parametria.debin.concepto || '');
-    variables.debinMoneda = String(parametria.debin.moneda || '');
-  }
   return variables;
 }
 

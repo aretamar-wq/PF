@@ -12,16 +12,6 @@ function getDefaultParametria() {
     cuentaCorriente: { codigoCuenta: '', codigoSistema: '', transaccion: '' },
     cajaDeAhorro: { codigoSistema: '', transaccion: '' },
     plazoFijo: { codigoProducto: '', codigoMovimiento: '' },
-    debin: {
-      debitoCuit: '',
-      debitoCbu: '',
-      debitoBanco: '',
-      debitoSucursal: '',
-      debitoTitular: '',
-      idUsuario: '',
-      concepto: 'HAB',
-      moneda: '032',
-    },
     sybase: {
       connectionString:
         'Driver={Adaptive Server Enterprise};NetworkAddress=Aconquija4.bv.voii.com.ar,5000;Database=Banksys;Uid={{usuario}};Pwd={{password}}',

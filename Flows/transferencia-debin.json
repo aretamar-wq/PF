@@ -1,14 +1,24 @@
 {
   "name": "Transferencia DEBIN",
-  "description": "Transferencia DEBIN/CVU contra el servicio Nova-Link (POST /api/debin/cuenta/credin). Corre contra un servidor DISTINTO del resto de los flows — antes de ejecutarlo, elegí en \"Perfil\" el perfil \"Testing Nova-Link\" (ya viene en profiles.sample.json; si no existe, creá uno con \"Nuevo...\" apuntando a https://nova-link.voii.com.ar:7443), no el que uses para \"Alta de Plazo Fijos - File\". Si Nova-Link exige TLS mutuo, ese mismo perfil es donde se configuran las rutas al certificado cliente y la clave privada (ver fieldset \"Certificado cliente (TLS mutuo)\" al editar el perfil). La cuenta de débito (origen) y los valores fijos (idUsuario/concepto/moneda) salen de Parametría > \"Transferencias DEBIN\" — completarlos ahí antes de la primera transferencia real.",
+  "description": "Transferencia DEBIN/CVU contra el servicio Nova-Link (POST /api/debin/cuenta/credin). Corre contra un servidor DISTINTO del resto de los flows — antes de ejecutarlo, elegí en \"Perfil\" el perfil \"Testing Nova-Link\" (ya viene en profiles.sample.json), no el que uses para \"Alta de Plazo Fijos - File\". Si Nova-Link exige TLS mutuo, ese mismo perfil es donde se configuran las rutas al certificado cliente y la clave privada (ver fieldset \"Certificado cliente (TLS mutuo)\" al editar el perfil). Todos los campos del body van como input: no hay valores fijos en Parametría para este flow — se completan a mano en cada transferencia.",
   "inputs": [
-    { "variableName": "creditoCuit", "label": "CUIT del destinatario (crédito)" },
-    { "variableName": "creditoCbu", "label": "CBU del destinatario (crédito)" },
-    { "variableName": "creditoBanco", "label": "Banco del destinatario (crédito)" },
-    { "variableName": "creditoSucursal", "label": "Sucursal del destinatario (crédito)" },
-    { "variableName": "creditoTitular", "label": "Titular del destinatario (crédito)" },
-    { "variableName": "importe", "label": "Importe" },
+    { "variableName": "creditoCuit", "label": "CUIT (crédito)" },
+    { "variableName": "creditoCbu", "label": "CBU (crédito)" },
+    { "variableName": "creditoBanco", "label": "Banco (crédito)" },
+    { "variableName": "creditoSucursal", "label": "Sucursal (crédito)" },
+    { "variableName": "creditoTitular", "label": "Titular (crédito)" },
+    { "variableName": "clienteId", "label": "ClienteId", "defaultValue": "0" },
+    { "variableName": "debitoCuit", "label": "CUIT (débito)" },
+    { "variableName": "debitoCbu", "label": "CBU (débito)" },
+    { "variableName": "debitoBanco", "label": "Banco (débito)" },
+    { "variableName": "debitoSucursal", "label": "Sucursal (débito)" },
+    { "variableName": "debitoTitular", "label": "Titular (débito)" },
+    { "variableName": "concepto", "label": "Concepto" },
+    { "variableName": "idUsuario", "label": "ID de usuario", "defaultValue": "16" },
     { "variableName": "idComprobante", "label": "Número de comprobante" },
+    { "variableName": "internalCode", "label": "Internal code", "defaultValue": " " },
+    { "variableName": "moneda", "label": "Moneda", "defaultValue": "032" },
+    { "variableName": "importe", "label": "Importe" },
     {
       "variableName": "mismoTitular",
       "label": "¿Mismo titular en origen y destino?",
@@ -18,15 +28,23 @@
         { "value": "1", "label": "Sí" }
       ],
       "defaultValue": "0"
-    }
+    },
+    { "variableName": "ipCliente", "label": "IP del cliente" },
+    { "variableName": "tipoDispositivo", "label": "Tipo de dispositivo", "defaultValue": "04" },
+    { "variableName": "plataforma", "label": "Plataforma" },
+    { "variableName": "imsi", "label": "IMSI" },
+    { "variableName": "imei", "label": "IMEI" },
+    { "variableName": "lat", "label": "Latitud" },
+    { "variableName": "lng", "label": "Longitud" },
+    { "variableName": "precision", "label": "Precisión" }
   ],
   "steps": [
     {
       "name": "1. Transferencia DEBIN",
       "method": "POST",
       "pathTemplate": "/api/debin/cuenta/credin",
-      "headers": { "Accept": "application/json" },
-      "bodyTemplate": "{\n  \"credito\": {\n    \"cuit\": \"{{creditoCuit}}\",\n    \"cbu\": \"{{creditoCbu}}\",\n    \"banco\": \"{{creditoBanco}}\",\n    \"sucursal\": \"{{creditoSucursal}}\",\n    \"titular\": \"{{creditoTitular}}\"\n  },\n  \"ClienteId\": \"0\",\n  \"debito\": {\n    \"cuit\": \"{{debinDebitoCuit}}\",\n    \"cbu\": \"{{debinDebitoCbu}}\",\n    \"banco\": \"{{debinDebitoBanco}}\",\n    \"sucursal\": \"{{debinDebitoSucursal}}\",\n    \"titular\": \"{{debinDebitoTitular}}\"\n  },\n  \"concepto\": \"{{debinConcepto}}\",\n  \"idUsuario\": {{debinIdUsuario}},\n  \"idComprobante\": {{idComprobante}},\n  \"moneda\": \"{{debinMoneda}}\",\n  \"importe\": {{importe}},\n  \"mismoTitular\": \"{{mismoTitular}}\",\n  \"datosGenerador\": {\n    \"ipCliente\": \"\",\n    \"tipoDispositivo\": \"\",\n    \"plataforma\": \"\",\n    \"imsi\": \"\",\n    \"imei\": \"\",\n    \"lat\": \"0\",\n    \"lng\": \"0\",\n    \"precision\": \"\"\n  }\n}",
+      "headers": { "Accept": "*/*", "Content-Type": "application/x-www-form-urlencoded" },
+      "bodyTemplate": "{\n  \"credito\": {\n    \"cuit\": \"{{creditoCuit}}\",\n    \"cbu\": \"{{creditoCbu}}\",\n    \"banco\": \"{{creditoBanco}}\",\n    \"sucursal\": \"{{creditoSucursal}}\",\n    \"titular\": \"{{creditoTitular}}\"\n  },\n  \"ClienteId\": \"{{clienteId}}\",\n  \"debito\": {\n    \"cuit\": \"{{debitoCuit}}\",\n    \"cbu\": \"{{debitoCbu}}\",\n    \"banco\": \"{{debitoBanco}}\",\n    \"sucursal\": \"{{debitoSucursal}}\",\n    \"titular\": \"{{debitoTitular}}\"\n  },\n  \"concepto\": \"{{concepto}}\",\n  \"idUsuario\": {{idUsuario}},\n  \"idComprobante\": {{idComprobante}},\n  \"internalcode\": \"{{internalCode}}\",\n  \"moneda\": \"{{moneda}}\",\n  \"importe\": {{importe}},\n  \"mismoTitular\": \"{{mismoTitular}}\",\n  \"datosGenerador\": {\n    \"ipCliente\": \"{{ipCliente}}\",\n    \"tipoDispositivo\": \"{{tipoDispositivo}}\",\n    \"plataforma\": \"{{plataforma}}\",\n    \"imsi\": \"{{imsi}}\",\n    \"imei\": \"{{imei}}\",\n    \"lat\": \"{{lat}}\",\n    \"lng\": \"{{lng}}\",\n    \"precision\": \"{{precision}}\"\n  }\n}",
       "extractVariables": {
         "codigoRespuesta": "params.response.respuesta.codigo",
         "descripcionRespuesta": "params.response.respuesta.descripcion",
