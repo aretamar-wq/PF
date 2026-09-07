@@ -14,6 +14,10 @@ security.local.json
 # Archivos de salida (pfout-.../pfouterror-...): contienen datos bancarios reales, nunca se versionan
 files/
 
+# Certificados/claves cliente para TLS mutuo (ver "Certificado cliente (TLS
+# mutuo)" en el README): material criptográfico real, nunca se versiona
+certs/
+
 # Backend Node.js (alternativa a server.ps1, ver README > "Instalación en Linux"):
 # dependencias instaladas, nunca se versionan (package-lock.json sí se versiona)
 node/node_modules/

@@ -109,8 +109,14 @@
           "Transferencia DEBIN"). Rutas a archivos ya presentes en el servidor
           (no se suben acá): certificado y clave privada en formato PEM.
         </p>
-        <label>Ruta al certificado (.crt/.pem) <input name="clientCertPath" placeholder="/opt/apicore/certs/nova-link.crt" /></label>
-        <label>Ruta a la clave privada (.key) <input name="clientKeyPath" placeholder="/opt/apicore/certs/nova-link.key" /></label>
+        <label>Ruta al certificado (.crt/.pem)
+          <input name="clientCertPath" placeholder="/opt/apicore/certs/nova-link.crt" />
+          <button type="button" id="browseCertPathBtn">Buscar...</button>
+        </label>
+        <label>Ruta a la clave privada (.key)
+          <input name="clientKeyPath" placeholder="/opt/apicore/certs/nova-link.key" />
+          <button type="button" id="browseKeyPathBtn">Buscar...</button>
+        </label>
         <label>Passphrase de la clave <input name="clientCertPassphrase" type="password" placeholder="(sin cambios si se deja vacío; vacío si la clave no tiene passphrase)" /></label>
       </fieldset>
       <div class="dialog-actions">
@@ -118,6 +124,24 @@
         <button type="submit">Guardar</button>
       </div>
     </form>
+  </dialog>
+
+  <dialog id="certBrowserDialog">
+    <h2>Buscar archivo</h2>
+    <p class="muted">
+      Solo se puede navegar dentro de la carpeta de certificados del servidor
+      (<code id="certBrowserBasePath"></code>). Hacé clic en una carpeta para
+      entrar, o en un archivo para elegirlo.
+    </p>
+    <p><strong>Ruta actual:</strong> <code id="certBrowserCurrentPath"></code></p>
+    <div class="dialog-actions">
+      <button type="button" id="certBrowserUpBtn">⬆ Subir un nivel</button>
+    </div>
+    <ul id="certBrowserList" class="cert-browser-list"></ul>
+    <p id="certBrowserEmptyHint" class="muted" style="display: none;">Esta carpeta está vacía.</p>
+    <div class="dialog-actions">
+      <button type="button" id="cancelCertBrowserBtn">Cancelar</button>
+    </div>
   </dialog>
 
   <dialog id="parametriaDialog">

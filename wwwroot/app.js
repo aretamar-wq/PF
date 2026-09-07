@@ -81,6 +81,11 @@ async function loadMe() {
     `${state.currentUser.displayName || state.currentUser.username} (${state.currentUser.role})`;
   document.getElementById('usersBtn').style.display = state.currentUser.canManageUsers ? '' : 'none';
   document.getElementById('parametriaBtn').style.display = state.currentUser.canManageParametria ? '' : 'none';
+  // El buscador de certificado/clave pega contra /api/certs-browse, que el
+  // servidor rechaza igual que Parametría para roles sin ese permiso — acá
+  // solo se oculta el botón, no es la única defensa.
+  document.getElementById('browseCertPathBtn').style.display = state.currentUser.canManageParametria ? '' : 'none';
+  document.getElementById('browseKeyPathBtn').style.display = state.currentUser.canManageParametria ? '' : 'none';
 
   const isReadOnly = state.currentUser.role === 'lectura';
   document.getElementById('readOnlyNotice').style.display = isReadOnly ? '' : 'none';
@@ -1126,6 +1131,70 @@ profileForm.addEventListener('submit', async (event) => {
 
   profileDialog.close();
   await loadProfiles();
+});
+
+// --- Buscador de certificado/clave (TLS mutuo) -------------------------------
+// Navega certsBaseDir en el servidor (ver /api/certs-browse) para no tener que
+// tipear la ruta a mano en el diálogo de Perfil — el buscador nunca puede salir
+// de esa carpeta, eso lo hace cumplir el servidor. Un solo diálogo para los dos
+// campos (certificado y clave): certBrowserTargetField dice a cuál de los dos
+// inputs del profileForm va el archivo elegido.
+
+const certBrowserDialog = document.getElementById('certBrowserDialog');
+let certBrowserTargetField = null; // 'clientCertPath' o 'clientKeyPath'
+let certBrowserCurrentRelPath = ''; // currentPath de la última respuesta, para "Subir un nivel" y para armar la ruta del próximo pedido
+let certBrowserCurrentFullPath = ''; // currentFullPath de la última respuesta, para armar la ruta completa al elegir un archivo
+
+function renderCertBrowser(data) {
+  document.getElementById('certBrowserBasePath').textContent = data.basePath;
+  document.getElementById('certBrowserCurrentPath').textContent = data.currentPath || '(raíz)';
+  certBrowserCurrentRelPath = data.currentPath || '';
+  certBrowserCurrentFullPath = data.currentFullPath;
+
+  const list = document.getElementById('certBrowserList');
+  list.innerHTML = '';
+  for (const entry of data.entries) {
+    const li = document.createElement('li');
+    li.textContent = (entry.isDirectory ? '📁 ' : '📄 ') + entry.name;
+    li.addEventListener('click', () => {
+      if (entry.isDirectory) {
+        const nextPath = certBrowserCurrentRelPath ? `${certBrowserCurrentRelPath}/${entry.name}` : entry.name;
+        loadCertBrowserPath(nextPath);
+      } else {
+        const sep = certBrowserCurrentFullPath.includes('\\') ? '\\' : '/';
+        profileForm.elements[certBrowserTargetField].value = certBrowserCurrentFullPath.replace(/[/\\]+$/, '') + sep + entry.name;
+        certBrowserDialog.close();
+      }
+    });
+    list.appendChild(li);
+  }
+  document.getElementById('certBrowserEmptyHint').style.display = data.entries.length === 0 ? '' : 'none';
+
+  document.getElementById('certBrowserUpBtn').disabled = !certBrowserCurrentRelPath;
+}
+
+async function loadCertBrowserPath(relPath) {
+  const res = await apiFetch('/api/certs-browse?path=' + encodeURIComponent(relPath));
+  const data = await res.json();
+  if (!res.ok) {
+    alert(data.error || 'No se pudo explorar esa carpeta.');
+    return;
+  }
+  renderCertBrowser(data);
+}
+
+function openCertBrowser(targetField) {
+  certBrowserTargetField = targetField;
+  loadCertBrowserPath('');
+  certBrowserDialog.showModal();
+}
+
+document.getElementById('browseCertPathBtn').addEventListener('click', () => openCertBrowser('clientCertPath'));
+document.getElementById('browseKeyPathBtn').addEventListener('click', () => openCertBrowser('clientKeyPath'));
+document.getElementById('cancelCertBrowserBtn').addEventListener('click', () => certBrowserDialog.close());
+document.getElementById('certBrowserUpBtn').addEventListener('click', () => {
+  const parentPath = certBrowserCurrentRelPath.split('/').slice(0, -1).join('/');
+  loadCertBrowserPath(parentPath);
 });
 
 document.getElementById('runBtn').addEventListener('click', runFlow);

@@ -29,6 +29,11 @@ ExecStart=/usr/bin/pwsh -NoProfile -File /opt/apicore/server.ps1 -Port 8787
 Restart=on-failure
 RestartSec=5
 
+# Solo hace falta si el certificado/clave para TLS mutuo (ver "Certificado
+# cliente (TLS mutuo)" en el README) no puede vivir en <repo>/certs/ — por
+# default ahí es donde busca el buscador de archivo del diálogo de Perfil.
+#Environment=CERTS_BASE_DIR=/opt/apicore/certs
+
 # logs/, files/ y los *.local.json quedan bajo WorkingDirectory — necesitan
 # ser escribibles por este usuario (ya cubierto por el chown del paso 3).
 NoNewPrivileges=true

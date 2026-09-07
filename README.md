@@ -542,6 +542,25 @@ reexporta a PFX en memoria después de cargarlo porque el certificado efímero
 que devuelve `CreateFromPemFile` directo suele fallar el handshake TLS en
 Windows (workaround conocido, no hace falta en Linux pero tampoco molesta).
 
+**Buscador de archivo** (botón "Buscar..." al lado de cada uno de los dos
+campos, solo visible para `admin`): en vez de tipear la ruta a mano, navega
+una carpeta fija del servidor — por default `<carpeta de la app>/certs/`
+(configurable con la variable de entorno `CERTS_BASE_DIR` si conviene que el
+certificado viva en otro lado, ej. fuera del árbol de la app). Ahí es donde
+hay que copiar los `.crt`/`.key` reales antes de poder encontrarlos con el
+buscador — no sube archivos, solo lista lo que ya está copiado en el
+servidor. `certs/` está en `.gitignore`: es material criptográfico real,
+nunca se versiona.
+
+`GET /api/certs-browse?path=<relativa>` (mismo permiso que Parametría —
+`admin` únicamente) devuelve `{ basePath, currentPath, currentFullPath,
+entries: [{ name, isDirectory }] }` de la carpeta pedida. Nunca puede listar
+nada fuera de la carpeta base: la ruta pedida se resuelve primero
+(`path.resolve`/`GetFullPath`) y se descarta cualquier resultado que no
+quede contenido en la base — un `path` con `../` o una ruta absoluta no
+"escapa" por el texto que manda el cliente, se valida comparando rutas ya
+resueltas en el servidor.
+
 ### Parametrizar cómo se obtiene el token OAuth2
 
 Por default (sin agregar nada más al perfil), la obtención de token hace

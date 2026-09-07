@@ -32,6 +32,12 @@ $flowsDir = Join-Path $scriptRoot 'Flows'
 $wwwRoot = Join-Path $scriptRoot 'wwwroot'
 $logsDir = Join-Path $scriptRoot 'logs'
 $filesDir = Join-Path $scriptRoot 'files'
+# Carpeta que navega el buscador de "Certificado cliente (TLS mutuo)" en el
+# diálogo de Perfil (ver /api/certs-browse) — ahí es donde hay que dejar los
+# .crt/.key reales para poder encontrarlos con el buscador en vez de tipear
+# la ruta a mano. Configurable con CERTS_BASE_DIR si no conviene que viva
+# adentro de la carpeta de la app.
+$certsBaseDir = if ($env:CERTS_BASE_DIR) { $env:CERTS_BASE_DIR } else { Join-Path $scriptRoot 'certs' }
 
 function ConvertTo-JsonArraySafe {
     param($Items, [int]$Depth = 10)
@@ -480,6 +486,32 @@ try {
                         $content = Get-Content -Path $filePath -Raw -Encoding UTF8
                         Write-SecurityLog -LogsDir $logsDir -Message "ARCHIVO DE SALIDA '$name' descargado por '$($session.username)'"
                         Write-JsonResponse -Response $response -StatusCode 200 -Body ([pscustomobject]@{ name = $name; content = $content })
+                    }
+                }
+            }
+            elseif ($method -eq 'GET' -and $path -eq '/api/certs-browse') {
+                # Buscador de "Certificado cliente (TLS mutuo)" en el diálogo de
+                # Perfil: solo lista lo que hay adentro de certsBaseDir (nunca
+                # fuera de ahí, ni aunque el query param intente escapar con ../
+                # o una ruta absoluta — se valida comparando la ruta ya resuelta,
+                # no el texto que llega). Mismo permiso que Parametría.
+                if (-not (Test-RoleCanManageParametria -Role $session.role)) {
+                    Write-JsonResponse -Response $response -StatusCode 403 -Body ([pscustomobject]@{ error = 'No tenés permiso para explorar archivos del servidor.' })
+                } else {
+                    $relPath = [string]$request.QueryString['path']
+                    $baseResolved = [System.IO.Path]::GetFullPath($certsBaseDir)
+                    $targetResolved = [System.IO.Path]::GetFullPath((Join-Path $certsBaseDir $relPath))
+                    if ($targetResolved -ne $baseResolved -and -not $targetResolved.StartsWith($baseResolved + [System.IO.Path]::DirectorySeparatorChar)) {
+                        Write-JsonResponse -Response $response -StatusCode 400 -Body ([pscustomobject]@{ error = 'Ruta inválida.' })
+                    } elseif (-not (Test-Path $targetResolved)) {
+                        Write-JsonResponse -Response $response -StatusCode 200 -Body ([pscustomobject]@{ basePath = $baseResolved; currentPath = $relPath; currentFullPath = $targetResolved; entries = @() })
+                    } elseif (-not (Test-Path $targetResolved -PathType Container)) {
+                        Write-JsonResponse -Response $response -StatusCode 400 -Body ([pscustomobject]@{ error = 'La ruta no es una carpeta.' })
+                    } else {
+                        $entries = @(Get-ChildItem -Path $targetResolved -Force |
+                            Sort-Object @{Expression = { -not $_.PSIsContainer }}, Name |
+                            ForEach-Object { [pscustomobject]@{ name = $_.Name; isDirectory = [bool]$_.PSIsContainer } })
+                        Write-JsonResponse -Response $response -StatusCode 200 -Body ([pscustomobject]@{ basePath = $baseResolved; currentPath = $relPath; currentFullPath = $targetResolved; entries = $entries })
                     }
                 }
             }

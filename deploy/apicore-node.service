@@ -46,6 +46,11 @@ RestartSec=5
 #Environment=SYBASE_OCS_DIR=OCS-16_0
 #Environment=SYBASE_LANG=en_US.UTF-8
 
+# Solo hace falta si el certificado/clave para TLS mutuo (ver "Certificado
+# cliente (TLS mutuo)" en el README) no puede vivir en <repo>/certs/ — por
+# default ahí es donde busca el buscador de archivo del diálogo de Perfil.
+#Environment=CERTS_BASE_DIR=/opt/apicore/certs
+
 # logs/, files/ y los *.local.json quedan en la raíz del repo (un nivel arriba
 # de WorkingDirectory) — necesitan ser escribibles por este usuario (ya
 # cubierto por el chown del paso 4).

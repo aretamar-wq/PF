@@ -43,6 +43,12 @@ const flowsDir = path.join(rootDir, 'Flows');
 const wwwRoot = path.join(rootDir, 'wwwroot');
 const logsDir = path.join(rootDir, 'logs');
 const filesDir = path.join(rootDir, 'files');
+// Carpeta que navega el buscador de "Certificado cliente (TLS mutuo)" en el
+// diálogo de Perfil (ver /api/certs-browse) — ahí es donde hay que dejar los
+// .crt/.key reales para poder encontrarlos con el buscador en vez de tipear
+// la ruta a mano. Configurable con CERTS_BASE_DIR si no conviene que viva
+// adentro de la carpeta de la app.
+const certsBaseDir = process.env.CERTS_BASE_DIR ? path.resolve(process.env.CERTS_BASE_DIR) : path.join(rootDir, 'certs');
 
 // --- Helpers de request/response --------------------------------------------
 
@@ -430,6 +436,42 @@ function handleOutputFileContentGet(parsedUrl, res, session) {
   writeJsonResponse(res, 200, { name, content });
 }
 
+// Buscador de "Certificado cliente (TLS mutuo)" en el diálogo de Perfil: solo
+// lista lo que hay adentro de certsBaseDir (nunca fuera de ahí, ni aunque el
+// query param intente escapar con ../ o una ruta absoluta — se valida
+// comparando la ruta ya resuelta, no el texto que llega). Mismo permiso que
+// Parametría: no es algo que un rol "operador" deba poder usar.
+function handleCertsBrowseGet(parsedUrl, res, session) {
+  if (!securityStore.testRoleCanManageParametria(session.role)) {
+    writeJsonResponse(res, 403, { error: 'No tenés permiso para explorar archivos del servidor.' });
+    return;
+  }
+
+  const relPath = parsedUrl.searchParams.get('path') || '';
+  const baseResolved = path.resolve(certsBaseDir);
+  const targetResolved = path.resolve(certsBaseDir, relPath);
+  if (targetResolved !== baseResolved && !targetResolved.startsWith(baseResolved + path.sep)) {
+    writeJsonResponse(res, 400, { error: 'Ruta inválida.' });
+    return;
+  }
+
+  if (!fs.existsSync(targetResolved)) {
+    writeJsonResponse(res, 200, { basePath: baseResolved, currentPath: relPath, currentFullPath: targetResolved, entries: [] });
+    return;
+  }
+  if (!fs.statSync(targetResolved).isDirectory()) {
+    writeJsonResponse(res, 400, { error: 'La ruta no es una carpeta.' });
+    return;
+  }
+
+  const entries = fs
+    .readdirSync(targetResolved, { withFileTypes: true })
+    .map((dirent) => ({ name: dirent.name, isDirectory: dirent.isDirectory() }))
+    .sort((a, b) => (a.isDirectory !== b.isDirectory ? (a.isDirectory ? -1 : 1) : a.name.localeCompare(b.name)));
+
+  writeJsonResponse(res, 200, { basePath: baseResolved, currentPath: relPath, currentFullPath: targetResolved, entries });
+}
+
 async function handleCheckOperations(req, res, session) {
   const payload = await readJsonBody(req);
   const operations = (payload.operations || []).map((op) => ({
@@ -605,6 +647,7 @@ async function handleRequest(req, res) {
     if (method === 'POST' && pathname === '/api/save-output') return void (await handleSaveOutput(req, res, session));
     if (method === 'GET' && pathname === '/api/output-files') return void handleOutputFilesGet(res);
     if (method === 'GET' && pathname === '/api/output-files/content') return void handleOutputFileContentGet(parsedUrl, res, session);
+    if (method === 'GET' && pathname === '/api/certs-browse') return void handleCertsBrowseGet(parsedUrl, res, session);
     if (method === 'POST' && pathname === '/api/check-operations') return void (await handleCheckOperations(req, res, session));
     if (method === 'POST' && pathname === '/api/register-operations') return void (await handleRegisterOperations(req, res, session));
     if (method === 'GET' && pathname === '/api/parametria') return void handleParametriaGet(res, session);
