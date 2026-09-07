@@ -107,12 +107,11 @@ function Get-MaskedProfile {
         tokenUrl         = $Profile.tokenUrl
         clientId         = $Profile.clientId
         hasClientSecret  = -not [string]::IsNullOrEmpty($Profile.clientSecret)
-        # TLS mutuo (ver "Transferencia DEBIN" / Nova-Link en el README): rutas
-        # a certificado y clave privada en el disco del servidor, no un
-        # secreto en sí — se muestran completas. La passphrase de la clave (si
-        # la tiene) sí se enmascara, mismo criterio que apiKeyOrToken/clientSecret.
-        clientCertPath          = $Profile.clientCertPath
-        clientKeyPath           = $Profile.clientKeyPath
+        # TLS mutuo (ver "Transferencia DEBIN" / Nova-Link en el README): ruta
+        # al .pfx en el disco del servidor, no un secreto en sí — se muestra
+        # completa. La contraseña del .pfx sí se enmascara, mismo criterio
+        # que apiKeyOrToken/clientSecret.
+        clientCertPfxPath       = $Profile.clientCertPfxPath
         hasClientCertPassphrase = -not [string]::IsNullOrEmpty($Profile.clientCertPassphrase)
     }
 }
@@ -347,8 +346,7 @@ try {
                     tokenUrl             = $incoming.tokenUrl
                     clientId             = $incoming.clientId
                     clientSecret         = $incoming.clientSecret
-                    clientCertPath       = $incoming.clientCertPath
-                    clientKeyPath        = $incoming.clientKeyPath
+                    clientCertPfxPath    = $incoming.clientCertPfxPath
                     clientCertPassphrase = $incoming.clientCertPassphrase
                 }
 

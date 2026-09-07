@@ -11,8 +11,7 @@
     "name": "Testing Nova-Link",
     "baseUrl": "https://nova-link.voii.com.ar:7443",
     "authType": "None",
-    "clientCertPath": "",
-    "clientKeyPath": "",
+    "clientCertPfxPath": "",
     "clientCertPassphrase": ""
   }
 ]

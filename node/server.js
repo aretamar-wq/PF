@@ -115,12 +115,11 @@ function getMaskedProfile(profileObj) {
     tokenUrl: profileObj.tokenUrl,
     clientId: profileObj.clientId,
     hasClientSecret: !!profileObj.clientSecret,
-    // TLS mutuo (ver "Transferencia DEBIN" / Nova-Link en el README): rutas a
-    // certificado y clave privada en el disco del servidor, no un secreto en
-    // sí — se muestran completas. La passphrase de la clave (si la tiene) sí
-    // se enmascara, mismo criterio que apiKeyOrToken/clientSecret.
-    clientCertPath: profileObj.clientCertPath,
-    clientKeyPath: profileObj.clientKeyPath,
+    // TLS mutuo (ver "Transferencia DEBIN" / Nova-Link en el README): ruta al
+    // .pfx en el disco del servidor, no un secreto en sí — se muestra
+    // completa. La contraseña del .pfx sí se enmascara, mismo criterio que
+    // apiKeyOrToken/clientSecret.
+    clientCertPfxPath: profileObj.clientCertPfxPath,
     hasClientCertPassphrase: !!profileObj.clientCertPassphrase,
   };
 }
@@ -284,8 +283,7 @@ async function handleProfilesPost(req, res) {
     tokenUrl: incoming.tokenUrl,
     clientId: incoming.clientId,
     clientSecret: incoming.clientSecret,
-    clientCertPath: incoming.clientCertPath,
-    clientKeyPath: incoming.clientKeyPath,
+    clientCertPfxPath: incoming.clientCertPfxPath,
     clientCertPassphrase: incoming.clientCertPassphrase,
   };
 

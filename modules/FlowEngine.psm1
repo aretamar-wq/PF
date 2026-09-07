@@ -1,37 +1,27 @@
 ﻿# Ejecuta un flow: encadena requests HTTP sustituyendo variables ({{var}}) entre pasos.
 # Requiere que JsonPath.psm1 y VariableSubstitution.psm1 ya estén importados en la sesión.
 
-# Perfiles con clientCertPath/clientKeyPath (TLS mutuo — hoy, el único caso es
-# el flow "Transferencia DEBIN" contra Nova-Link) arman el HttpClientHandler
-# con el certificado cliente cargado; el resto de los perfiles (sin esos dos
-# campos) quedan exactamente igual que antes. Se re-exporta el certificado a
-# PFX en memoria después de cargarlo en vez de usar directo el X509Certificate2
-# efímero que devuelve CreateFromPemFile: en Windows, ese certificado efímero
-# suele fallar el handshake TLS (el keyset no queda asociado correctamente) —
-# el roundtrip a PFX es el workaround conocido para eso, y no molesta en Linux.
+# Perfiles con clientCertPfxPath (TLS mutuo — hoy, el único caso es el flow
+# "Transferencia DEBIN" contra Nova-Link) arman el HttpClientHandler con el
+# certificado cliente cargado; el resto de los perfiles (sin ese campo) quedan
+# exactamente igual que antes. Se usa un .pfx/.p12 (no un par cert+key en PEM)
+# a propósito: el constructor X509Certificate2(ruta, contraseña) funciona igual
+# en Windows PowerShell 5.1 (.NET Framework) que en pwsh 7+ (.NET moderno) —
+# CreateFromPemFile, en cambio, no existe en .NET Framework y tira
+# "no contiene ningún método llamado 'CreateFromPemFile'" en PS 5.1.
 function New-ProfileHttpClientHandler {
     param([Parameter(Mandatory = $true)] $Profile)
 
     $handler = New-Object System.Net.Http.HttpClientHandler
 
-    $certPath = [string]$Profile.clientCertPath
-    $keyPath = [string]$Profile.clientKeyPath
-    if (-not [string]::IsNullOrWhiteSpace($certPath) -and -not [string]::IsNullOrWhiteSpace($keyPath)) {
-        if (-not (Test-Path $certPath)) {
-            throw "No se encontró el archivo de certificado cliente '$certPath' del perfil '$($Profile.name)'."
-        }
-        if (-not (Test-Path $keyPath)) {
-            throw "No se encontró el archivo de clave privada '$keyPath' del perfil '$($Profile.name)'."
+    $pfxPath = [string]$Profile.clientCertPfxPath
+    if (-not [string]::IsNullOrWhiteSpace($pfxPath)) {
+        if (-not (Test-Path $pfxPath)) {
+            throw "No se encontró el archivo de certificado '$pfxPath' del perfil '$($Profile.name)'."
         }
 
         $passphrase = [string]$Profile.clientCertPassphrase
-        $ephemeralCert = if ([string]::IsNullOrEmpty($passphrase)) {
-            [System.Security.Cryptography.X509Certificates.X509Certificate2]::CreateFromPemFile($certPath, $keyPath)
-        } else {
-            [System.Security.Cryptography.X509Certificates.X509Certificate2]::CreateFromEncryptedPemFile($certPath, $passphrase, $keyPath)
-        }
-        $pfxBytes = $ephemeralCert.Export([System.Security.Cryptography.X509Certificates.X509ContentType]::Pfx)
-        $cert = New-Object System.Security.Cryptography.X509Certificates.X509Certificate2($pfxBytes, [string]$null, [System.Security.Cryptography.X509Certificates.X509KeyStorageFlags]::Exportable)
+        $cert = New-Object System.Security.Cryptography.X509Certificates.X509Certificate2($pfxPath, $passphrase, [System.Security.Cryptography.X509Certificates.X509KeyStorageFlags]::Exportable)
 
         [void]$handler.ClientCertificates.Add($cert)
         $handler.ClientCertificateOptions = [System.Net.Http.ClientCertificateOption]::Manual

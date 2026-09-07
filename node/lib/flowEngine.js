@@ -55,27 +55,28 @@ function buildTokenRequestBody(contentType, params) {
   return { body: raw, contentType };
 }
 
-function readCertFile(filePath, label, profileObj) {
-  if (!fs.existsSync(filePath)) {
-    throw new Error(`No se encontró el archivo de ${label} '${filePath}' del perfil '${profileObj.name}'.`);
-  }
-  return fs.readFileSync(filePath);
-}
-
-// Perfiles con clientCertPath/clientKeyPath (TLS mutuo — hoy, el único caso
-// es el flow "Transferencia DEBIN" contra Nova-Link) no pueden usar el fetch
-// global de Node: hace falta un agente https con el certificado cliente
-// cargado, algo que fetch no expone directamente sin pasar por undici (no
-// siempre disponible como módulo público según la versión de Node) — para
-// ese caso puntual se arma el request a mano con el módulo https nativo, en
-// vez de con fetch. Devuelve algo con la misma forma mínima que ya usa el
-// resto del código de un Response de fetch (status + text()); el resto de
-// los perfiles (sin esos dos campos) siguen usando fetch tal cual.
+// Perfiles con clientCertPfxPath (TLS mutuo — hoy, el único caso es el flow
+// "Transferencia DEBIN" contra Nova-Link) no pueden usar el fetch global de
+// Node: hace falta un agente https con el certificado cliente cargado, algo
+// que fetch no expone directamente sin pasar por undici (no siempre
+// disponible como módulo público según la versión de Node) — para ese caso
+// puntual se arma el request a mano con el módulo https nativo, en vez de
+// con fetch. Se usa un .pfx/.p12 (no un par cert+key en PEM) a propósito:
+// es el único formato que también carga PowerShell 5.1/.NET Framework sin
+// depender de X509Certificate2.CreateFromPemFile, que no existe ahí (solo
+// en .NET 5+) — ver New-ProfileHttpClientHandler en modules/FlowEngine.psm1.
+// Devuelve algo con la misma forma mínima que ya usa el resto del código de
+// un Response de fetch (status + text()); el resto de los perfiles (sin
+// clientCertPfxPath) siguen usando fetch tal cual.
 function requestWithClientCert(url, options, profileObj) {
   return new Promise((resolve, reject) => {
     const parsedUrl = new URL(url);
     if (parsedUrl.protocol !== 'https:') {
       reject(new Error(`El perfil '${profileObj.name}' tiene certificado cliente configurado, pero la URL '${url}' no es https.`));
+      return;
+    }
+    if (!fs.existsSync(profileObj.clientCertPfxPath)) {
+      reject(new Error(`No se encontró el archivo de certificado '${profileObj.clientCertPfxPath}' del perfil '${profileObj.name}'.`));
       return;
     }
 
@@ -85,10 +86,9 @@ function requestWithClientCert(url, options, profileObj) {
       hostname: parsedUrl.hostname,
       port: parsedUrl.port || 443,
       path: `${parsedUrl.pathname}${parsedUrl.search}`,
-      cert: readCertFile(profileObj.clientCertPath, 'certificado cliente', profileObj),
-      key: readCertFile(profileObj.clientKeyPath, 'clave privada', profileObj),
+      pfx: fs.readFileSync(profileObj.clientCertPfxPath),
+      passphrase: profileObj.clientCertPassphrase || '',
     };
-    if (profileObj.clientCertPassphrase) reqOptions.passphrase = profileObj.clientCertPassphrase;
 
     const req = https.request(reqOptions, (res) => {
       const chunks = [];
@@ -108,7 +108,7 @@ function requestWithClientCert(url, options, profileObj) {
 }
 
 function doFetch(url, options, profileObj) {
-  if (profileObj && profileObj.clientCertPath && profileObj.clientKeyPath) {
+  if (profileObj && profileObj.clientCertPfxPath) {
     return requestWithClientCert(url, options, profileObj);
   }
   return fetch(url, options);

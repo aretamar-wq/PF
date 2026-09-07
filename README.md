@@ -480,8 +480,7 @@ el segundo, aparte del primero):
     "name": "Testing Nova-Link",
     "baseUrl": "https://nova-link.voii.com.ar:7443",
     "authType": "None",
-    "clientCertPath": "",
-    "clientKeyPath": "",
+    "clientCertPfxPath": "",
     "clientCertPassphrase": ""
   }
 ]
@@ -512,18 +511,23 @@ Un perfil puede además presentar un certificado cliente en la conexión TLS
 que exige TLS mutuo. Se configura desde el diálogo "Nuevo.../Editar..." de la
 UI, fieldset "Certificado cliente (TLS mutuo)":
 
-- **Ruta al certificado** (`clientCertPath`) y **ruta a la clave privada**
-  (`clientKeyPath`) — rutas a archivos ya presentes en el disco del servidor
-  (la app no sube ni gestiona el archivo, solo lee esas rutas), en formato
-  **PEM** (el certificado empieza con `-----BEGIN CERTIFICATE-----`; la clave
-  privada, con `-----BEGIN PRIVATE KEY-----` o `-----BEGIN RSA PRIVATE
-  KEY-----`). Si lo que entregaron es un certificado en otro formato (`.pfx`/
-  `.p12` combinado, o un `.yaml`/config que envuelve el certificado en vez de
-  ser el certificado en sí) hay que extraerlo a estos dos archivos PEM antes
-  de apuntar acá — no hay conversión automática.
-- **Passphrase de la clave** (`clientCertPassphrase`), solo si la clave
-  privada está encriptada — igual que `apiKeyOrToken`/`clientSecret`, se dejan
-  vacío para no cambiarla al editar el perfil.
+- **Ruta al certificado** (`clientCertPfxPath`) — ruta a un archivo **`.pfx`/
+  `.p12`** ya presente en el disco del servidor (la app no sube ni gestiona el
+  archivo, solo lee esa ruta). A propósito **no** es un par certificado+clave
+  en PEM: `X509Certificate2.CreateFromPemFile`, la forma "moderna" de cargar
+  ese par, no existe en Windows PowerShell 5.1 (.NET Framework) — solo en
+  .NET 5+ — y tira `no contiene ningún método llamado 'CreateFromPemFile'` si
+  se usa ahí. El constructor `X509Certificate2(ruta, contraseña)` que carga un
+  `.pfx` en cambio funciona igual en PS 5.1 y en pwsh 7+, así que es el único
+  formato soportado. Si lo que entregaron es un par certificado+clave en PEM
+  (o un `.yaml`/config que envuelve el certificado en vez de ser el
+  certificado en sí), hay que empaquetarlo a `.pfx` antes de apuntar acá —
+  por ejemplo con `openssl pkcs12 -export -in cert.crt -inkey key.key -out
+  cert.pfx` — no hay conversión automática.
+- **Contraseña del `.pfx`** (`clientCertPassphrase`) — casi todo `.pfx`
+  exportado tiene una; si no tiene, se deja vacío. Igual que
+  `apiKeyOrToken`/`clientSecret`, se deja vacío al editar el perfil para no
+  cambiarla.
 
 Dejar estos dos campos vacíos (el caso de "Testing IBS-Link" y de cualquier
 otro perfil sin TLS mutuo) es exactamente el comportamiento de antes: mismo
@@ -532,25 +536,23 @@ se ve afectado por este cambio.
 
 Implementación (mismo comportamiento en los dos backends): en Node,
 `node/lib/flowEngine.js` arma el request a mano con el módulo `https` nativo
-en vez de con `fetch` cuando el perfil tiene `clientCertPath`+`clientKeyPath`
-(fetch no expone un client certificate sin pasar por un dispatcher de undici,
-no siempre disponible como módulo público según la versión de Node). En
-PowerShell, `modules/FlowEngine.psm1` carga el certificado con
-`X509Certificate2.CreateFromPemFile` (o `CreateFromEncryptedPemFile` si hay
-passphrase) y lo agrega a `HttpClientHandler.ClientCertificates` — se
-reexporta a PFX en memoria después de cargarlo porque el certificado efímero
-que devuelve `CreateFromPemFile` directo suele fallar el handshake TLS en
-Windows (workaround conocido, no hace falta en Linux pero tampoco molesta).
+en vez de con `fetch` cuando el perfil tiene `clientCertPfxPath` (fetch no
+expone un client certificate sin pasar por un dispatcher de undici, no
+siempre disponible como módulo público según la versión de Node) — usa las
+opciones nativas `pfx`/`passphrase` de `https.request`, sin parsear nada a
+mano. En PowerShell, `modules/FlowEngine.psm1` carga el certificado con
+`New-Object X509Certificate2($pfxPath, $passphrase, ...Exportable)` y lo
+agrega a `HttpClientHandler.ClientCertificates` — mismo constructor que
+funciona en PS 5.1 y en pwsh 7+, sin necesidad de ningún workaround.
 
-**Buscador de archivo** (botón "Buscar..." al lado de cada uno de los dos
-campos, solo visible para `admin`): en vez de tipear la ruta a mano, navega
-una carpeta fija del servidor — por default `<carpeta de la app>/certs/`
-(configurable con la variable de entorno `CERTS_BASE_DIR` si conviene que el
-certificado viva en otro lado, ej. fuera del árbol de la app). Ahí es donde
-hay que copiar los `.crt`/`.key` reales antes de poder encontrarlos con el
-buscador — no sube archivos, solo lista lo que ya está copiado en el
-servidor. `certs/` está en `.gitignore`: es material criptográfico real,
-nunca se versiona.
+**Buscador de archivo** (botón "Buscar..." al lado del campo, solo visible
+para `admin`): en vez de tipear la ruta a mano, navega una carpeta fija del
+servidor — por default `<carpeta de la app>/certs/` (configurable con la
+variable de entorno `CERTS_BASE_DIR` si conviene que el certificado viva en
+otro lado, ej. fuera del árbol de la app). Ahí es donde hay que copiar el
+`.pfx` real antes de poder encontrarlo con el buscador — no sube archivos,
+solo lista lo que ya está copiado en el servidor. `certs/` está en
+`.gitignore`: es material criptográfico real, nunca se versiona.
 
 `GET /api/certs-browse?path=<relativa>` (mismo permiso que Parametría —
 `admin` únicamente) devuelve `{ basePath, currentPath, currentFullPath,
