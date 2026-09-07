@@ -841,8 +841,8 @@ vez por cada fila (ej. `Flows/plazo-fijo-cocos-files-sql.json`). Para esto:
   hasta ese momento.
 - Al terminar de procesar todas las filas, la UI guarda automáticamente en
   el servidor (carpeta `files/`, ver "Archivos de salida (`files/`)" más
-  abajo) hasta dos `.csv`: uno con el detalle de los plazos fijos dados de
-  alta y otro con las filas que fallaron.
+  abajo) hasta dos `.csv`: uno con una fila por cada fila del archivo de
+  entrada (se haya completado o no) y otro solo con las que fallaron.
 
 ### Archivos de salida (`files/`)
 
@@ -854,23 +854,30 @@ tener datos bancarios reales). Los dos comparten el mismo timestamp
 (`yyyyMMddHHmmss`, generado una sola vez al terminar el lote), para que se
 identifiquen como del mismo archivo procesado:
 
-- **`pfout-<timestamp>.csv`** — una fila por cada plazo fijo dado de alta
-  (no una fila por cada item que devuelve la API), tomando la respuesta del
-  **último paso** del flow (la alta del plazo fijo) de cada fila del CSV de
-  origen que llegó a completarse con éxito. La respuesta trae un array
-  `output` con 2 items por plazo fijo (función 1 = capital, función 3 =
-  interés) que comparten `operacion`/`vencimiento`/`tem`/`tna`/`importeNeto`
-  — se unifican en una sola fila con columnas `numeroComprobante`, `cuit` y
-  `apellidoNombre` (tomados de la fila de entrada, columnas 5, 1 y 2 del
-  CSV de origen respectivamente), `operacion`, `vencimiento`, `tem`, `tna`,
-  `importeNeto`, `montoCapital`, `montoInteres`, `otros` (si algún item
-  viene con una función distinta de 1 o 3, no se pierde: queda listado ahí
-  en vez de en una columna propia) e `idMensaje` al final — el mismo valor
-  generado para esa fila (ver `{{idMensajeGenerado}}`), para poder cruzar
-  cada plazo fijo dado de alta con su `IdMensaje` real. **Con encabezado.**
-  Asume que el último step del flow es el que da de alta el plazo fijo y
-  devuelve ese formato — no es genérico para cualquier otro flow CSV que se
-  agregue en el futuro.
+- **`pfout-<timestamp>.csv`** — **una fila por cada fila del CSV de
+  origen**, se haya completado o no, con columna `realizado` (`s`/`n`) al
+  final para distinguir cuál es cuál sin tener que cruzar con
+  `pfouterror-...`:
+  - `realizado = "s"`: el último paso del flow (la alta del plazo fijo)
+    completó con éxito. Una fila por cada plazo fijo dado de alta (no una
+    fila por cada item que devuelve la API) — la respuesta trae un array
+    `output` con 2 items (función 1 = capital, función 3 = interés) que
+    comparten `operacion`/`vencimiento`/`tem`/`tna`/`importeNeto`, unificados
+    acá en una sola fila; `montoCapital`/`montoInteres` salen de esos dos
+    items, y `otros` lista cualquier item con una función distinta de 1 o 3
+    (si el banco agrega otro concepto en el futuro, no se pierde en
+    silencio, en vez de tener columna propia).
+  - `realizado = "n"`: la fila falló (columnas de más/menos, cuenta no
+    encontrada, duplicado bloqueado, o cualquier paso del banco en error —
+    mismo criterio que decide si entra a `pfouterror-...`, ver más abajo).
+    `operacion`/`vencimiento`/`tem`/`tna`/`importeNeto`/`montoCapital`/
+    `montoInteres`/`otros` quedan vacíos: nunca se llegó a dar de alta nada.
+  - En los dos casos, `numeroComprobante`/`cuit`/`apellidoNombre` salen de
+    la fila de entrada (columnas 5, 1 y 2 del CSV de origen) e `idMensaje`
+    es el mismo valor generado para esa fila (ver `{{idMensajeGenerado}}`).
+    **Con encabezado.** Asume que el último step del flow es el que da de
+    alta el plazo fijo y devuelve ese formato — no es genérico para
+    cualquier otro flow CSV que se agregue en el futuro.
 - **`pfouterror-<timestamp>.csv`** — una fila por cada fila del CSV de
   origen que **no** terminó de darse de alta (columnas de más/menos, cuenta
   no encontrada en Sybase, operación bloqueada por duplicada — ver más

@@ -871,6 +871,7 @@ async function runFlowFromCsv() {
                   ? otros.map((item) => `función ${item.funcion}: ${item.monto} (${item.accesorio})`).join(' | ')
                   : '',
                 idMensaje: rowIdMensaje,
+                realizado: 's',
               });
               // Se registra como operación exitosa (para bloquear un futuro
               // reintento del mismo cuit+numeroComprobante) recién acá, con
@@ -888,6 +889,31 @@ async function runFlowFromCsv() {
             // como éxito en el resumen de arriba.
           }
         }
+      }
+
+      // Fila fallada (mismo criterio que errorRows más arriba): también entra
+      // a pfout-...csv, con los datos que sí tenemos del archivo de entrada
+      // (numeroComprobante/cuit/apellidoNombre) y en blanco el resto de las
+      // columnas del plazo fijo (nunca se llegó a dar de alta) — así el
+      // archivo de salida queda con una fila por cada fila del archivo de
+      // entrada, se haya completado o no, y "realizado" = "n" marca cuál es
+      // cuál sin tener que cruzar con pfouterror-....
+      if (rowFailed) {
+        state.pfDetailRows.push({
+          numeroComprobante: row[4] || '',
+          cuit: row[0] || '',
+          apellidoNombre: row[1] || '',
+          operacion: '',
+          vencimiento: '',
+          tem: '',
+          tna: '',
+          importeNeto: '',
+          montoCapital: '',
+          montoInteres: '',
+          otros: '',
+          idMensaje: rowIdMensaje,
+          realizado: 'n',
+        });
       }
 
       const prefixed = rowEntries.map((entry) => ({ ...entry, name: `Fila ${rowNumber} — ${entry.name}` }));
@@ -1005,11 +1031,15 @@ async function saveOutputFile(prefix, timestamp, content) {
 
 // Al terminar de procesar el CSV: guarda, si corresponde, hasta 2 archivos
 // con el mismo timestamp (para que se identifiquen como del mismo lote) —
-// pfout-<timestamp>.csv con el detalle de los plazos fijos dados de alta
-// (una fila por PF, igual que antes armaba el botón de descarga) y
-// pfouterror-<timestamp>.csv con la fila de entrada + IdMensaje de cada
+// pfout-<timestamp>.csv con una fila por cada fila del archivo de entrada
+// (se haya completado o no: "realizado" = "s"/"n" — si es "n", el resto de
+// las columnas del plazo fijo quedan en blanco porque nunca se dio de alta)
+// y pfouterror-<timestamp>.csv con la fila de entrada + IdMensaje de cada
 // fila que falló (columnas de más/menos, cuenta no encontrada, o algún
-// paso del banco en error), para poder revisarlas o reintentarlas.
+// paso del banco en error), para poder revisarlas o reintentarlas — las
+// filas con "realizado" = "n" están en los dos archivos, con formato
+// distinto cada vez (acá el de salida normal, en pfouterror- tal cual vino
+// en el archivo de entrada).
 async function saveOutputFiles() {
   const savedFiles = [];
   if (state.pfDetailRows.length === 0 && state.errorRows.length === 0) return savedFiles;
@@ -1017,7 +1047,7 @@ async function saveOutputFiles() {
   const timestamp = generateFileTimestamp();
 
   if (state.pfDetailRows.length > 0) {
-    const headers = ['numeroComprobante', 'cuit', 'apellidoNombre', 'operacion', 'vencimiento', 'tem', 'tna', 'importeNeto', 'montoCapital', 'montoInteres', 'otros', 'idMensaje'];
+    const headers = ['numeroComprobante', 'cuit', 'apellidoNombre', 'operacion', 'vencimiento', 'tem', 'tna', 'importeNeto', 'montoCapital', 'montoInteres', 'otros', 'idMensaje', 'realizado'];
     const lines = [headers.join(',')];
     for (const row of state.pfDetailRows) {
       lines.push(headers.map((h) => csvEscape(row[h])).join(','));
