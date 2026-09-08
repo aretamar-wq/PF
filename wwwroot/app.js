@@ -83,10 +83,8 @@ async function loadMe() {
   document.getElementById('parametriaBtn').style.display = state.currentUser.canManageParametria ? '' : 'none';
   // El buscador de certificado/clave pega contra /api/certs-browse, que el
   // servidor rechaza igual que Parametría para roles sin ese permiso — acá
-  // solo se ocultan los botones, no es la única defensa.
-  document.getElementById('browseCertPfxPathBtn').style.display = state.currentUser.canManageParametria ? '' : 'none';
+  // solo se oculta el botón, no es la única defensa.
   document.getElementById('browseCertPathBtn').style.display = state.currentUser.canManageParametria ? '' : 'none';
-  document.getElementById('browseKeyPathBtn').style.display = state.currentUser.canManageParametria ? '' : 'none';
 
   const isReadOnly = state.currentUser.role === 'lectura';
   document.getElementById('readOnlyNotice').style.display = isReadOnly ? '' : 'none';
@@ -1090,8 +1088,6 @@ function openProfileDialog(existing) {
     profileForm.elements.tokenUrl.value = existing.tokenUrl || '';
     profileForm.elements.clientId.value = existing.clientId || '';
     profileForm.elements.clientCertPfxPath.value = existing.clientCertPfxPath || '';
-    profileForm.elements.clientCertPath.value = existing.clientCertPath || '';
-    profileForm.elements.clientKeyPath.value = existing.clientKeyPath || '';
   } else {
     profileForm.elements.name.readOnly = false;
     profileForm.elements.authType.value = 'Bearer';
@@ -1135,16 +1131,12 @@ profileForm.addEventListener('submit', async (event) => {
   await loadProfiles();
 });
 
-// --- Buscador de certificado/clave (TLS mutuo) -------------------------------
+// --- Buscador de certificado (.pfx, TLS mutuo) -------------------------------
 // Navega certsBaseDir en el servidor (ver /api/certs-browse) para no tener que
 // tipear la ruta a mano en el diálogo de Perfil — el buscador nunca puede salir
-// de esa carpeta, eso lo hace cumplir el servidor. Un solo diálogo para los
-// tres campos posibles (.pfx, certificado y clave de la Opción B):
-// certBrowserTargetField dice a cuál de los inputs del profileForm va el
-// archivo elegido.
+// de esa carpeta, eso lo hace cumplir el servidor.
 
 const certBrowserDialog = document.getElementById('certBrowserDialog');
-let certBrowserTargetField = null; // 'clientCertPfxPath', 'clientCertPath' o 'clientKeyPath'
 let certBrowserCurrentRelPath = ''; // currentPath de la última respuesta, para "Subir un nivel" y para armar la ruta del próximo pedido
 let certBrowserCurrentFullPath = ''; // currentFullPath de la última respuesta, para armar la ruta completa al elegir un archivo
 
@@ -1165,7 +1157,7 @@ function renderCertBrowser(data) {
         loadCertBrowserPath(nextPath);
       } else {
         const sep = certBrowserCurrentFullPath.includes('\\') ? '\\' : '/';
-        profileForm.elements[certBrowserTargetField].value = certBrowserCurrentFullPath.replace(/[/\\]+$/, '') + sep + entry.name;
+        profileForm.elements.clientCertPfxPath.value = certBrowserCurrentFullPath.replace(/[/\\]+$/, '') + sep + entry.name;
         certBrowserDialog.close();
       }
     });
@@ -1186,15 +1178,12 @@ async function loadCertBrowserPath(relPath) {
   renderCertBrowser(data);
 }
 
-function openCertBrowser(targetField) {
-  certBrowserTargetField = targetField;
+function openCertBrowser() {
   loadCertBrowserPath('');
   certBrowserDialog.showModal();
 }
 
-document.getElementById('browseCertPfxPathBtn').addEventListener('click', () => openCertBrowser('clientCertPfxPath'));
-document.getElementById('browseCertPathBtn').addEventListener('click', () => openCertBrowser('clientCertPath'));
-document.getElementById('browseKeyPathBtn').addEventListener('click', () => openCertBrowser('clientKeyPath'));
+document.getElementById('browseCertPathBtn').addEventListener('click', openCertBrowser);
 document.getElementById('cancelCertBrowserBtn').addEventListener('click', () => certBrowserDialog.close());
 document.getElementById('certBrowserUpBtn').addEventListener('click', () => {
   const parentPath = certBrowserCurrentRelPath.split('/').slice(0, -1).join('/');

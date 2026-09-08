@@ -480,8 +480,7 @@ el segundo, aparte del primero):
     "name": "Testing Nova-Link",
     "baseUrl": "https://nova-link.voii.com.ar:7443",
     "authType": "None",
-    "clientCertPath": "",
-    "clientKeyPath": "",
+    "clientCertPfxPath": "",
     "clientCertPassphrase": ""
   }
 ]
@@ -510,60 +509,50 @@ todavía no tienen UI propia y se completan por archivo.
 Un perfil puede además presentar un certificado cliente en la conexión TLS
 (mTLS) — hoy hace falta para el flow "Transferencia DEBIN" contra Nova-Link,
 que exige TLS mutuo. Se configura desde el diálogo "Nuevo.../Editar..." de la
-UI, fieldset "Certificado cliente (TLS mutuo)", con **dos formas de
-cargarlo** (completar solo una de las dos, nunca las dos a la vez):
+UI, fieldset "Certificado cliente (TLS mutuo)":
 
-- **Opción A — `.pfx`/`.p12` ya armado** (`clientCertPfxPath`): ruta a un
-  único archivo que ya combina certificado y clave privada. Se carga con el
-  constructor `X509Certificate2(ruta, contraseña)`, disponible tanto en
-  Windows PowerShell 5.1 (.NET Framework) como en pwsh 7+ — no depende de
-  ninguna herramienta externa.
-- **Opción B — certificado y clave por separado** (`clientCertPath` +
-  `clientKeyPath`): rutas a un certificado (`.cer`/`.crt`/`.pem`) y una clave
-  privada (`.key`) en formato PEM, como suelen entregarlos. En Node no hace
-  falta nada más — el módulo `https` soporta `cert`+`key` en PEM de forma
-  nativa. **En PowerShell sí hace falta `openssl` instalado en el servidor**:
-  Windows PowerShell 5.1 no tiene forma de combinar un certificado y una
-  clave privada en PEM sin ayuda externa
-  (`X509Certificate2.CreateFromPemFile`, la función "moderna" para eso, no
-  existe en .NET Framework — solo en .NET 5+ — y tira `no contiene ningún
-  método llamado 'CreateFromPemFile'` si se usa ahí); el backend PowerShell
-  arma un `.pfx` temporal al vuelo con `openssl pkcs12 -export` (contraseña
-  generada al azar, se borra apenas se carga) y recién ahí usa el mismo
-  constructor de la Opción A. Sin `openssl` en el `PATH`, un perfil con
-  Opción B tira un error explicándolo — usá la Opción A en ese caso
-  (convertí el par vos mismo en cualquier máquina que sí tenga `openssl`:
-  `openssl pkcs12 -export -in cert.crt -inkey key.key -out cert.pfx`).
-- **Contraseña** (`clientCertPassphrase`) — la contraseña del `.pfx`
-  (Opción A) o de la clave privada si está encriptada (Opción B); vacío si no
-  tiene. Igual que `apiKeyOrToken`/`clientSecret`, se deja vacío al editar el
-  perfil para no cambiarla.
+- **Ruta al certificado** (`clientCertPfxPath`) — ruta a un archivo **`.pfx`/
+  `.p12`** ya presente en el disco del servidor (la app no sube ni gestiona el
+  archivo, solo lee esa ruta). A propósito **no** es un par certificado+clave
+  en PEM: `X509Certificate2.CreateFromPemFile`, la forma "moderna" de cargar
+  ese par, no existe en Windows PowerShell 5.1 (.NET Framework) — solo en
+  .NET 5+ — y tira `no contiene ningún método llamado 'CreateFromPemFile'` si
+  se usa ahí. El constructor `X509Certificate2(ruta, contraseña)` que carga un
+  `.pfx` en cambio funciona igual en PS 5.1 y en pwsh 7+, así que es el único
+  formato soportado. Si lo que entregaron es un par certificado+clave en PEM
+  (o un `.yaml`/config que envuelve el certificado en vez de ser el
+  certificado en sí), hay que empaquetarlo a `.pfx` antes de apuntar acá —
+  por ejemplo con `openssl pkcs12 -export -in cert.crt -inkey key.key -out
+  cert.pfx` — no hay conversión automática.
+- **Contraseña del `.pfx`** (`clientCertPassphrase`) — casi todo `.pfx`
+  exportado tiene una; si no tiene, se deja vacío. Igual que
+  `apiKeyOrToken`/`clientSecret`, se deja vacío al editar el perfil para no
+  cambiarla.
 
-Dejar estos campos vacíos (el caso de "Testing IBS-Link" y de cualquier otro
-perfil sin TLS mutuo) es exactamente el comportamiento de antes: mismo
+Dejar estos dos campos vacíos (el caso de "Testing IBS-Link" y de cualquier
+otro perfil sin TLS mutuo) es exactamente el comportamiento de antes: mismo
 `fetch`/`HttpClient` de siempre. Un perfil **sin** certificado cliente nunca
 se ve afectado por este cambio.
 
-Implementación (mismo comportamiento en los dos backends, mismas dos
-opciones): en Node, `node/lib/flowEngine.js` arma el request a mano con el
-módulo `https` nativo en vez de con `fetch` cuando el perfil tiene
-`clientCertPfxPath` o (`clientCertPath`+`clientKeyPath`) — fetch no expone un
-client certificate sin pasar por un dispatcher de undici, no siempre
-disponible como módulo público según la versión de Node — usando las
-opciones nativas `pfx`/`passphrase` o `cert`/`key`/`passphrase` de
-`https.request` según cuál de las dos esté cargada. En PowerShell,
-`modules/FlowEngine.psm1` (`New-ProfileHttpClientHandler`) hace lo mismo con
-`HttpClientHandler.ClientCertificates`, convirtiendo primero a `.pfx` vía
-`openssl` en el caso de la Opción B (`ConvertTo-X509CertificateFromPemPair`).
+Implementación (mismo comportamiento en los dos backends): en Node,
+`node/lib/flowEngine.js` arma el request a mano con el módulo `https` nativo
+en vez de con `fetch` cuando el perfil tiene `clientCertPfxPath` (fetch no
+expone un client certificate sin pasar por un dispatcher de undici, no
+siempre disponible como módulo público según la versión de Node) — usa las
+opciones nativas `pfx`/`passphrase` de `https.request`, sin parsear nada a
+mano. En PowerShell, `modules/FlowEngine.psm1` carga el certificado con
+`New-Object X509Certificate2($pfxPath, $passphrase, ...Exportable)` y lo
+agrega a `HttpClientHandler.ClientCertificates` — mismo constructor que
+funciona en PS 5.1 y en pwsh 7+, sin necesidad de ningún workaround.
 
-**Buscador de archivo** (botón "Buscar..." al lado de cada campo, solo
-visible para `admin`): en vez de tipear la ruta a mano, navega una carpeta
-fija del servidor — por default `<carpeta de la app>/certs/` (configurable
-con la variable de entorno `CERTS_BASE_DIR` si conviene que el certificado
-viva en otro lado, ej. fuera del árbol de la app). Ahí es donde hay que
-copiar los archivos reales antes de poder encontrarlos con el buscador — no
-sube archivos, solo lista lo que ya está copiado en el servidor. `certs/`
-está en `.gitignore`: es material criptográfico real, nunca se versiona.
+**Buscador de archivo** (botón "Buscar..." al lado del campo, solo visible
+para `admin`): en vez de tipear la ruta a mano, navega una carpeta fija del
+servidor — por default `<carpeta de la app>/certs/` (configurable con la
+variable de entorno `CERTS_BASE_DIR` si conviene que el certificado viva en
+otro lado, ej. fuera del árbol de la app). Ahí es donde hay que copiar el
+`.pfx` real antes de poder encontrarlo con el buscador — no sube archivos,
+solo lista lo que ya está copiado en el servidor. `certs/` está en
+`.gitignore`: es material criptográfico real, nunca se versiona.
 
 `GET /api/certs-browse?path=<relativa>` (mismo permiso que Parametría —
 `admin` únicamente) devuelve `{ basePath, currentPath, currentFullPath,

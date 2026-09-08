@@ -1,101 +1,28 @@
 ﻿# Ejecuta un flow: encadena requests HTTP sustituyendo variables ({{var}}) entre pasos.
 # Requiere que JsonPath.psm1 y VariableSubstitution.psm1 ya estén importados en la sesión.
 
-# Combina un certificado (.cer/.crt/.pem) + una clave privada (.key) en un
-# X509Certificate2 usable. En pwsh 7+ (.NET 5+, Windows o Linux)
-# X509Certificate2.CreateFromPemFile ya hace exactamente esto — se usa
-# directo ahí, sin depender de nada externo. Ese método no existe en Windows
-# PowerShell 5.1 (.NET Framework, lo que corre server.ps1 en la mayoría de
-# los servidores Windows reales) — ahí se recurre a 'openssl' (externo, no
-# viene con Windows) para empaquetar el par a un .pfx efímero en un archivo
-# temporal con una contraseña generada al vuelo, y se carga ESE .pfx con el
-# constructor X509Certificate2(ruta, contraseña) — el mismo que funciona en
-# las dos versiones de PowerShell. El .pfx temporal se borra apenas se
-# termina de cargar, esté o no la conversión.
-function ConvertTo-X509CertificateFromPemPair {
-    param(
-        [Parameter(Mandatory = $true)][string]$CertPath,
-        [Parameter(Mandatory = $true)][string]$KeyPath,
-        [string]$Passphrase,
-        [Parameter(Mandatory = $true)][string]$ProfileName
-    )
-
-    $createFromPemFileMethod = [System.Security.Cryptography.X509Certificates.X509Certificate2].GetMethod('CreateFromPemFile', [type[]]@([string], [string]))
-    if ($createFromPemFileMethod) {
-        $ephemeralCert = if ([string]::IsNullOrEmpty($Passphrase)) {
-            [System.Security.Cryptography.X509Certificates.X509Certificate2]::CreateFromPemFile($CertPath, $KeyPath)
-        } else {
-            [System.Security.Cryptography.X509Certificates.X509Certificate2]::CreateFromEncryptedPemFile($CertPath, $Passphrase, $KeyPath)
-        }
-        # Se reexporta a PFX en memoria en vez de devolver el certificado efímero
-        # tal cual: en Windows, ese certificado efímero suele fallar el handshake
-        # TLS (el keyset no queda asociado correctamente) — el roundtrip a PFX es
-        # el workaround conocido para eso, y no molesta en Linux.
-        $pfxBytes = $ephemeralCert.Export([System.Security.Cryptography.X509Certificates.X509ContentType]::Pfx)
-        return New-Object System.Security.Cryptography.X509Certificates.X509Certificate2($pfxBytes, [string]$null, [System.Security.Cryptography.X509Certificates.X509KeyStorageFlags]::Exportable)
-    }
-
-    $opensslCmd = Get-Command openssl -ErrorAction SilentlyContinue
-    if (-not $opensslCmd) {
-        throw "El perfil '$ProfileName' tiene certificado y clave privada por separado, pero no se encontró 'openssl' en el PATH del servidor para combinarlos (hace falta porque esta versión de PowerShell — Windows PowerShell 5.1 — no puede cargar un par cert+clave en PEM directo). Instalá OpenSSL (por ejemplo, viene con Git for Windows) o convertí el par a .pfx vos mismo con 'openssl pkcs12 -export -in cert.crt -inkey key.key -out cert.pfx' y usá el campo de certificado .pfx en su lugar."
-    }
-
-    $tempPfxPath = [System.IO.Path]::GetTempFileName()
-    $tempPassword = [System.Guid]::NewGuid().ToString('N')
-    try {
-        $opensslArgs = @('pkcs12', '-export', '-in', $CertPath, '-inkey', $KeyPath, '-out', $tempPfxPath, '-passout', "pass:$tempPassword")
-        if (-not [string]::IsNullOrEmpty($Passphrase)) {
-            $opensslArgs += @('-passin', "pass:$Passphrase")
-        }
-        $opensslOutput = & $opensslCmd.Source @opensslArgs 2>&1
-        if ($LASTEXITCODE -ne 0) {
-            throw "No se pudo combinar el certificado y la clave privada del perfil '$ProfileName' con openssl: $opensslOutput"
-        }
-        return New-Object System.Security.Cryptography.X509Certificates.X509Certificate2($tempPfxPath, $tempPassword, [System.Security.Cryptography.X509Certificates.X509KeyStorageFlags]::Exportable)
-    } finally {
-        if (Test-Path $tempPfxPath) { Remove-Item -Path $tempPfxPath -Force -ErrorAction SilentlyContinue }
-    }
-}
-
-# Perfiles con certificado cliente cargado (TLS mutuo — hoy, el único caso es
-# el flow "Transferencia DEBIN" contra Nova-Link) arman el HttpClientHandler
-# con el certificado cliente; el resto de los perfiles (sin ninguno de estos
-# campos) quedan exactamente igual que antes. Acepta dos formas de cargarlo:
-# - clientCertPfxPath: un .pfx/.p12 ya armado — se carga directo, sin
-#   depender de openssl ni de ninguna herramienta externa, en ninguna
-#   versión de PowerShell.
-# - clientCertPath + clientKeyPath: certificado (.cer/.crt/.pem) y clave
-#   privada (.key) por separado — se combinan vía
-#   ConvertTo-X509CertificateFromPemPair (nativo en pwsh 7+, con openssl en
-#   PS 5.1, ver esa función). Si el perfil tiene los tres campos cargados,
-#   gana clientCertPfxPath.
+# Perfiles con clientCertPfxPath (TLS mutuo — hoy, el único caso es el flow
+# "Transferencia DEBIN" contra Nova-Link) arman el HttpClientHandler con el
+# certificado cliente cargado; el resto de los perfiles (sin ese campo) quedan
+# exactamente igual que antes. Se usa un .pfx/.p12 (no un par cert+key en PEM)
+# a propósito: el constructor X509Certificate2(ruta, contraseña) funciona igual
+# en Windows PowerShell 5.1 (.NET Framework) que en pwsh 7+ (.NET moderno) —
+# CreateFromPemFile, en cambio, no existe en .NET Framework y tira
+# "no contiene ningún método llamado 'CreateFromPemFile'" en PS 5.1.
 function New-ProfileHttpClientHandler {
     param([Parameter(Mandatory = $true)] $Profile)
 
     $handler = New-Object System.Net.Http.HttpClientHandler
 
     $pfxPath = [string]$Profile.clientCertPfxPath
-    $certPath = [string]$Profile.clientCertPath
-    $keyPath = [string]$Profile.clientKeyPath
-    $passphrase = [string]$Profile.clientCertPassphrase
-
-    $cert = $null
     if (-not [string]::IsNullOrWhiteSpace($pfxPath)) {
         if (-not (Test-Path $pfxPath)) {
             throw "No se encontró el archivo de certificado '$pfxPath' del perfil '$($Profile.name)'."
         }
-        $cert = New-Object System.Security.Cryptography.X509Certificates.X509Certificate2($pfxPath, $passphrase, [System.Security.Cryptography.X509Certificates.X509KeyStorageFlags]::Exportable)
-    } elseif (-not [string]::IsNullOrWhiteSpace($certPath) -and -not [string]::IsNullOrWhiteSpace($keyPath)) {
-        if (-not (Test-Path $certPath)) {
-            throw "No se encontró el archivo de certificado '$certPath' del perfil '$($Profile.name)'."
-        }
-        if (-not (Test-Path $keyPath)) {
-            throw "No se encontró el archivo de clave privada '$keyPath' del perfil '$($Profile.name)'."
-        }
-        $cert = ConvertTo-X509CertificateFromPemPair -CertPath $certPath -KeyPath $keyPath -Passphrase $passphrase -ProfileName $Profile.name
-    }
 
-    if ($cert) {
+        $passphrase = [string]$Profile.clientCertPassphrase
+        $cert = New-Object System.Security.Cryptography.X509Certificates.X509Certificate2($pfxPath, $passphrase, [System.Security.Cryptography.X509Certificates.X509KeyStorageFlags]::Exportable)
+
         [void]$handler.ClientCertificates.Add($cert)
         $handler.ClientCertificateOptions = [System.Net.Http.ClientCertificateOption]::Manual
     }
