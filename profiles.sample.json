@@ -1,16 +1,12 @@
 [
   {
-    "name": "Testing IBS-Link",
+    "name": "Testing",
     "baseUrl": "https://ibs-twapi03.voii.com.ar/ibsapi",
+    "novaBaseUrl": "https://nova-link.voii.com.ar:7443",
     "authType": "OAuth2ClientCredentials",
     "tokenUrl": "https://ibs-twapi03.voii.com.ar/ibsapi/Token",
     "clientId": "",
-    "clientSecret": ""
-  },
-  {
-    "name": "Testing Nova-Link",
-    "baseUrl": "https://nova-link.voii.com.ar:7443",
-    "authType": "None",
+    "clientSecret": "",
     "clientCertPfxPath": "",
     "clientCertPassphrase": ""
   }

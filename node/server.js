@@ -109,6 +109,10 @@ function getMaskedProfile(profileObj) {
   return {
     name: profileObj.name,
     baseUrl: profileObj.baseUrl,
+    // URL base alternativa, para flows con "baseUrlField" propio (ver
+    // "Transferencia DEBIN" / Nova-Link en el README) — un perfil puede
+    // pegarle a más de un servidor sin necesitar un perfil por servidor.
+    novaBaseUrl: profileObj.novaBaseUrl,
     authType: profileObj.authType,
     apiKeyHeaderName: profileObj.apiKeyHeaderName,
     hasApiKeyOrToken: !!profileObj.apiKeyOrToken,
@@ -277,6 +281,7 @@ async function handleProfilesPost(req, res) {
   const updated = {
     name: incoming.name,
     baseUrl: incoming.baseUrl,
+    novaBaseUrl: incoming.novaBaseUrl,
     authType: incoming.authType,
     apiKeyHeaderName: incoming.apiKeyHeaderName,
     apiKeyOrToken: incoming.apiKeyOrToken,
@@ -317,7 +322,6 @@ function handleFlowsGet(res) {
     description: f.description,
     inputMode: f.inputMode,
     inputs: f.inputs,
-    requiredProfileName: f.requiredProfileName || null,
     steps: (f.steps || []).map((s) => ({ name: s.name, type: s.type || null })),
   }));
   writeJsonResponse(res, 200, summary);
@@ -348,19 +352,6 @@ async function handleRun(req, res, session) {
     writeJsonResponse(res, 403, { error: `Tu rol ('${session.role}') no tiene permiso para ejecutar flows.` });
     return;
   }
-  // Un flow puede fijar a qué perfil está atado (ej. "Transferencia DEBIN"
-  // solo tiene sentido contra el servidor de Nova-Link) — evita que se
-  // ejecute por error contra el perfil equivocado (otro servidor, sin las
-  // rutas/API que ese flow espera) si el selector de la UI quedó en el
-  // perfil de otro flow. La UI ya lo autoselecciona/bloquea, esto es la
-  // defensa del lado del servidor.
-  if (selectedFlow.requiredProfileName && selectedFlow.requiredProfileName !== selectedProfile.name) {
-    writeJsonResponse(res, 400, {
-      error: `El flow '${selectedFlow.name}' solo se puede ejecutar con el perfil '${selectedFlow.requiredProfileName}' (se mandó '${selectedProfile.name}').`,
-    });
-    return;
-  }
-
   const inputValues = {};
   if (payload.inputs) {
     for (const [key, value] of Object.entries(payload.inputs)) {

@@ -26,7 +26,6 @@
       <div class="profile-bar">
         <label for="profileSelect">Perfil:</label>
         <select id="profileSelect"></select>
-        <span id="requiredProfileHint" class="muted" style="display: none;"></span>
         <button id="newProfileBtn">Nuevo...</button>
         <button id="editProfileBtn">Editar...</button>
         <button id="deleteProfileBtn">Eliminar</button>
@@ -84,6 +83,16 @@
       <h2 id="profileDialogTitle">Perfil de conexión</h2>
       <label>Nombre <input name="name" required /></label>
       <label>URL base <input name="baseUrl" required placeholder="https://host/api" /></label>
+      <label>URL base — Nova-Link (opcional)
+        <input name="novaBaseUrl" placeholder="https://nova-link.voii.com.ar:7443" />
+      </label>
+      <p class="muted">
+        Un mismo perfil puede pegarle a más de un servidor: "URL base" la usan
+        todos los flows salvo que digan lo contrario (ej. "Alta de Plazo Fijos
+        - File", contra IBS-Link), y "URL base — Nova-Link" es la que usa
+        "Transferencia DEBIN" (`baseUrlField` en el flow apunta a este campo).
+        Dejá este campo vacío si no vas a correr ese flow con este perfil.
+      </p>
       <label>Tipo de autenticación
         <select name="authType">
           <option value="None">None</option>

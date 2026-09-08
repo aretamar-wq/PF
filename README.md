@@ -461,25 +461,22 @@ header/token de ApiKey o Bearer). Para crearlo:
 copy profiles.sample.json profiles.local.json
 ```
 
-La plantilla trae los dos perfiles de testing que ya se usan hoy — uno por
-cada servidor distinto contra el que corre algún flow (ver "Configurar
-perfiles de conexión" más abajo para por qué "Transferencia DEBIN" necesita
-el segundo, aparte del primero):
+La plantilla trae el perfil de testing que ya se usa hoy: **un solo perfil**
+que le pega a los dos servidores de testing que necesita algún flow (IBS-Link
+para "Alta de Plazo Fijos - File", Nova-Link para "Transferencia DEBIN") — no
+uno por servidor. Ver "Un perfil, más de un servidor (`novaBaseUrl`)" más
+abajo para el detalle de cómo un flow elige a cuál de los dos le pega:
 
 ```json
 [
   {
-    "name": "Testing IBS-Link",
+    "name": "Testing",
     "baseUrl": "https://ibs-twapi03.voii.com.ar/ibsapi",
+    "novaBaseUrl": "https://nova-link.voii.com.ar:7443",
     "authType": "OAuth2ClientCredentials",
     "tokenUrl": "https://ibs-twapi03.voii.com.ar/ibsapi/Token",
     "clientId": "",
-    "clientSecret": ""
-  },
-  {
-    "name": "Testing Nova-Link",
-    "baseUrl": "https://nova-link.voii.com.ar:7443",
-    "authType": "None",
+    "clientSecret": "",
     "clientCertPfxPath": "",
     "clientCertPassphrase": ""
   }
@@ -503,6 +500,34 @@ se vaya a commitear** (ni en `Flows/*.json`, ni en `profiles.sample.json`) —
 `profiles.local.json` está en `.gitignore` justamente para esto. Los campos
 más avanzados (`tokenParams`, `tokenHeaders`, `tokenAccessTokenPath`, etc.)
 todavía no tienen UI propia y se completan por archivo.
+
+### Un perfil, más de un servidor (`novaBaseUrl`)
+
+Un flow normalmente arma la URL de cada step como `<baseUrl del perfil
+seleccionado>` + `pathTemplate` — un solo servidor por perfil. Pero un flow
+puede pedir que se use **otro** campo del perfil en vez de `baseUrl`, para
+pegarle a un servidor distinto sin necesitar un perfil aparte (y sin el
+riesgo de dejar seleccionado el perfil equivocado — nace de un error real:
+ver "Flow 'Transferencia DEBIN'" más abajo):
+
+- `baseUrlField` en el flow (ej. `"baseUrlField": "novaBaseUrl"`) — la URL de
+  ese flow se arma con `<perfil>[baseUrlField]` en vez de `<perfil>.baseUrl`.
+  Sin este campo (el caso de todos los flows salvo "Transferencia DEBIN"), es
+  el comportamiento de siempre: `baseUrl`.
+- `authOverride: "None"` en el flow — no manda el header de autenticación del
+  perfil (ApiKey/Bearer/el token OAuth2) para ese flow en particular, aunque
+  el perfil tenga configurado alguno de esos para el resto de los flows. Hace
+  falta cuando el servidor alternativo se autentica de otra forma (ej. TLS
+  mutuo, como Nova-Link) y no debería depender de un mecanismo de auth que ni
+  siquiera es el suyo — si `tokenUrl` no responde, un flow con
+  `authOverride: "None"` no se entera ni le importa.
+
+Así, el mismo perfil "Testing" sirve tanto a "Alta de Plazo Fijos - File"
+(contra `baseUrl`, con el token OAuth2 del perfil) como a "Transferencia
+DEBIN" (contra `novaBaseUrl`, con el certificado cliente del perfil en vez
+de un header) — completá `novaBaseUrl` (y, si hace falta, el certificado
+cliente — ver la sección siguiente) en el mismo perfil que ya usás para el
+resto, no hace falta crear uno nuevo.
 
 ### Certificado cliente (TLS mutuo)
 
@@ -529,8 +554,9 @@ UI, fieldset "Certificado cliente (TLS mutuo)":
   `apiKeyOrToken`/`clientSecret`, se deja vacío al editar el perfil para no
   cambiarla.
 
-Dejar estos dos campos vacíos (el caso de "Testing IBS-Link" y de cualquier
-otro perfil sin TLS mutuo) es exactamente el comportamiento de antes: mismo
+Dejar estos dos campos vacíos (el caso de cualquier perfil sin TLS mutuo,
+como "Testing" antes de completar `clientCertPfxPath`) es exactamente el
+comportamiento de antes: mismo
 `fetch`/`HttpClient` de siempre. Un perfil **sin** certificado cliente nunca
 se ve afectado por este cambio.
 
@@ -807,14 +833,10 @@ los flows de ejemplo):
   sentido que alguien elija a mano. Es el caso de
   `Flows/recupera-cuentas-sql.json` (ver "Flow 'Recupera cuentas (SQL)'" más
   abajo): existe, se puede ejecutar, pero no aparece en la lista de la UI.
-- `"requiredProfileName": "<nombre de un perfil>"` (opcional) ata el flow a
-  ese perfil puntual, para uno que solo tenga sentido contra un servidor
-  específico (ej. "Transferencia DEBIN" contra "Testing Nova-Link" — ver esa
-  sección más abajo, incluye por qué se agregó). La UI autoselecciona y
-  bloquea el selector de "Perfil" mientras el flow esté elegido, y el
-  servidor rechaza `/api/run` con 400 si de todos modos llega con otro
-  perfil. Sin este campo, el selector queda libre — el comportamiento de
-  siempre.
+- `"baseUrlField"` y `"authOverride"` (opcionales) — para un flow que le
+  pega a un servidor distinto del resto usando el mismo perfil, en vez de un
+  perfil aparte por servidor. Ver "Un perfil, más de un servidor
+  (`novaBaseUrl`)" más arriba.
 
 ### Flows que cargan sus inputs desde un archivo CSV (carga masiva)
 
@@ -1148,36 +1170,29 @@ de Parametría (ver "Módulo de parametría" más arriba: ese campo se sacó):
 
 `Flows/transferencia-debin.json` transfiere plata vía DEBIN/CVU contra un
 servicio **distinto** del resto de los flows: Nova-Link
-(`POST /api/debin/cuenta/credin`), no el core bancario (Testing IBS-Link). No
-es un flow CSV — un input por campo, una transferencia por corrida.
+(`POST /api/debin/cuenta/credin`), no el core bancario (IBS-Link). No es un
+flow CSV — un input por campo, una transferencia por corrida.
 
-**El servidor es un Perfil de conexión aparte: "Testing Nova-Link"** (ya
-viene en `profiles.sample.json`, junto con "Testing IBS-Link" — ver
-"Configurar perfiles de conexión" más arriba). Como cualquier otro flow, la
-URL se arma como `<baseUrl del perfil seleccionado>` + `pathTemplate`
-(`/api/debin/cuenta/credin`). Si Nova-Link exige TLS mutuo, ese mismo perfil
-es donde se configuran las rutas al certificado cliente — ver "Certificado
-cliente (TLS mutuo)" más arriba.
+**Usa el mismo perfil que el resto de los flows** ("Testing", en
+`profiles.sample.json`) — no hace falta crear ni seleccionar un perfil
+aparte. Lo logra con dos campos en el flow (ver "Un perfil, más de un
+servidor (`novaBaseUrl`)" más arriba para el detalle completo):
 
-**`"requiredProfileName": "Testing Nova-Link"`** en el flow ata este flow a
-ese perfil puntual — nace de un error real: corrió una vez con "Testing
-IBS-Link" seleccionado (quedaba de haber usado "Alta de Plazo Fijos - File"
-antes) y el request fue a parar a `https://ibs-twapi03.voii.com.ar/ibsapi/api/debin/cuenta/credin`,
-que por supuesto no existe (404, "no type was found that matches the
-controller named 'debin'"). Con `requiredProfileName` seteado:
+- `"baseUrlField": "novaBaseUrl"` — arma la URL contra `<perfil>.novaBaseUrl`
+  en vez de `<perfil>.baseUrl` (que sigue siendo el de IBS-Link, para el
+  resto de los flows).
+- `"authOverride": "None"` — no manda el header de auth OAuth2 del perfil
+  (Nova-Link se autentica con el certificado cliente del perfil — TLS mutuo,
+  ver "Certificado cliente (TLS mutuo)" más arriba —, no con un token).
 
-- La UI (`wwwroot/app.js`, `applyRequiredProfile`) autoselecciona "Testing
-  Nova-Link" en el selector de "Perfil" apenas se elige este flow, y
-  **bloquea el selector** mientras siga elegido — no se puede correr contra
-  otro perfil por descuido. Si el perfil todavía no existe, en cambio deja
-  el selector libre y avisa que hay que crearlo antes (el botón "Ejecutar
-  flow" queda deshabilitado hasta entonces).
-- El servidor (`POST /api/run`, los dos backends) igual vuelve a chequear
-  esto de forma independiente: si el `profileName` que llega no coincide con
-  `requiredProfileName`, rechaza con 400 antes de llamar a nada — la UI es
-  solo comodidad, esto es lo que realmente lo impide. Cualquier otro flow
-  sin `requiredProfileName` sigue funcionando exactamente igual que antes
-  (selector libre, sin este chequeo).
+Esto reemplaza un diseño anterior (perfiles separados "Testing IBS-Link" /
+"Testing Nova-Link", con el flow atado a uno de los dos) que nació de un
+error real: corrió una vez con el perfil de IBS-Link seleccionado (quedaba
+de haber usado "Alta de Plazo Fijos - File" antes) y el request fue a parar
+a `https://ibs-twapi03.voii.com.ar/ibsapi/api/debin/cuenta/credin`, que por
+supuesto no existe (404, "no type was found that matches the controller
+named 'debin'"). Con un solo perfil para los dos flows, ese error deja de
+ser posible: no hay un perfil equivocado que dejar seleccionado.
 
 **Todos los campos del body son inputs del formulario** — a diferencia del
 resto de los flows, acá no hay nada fijo en Parametría ni hardcodeado en el

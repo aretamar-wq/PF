@@ -342,12 +342,24 @@ async function querySybaseRows(parametriaSybase, queryText) {
 
 async function invokeHttpStep(step, flowObj, variables, profileObj, logsDir, entry, stepStartedAt) {
   const stepPath = expandTemplate(step.pathTemplate, variables);
-  const baseUrl = String(profileObj.baseUrl || '').replace(/\/+$/, '');
+  // Un flow puede pedir la URL base de otro campo del perfil en vez de
+  // "baseUrl" (ej. "Transferencia DEBIN" usa "novaBaseUrl" — un mismo
+  // perfil puede tener varias URLs, una por servidor, en vez de necesitar
+  // un perfil por servidor). Sin baseUrlField, es el comportamiento de
+  // siempre.
+  const baseUrlFieldName = flowObj.baseUrlField || 'baseUrl';
+  const baseUrl = String(profileObj[baseUrlFieldName] || '').replace(/\/+$/, '');
   const relativePath = String(stepPath || '').replace(/^\/+/, '');
   const url = `${baseUrl}/${relativePath}`;
 
   const headers = {};
-  await addAuthHeader(headers, profileObj);
+  // Un flow puede pedir no mandar el header de autenticación del perfil
+  // (flowObj.authOverride === 'None') — para un flow que se autentica de
+  // otra forma (ej. TLS mutuo) y no debería intentar (ni depender de) el
+  // mecanismo de auth que usan los demás flows de ese mismo perfil.
+  if (flowObj.authOverride !== 'None') {
+    await addAuthHeader(headers, profileObj);
+  }
 
   let contentTypeFromHeaders = null;
   if (step.headers && typeof step.headers === 'object') {

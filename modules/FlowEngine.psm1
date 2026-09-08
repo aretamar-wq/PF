@@ -474,12 +474,25 @@ function Invoke-Flow {
                     Invoke-SqlStep -Step $step -Flow $Flow -Variables $variables -Parametria $Parametria -LogsDir $LogsDir -Entry $entry
                 } else {
                 $path = Expand-Template -Template $step.pathTemplate -Variables $variables
-                $baseUrl = ([string]$Profile.baseUrl).TrimEnd('/')
+                # Un flow puede pedir la URL base de otro campo del perfil en vez de
+                # "baseUrl" (ej. "Transferencia DEBIN" usa "novaBaseUrl" — un mismo
+                # perfil puede tener varias URLs, una por servidor, en vez de
+                # necesitar un perfil por servidor). Sin baseUrlField, es el
+                # comportamiento de siempre.
+                $baseUrlFieldName = if ($Flow.baseUrlField) { [string]$Flow.baseUrlField } else { 'baseUrl' }
+                $baseUrl = ([string]$Profile.$baseUrlFieldName).TrimEnd('/')
                 $relativePath = $path.TrimStart('/')
                 $url = "$baseUrl/$relativePath"
 
                 $request = New-Object System.Net.Http.HttpRequestMessage([System.Net.Http.HttpMethod]::new($step.method), $url)
-                Add-AuthHeader -Request $request -Profile $Profile -HttpClient $httpClient
+                # Un flow puede pedir no mandar el header de autenticación del
+                # perfil (Flow.authOverride -eq 'None') — para un flow que se
+                # autentica de otra forma (ej. TLS mutuo) y no debería intentar
+                # (ni depender de) el mecanismo de auth que usan los demás flows
+                # de ese mismo perfil.
+                if ($Flow.authOverride -ne 'None') {
+                    Add-AuthHeader -Request $request -Profile $Profile -HttpClient $httpClient
+                }
 
                 $contentTypeFromHeaders = $null
                 if ($step.headers) {
