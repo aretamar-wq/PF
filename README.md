@@ -10,14 +10,17 @@ sencilla (HTML/CSS/JS, sin frameworks ni dependencias) para manejarla desde el
 navegador. No hay que compilar nada ni instalar .NET, Node, Python ni ningún
 runtime adicional.
 
-> **Importante:** hoy la app está reducida a un único flow operativo,
+> **Importante:** hoy la app tiene 3 flows operativos —
 > `Flows/plazo-fijo-cocos-files-sql.json` ("Alta de Plazo Fijos - File"),
-> más una dependencia interna que no aparece en la lista
-> (`Flows/recupera-cuentas-sql.json`, ver "Módulo de flows ocultos"). Los
-> demás flows de versiones anteriores (ejemplos con endpoints ficticios,
-> variantes manuales/CSV previas de Plazo Fijo Cocos, consultas sueltas)
-> se borraron del repo — el historial de git los tiene si hace falta
-> recuperar alguno como referencia.
+> `Flows/transferencia-debin.json` ("Transferencia DEBIN", manual) y
+> `Flows/transferencia-debin-files.json` ("Transferencia DEBIN - File", por
+> archivo `.csv`) —, más dos dependencias internas que no aparecen en la
+> lista (`Flows/recupera-cuentas-sql.json` y
+> `Flows/plazo-fijo-cocos-files-solo-alta.json`, ver "Módulo de flows
+> ocultos"). Los demás flows de versiones anteriores (ejemplos con
+> endpoints ficticios, variantes manuales/CSV previas de Plazo Fijo Cocos,
+> consultas sueltas) se borraron del repo — el historial de git los tiene
+> si hace falta recuperar alguno como referencia.
 
 ## Cómo correrla (sin instalar nada)
 
@@ -1090,8 +1093,8 @@ ejecutable por nombre vía `/api/run` si hiciera falta correrlo suelto.
 
 ### Flow "Alta de Plazo Fijos - File"
 
-`Flows/plazo-fijo-cocos-files-sql.json` es hoy el único flow operativo de la
-app: carga un archivo `.csv` con operaciones de Plazo Fijo y, por cada fila,
+`Flows/plazo-fijo-cocos-files-sql.json` carga un archivo `.csv` con
+operaciones de Plazo Fijo y, por cada fila,
 busca las cuentas del cliente en Sybase, debita de Cuenta Corriente,
 acredita en Caja de Ahorro y da de alta el Plazo Fijo. El CSV de entrada
 tiene 6 columnas, sin encabezado, en este orden: `CUIT, Apellido y Nombre,
@@ -1228,6 +1231,47 @@ disponibles en el log igual que cualquier respuesta.
 Nova-Link espera este endpoint (confirmado contra un curl real que funciona
 con esa combinación). No es un error del flow; si Nova-Link cambia esa
 exigencia, es el único header que hay que tocar en `Flows/transferencia-debin.json`.
+
+### Flow "Transferencia DEBIN - File"
+
+`Flows/transferencia-debin-files.json` es la versión por archivo `.csv` de
+"Transferencia DEBIN": una transferencia por fila, contra el mismo servicio
+Nova-Link y con el mismo mecanismo `baseUrlField`/`authOverride` que la
+versión manual (ver más arriba). El CSV de entrada no lleva encabezado y
+tiene 9 columnas, en este orden: `CUIT destino, CBU destino, Nombre
+destino, CUIT origen, CBU origen, Nombre origen, Nro. comprobante, Moneda,
+Monto`.
+
+A diferencia de "Transferencia DEBIN" (manual, 26 inputs, todo a mano), acá
+la mayoría de los campos del body salen de tres fuentes distintas:
+
+- **Columnas del CSV, tal cual** — `credito.cuit`/`cbu`/`titular`,
+  `debito.cuit`/`cbu`/`titular`, `idComprobante`, `moneda`, `importe`.
+- **Calculados por fila** (no son columna del archivo — el motor de
+  templates solo reemplaza `{{var}}`, no recorta strings ni compara
+  valores, así que esto se resuelve en `wwwroot/app.js`, dentro de
+  `runFlowFromCsv`, antes de llamar al flow):
+  - `credito.banco`/`debito.banco` = los primeros 3 dígitos del CBU
+    correspondiente (destino/origen).
+  - `credito.sucursal`/`debito.sucursal` = los 4 dígitos siguientes del
+    mismo CBU (posiciones 4 a 7).
+  - `mismoTitular` = `"1"` si el CUIT destino y el CUIT origen de la fila
+    son iguales, `"0"` si son distintos.
+  - Si algún CBU no tiene exactamente 22 dígitos numéricos, la fila queda
+    en error (`El CBU ... no tiene 22 dígitos numéricos.`) sin llegar a
+    llamar a Nova-Link.
+- **Fijos para todo el archivo** (hardcodeados en el `bodyTemplate`, no se
+  piden por fila ni salen de Parametría): `concepto` = `"VAR"`, `ClienteId`
+  = `"0"`, `idUsuario` = `16`, `internalcode` = `" "` (un espacio), y todo
+  `datosGenerador` (`ipCliente`, `plataforma`, `imsi`, `imei`, `precision`
+  en blanco; `tipoDispositivo` = `"04"`; `lat`/`lng` = `"0"`) — son datos de
+  un cliente final que no existen en una carga por archivo.
+
+Este flow **no genera ningún archivo de salida propio** (a diferencia de
+"Alta de Plazo Fijos - File", que genera `pfout-...csv`/`pfouterror-...csv`
+— ver más abajo): el resultado de cada fila queda en el resumen por step en
+pantalla (`#csvSummary`) y, con el detalle completo de cada request/response,
+en `logs/http.log`.
 
 ### Panel de resultado de un step SQL
 

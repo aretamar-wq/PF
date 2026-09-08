@@ -390,6 +390,15 @@ function isPlazoFijoCocosFilesSqlFlow(flow) {
   return !!flow && flow.name === 'Alta de Plazo Fijos - File';
 }
 
+// Banco/Sucursal (crédito y débito) y mismoTitular no vienen como columna del
+// CSV: se calculan acá a partir del CBU y el CUIT de cada fila (el motor de
+// templates solo hace reemplazo de {{var}}, no puede recortar strings ni
+// comparar valores) y se inyectan como inputs extra antes de correr la fila —
+// ver runFlowFromCsv.
+function isTransferenciaDebinFilesFlow(flow) {
+  return !!flow && flow.name === 'Transferencia DEBIN - File';
+}
+
 // Cuando la columna Circuito de una fila viene en 1, no se ejecutan los
 // steps de débito en Cuenta Corriente ni crédito en Caja de Ahorro: se corre
 // este flow oculto, que tiene solo el step "3. Alta de Plazo Fijo" (mismo
@@ -724,6 +733,26 @@ async function runFlowFromCsv() {
         });
         inputs.idMensajeGenerado = rowIdMensaje;
 
+        // Banco = primeros 3 dígitos del CBU, Sucursal = los 4 siguientes
+        // (mismo criterio para crédito y débito). mismoTitular = "1" si el
+        // CUIT destino y el CUIT origen de la fila coinciden, "0" si no.
+        let debinCbuError = null;
+        if (isTransferenciaDebinFilesFlow(flow)) {
+          const creditoCbu = (inputs.creditoCbu || '').trim();
+          const debitoCbu = (inputs.debitoCbu || '').trim();
+          if (!/^\d{22}$/.test(creditoCbu)) {
+            debinCbuError = `El CBU destino "${inputs.creditoCbu}" no tiene 22 dígitos numéricos.`;
+          } else if (!/^\d{22}$/.test(debitoCbu)) {
+            debinCbuError = `El CBU origen "${inputs.debitoCbu}" no tiene 22 dígitos numéricos.`;
+          } else {
+            inputs.creditoBanco = creditoCbu.slice(0, 3);
+            inputs.creditoSucursal = creditoCbu.slice(3, 7);
+            inputs.debitoBanco = debitoCbu.slice(0, 3);
+            inputs.debitoSucursal = debitoCbu.slice(3, 7);
+            inputs.mismoTitular = (inputs.creditoCuit || '').trim() === (inputs.debitoCuit || '').trim() ? '1' : '0';
+          }
+        }
+
         // Circuito = 0: flujo completo (débito CC + crédito CA + alta de PF,
         // como siempre). Circuito = 1: solo se recuperan las cuentas (ya
         // resueltas para todas las filas por fetchAccountsByCuit) y se
@@ -781,7 +810,7 @@ async function runFlowFromCsv() {
           }
         }
 
-        if (duplicateError || accountLookupError || circuitoError) {
+        if (duplicateError || accountLookupError || circuitoError || debinCbuError) {
           rowEntries = [
             {
               name: `Fila ${rowNumber}`,
@@ -790,7 +819,7 @@ async function runFlowFromCsv() {
               responseSummary: null,
               httpStatusCode: null,
               durationMs: 0,
-              errorMessage: duplicateError || accountLookupError || circuitoError,
+              errorMessage: duplicateError || accountLookupError || circuitoError || debinCbuError,
             },
           ];
         } else {
@@ -833,7 +862,7 @@ async function runFlowFromCsv() {
       // formada) + el IdMensaje que se le generó, para el archivo
       // pfouterror-... — ver saveOutputFiles.
       const rowFailed = rowEntries.some((entry) => entry.status !== 'Success');
-      if (rowFailed) {
+      if (rowFailed && isPlazoFijoCocosFilesSqlFlow(flow)) {
         state.errorRows.push([...row, rowIdMensaje]);
       }
 
@@ -845,8 +874,10 @@ async function runFlowFromCsv() {
       // terminar (ver saveOutputFiles). La tabla de log paso a paso ya no se
       // muestra en pantalla para flows CSV
       // (ver selectFlow); el detalle completo de cada request/response
-      // sigue en logs/http.log.
-      if (stepEntries) {
+      // sigue en logs/http.log. Este bloque (y pfout-...csv en general) es
+      // específico de "Alta de Plazo Fijos - File": otros flows CSV (como
+      // "Transferencia DEBIN - File") no generan ese archivo de salida.
+      if (stepEntries && isPlazoFijoCocosFilesSqlFlow(flow)) {
         const lastEntry = stepEntries[stepEntries.length - 1];
         if (lastEntry && lastEntry.status === 'Success' && lastEntry.responseSummary) {
           try {
@@ -902,7 +933,7 @@ async function runFlowFromCsv() {
       // archivo de salida queda con una fila por cada fila del archivo de
       // entrada, se haya completado o no, y "realizado" = "n" marca cuál es
       // cuál sin tener que cruzar con pfouterror-....
-      if (rowFailed) {
+      if (rowFailed && isPlazoFijoCocosFilesSqlFlow(flow)) {
         state.pfDetailRows.push({
           numeroComprobante: row[4] || '',
           cuit: row[0] || '',

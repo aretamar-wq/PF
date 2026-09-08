@@ -1,0 +1,33 @@
+{
+  "name": "Transferencia DEBIN - File",
+  "description": "Versión por archivo CSV de \"Transferencia DEBIN\": corre una transferencia por cada fila contra el mismo servicio Nova-Link (POST /api/debin/cuenta/credin), con el mismo perfil (baseUrlField \"novaBaseUrl\", authOverride \"None\"). El CSV no lleva encabezado y tiene 9 columnas en este orden: CUIT destino, CBU destino, Nombre destino, CUIT origen, CBU origen, Nombre Origen, número de comprobante, Moneda, Monto. Banco y Sucursal (crédito y débito) se calculan automáticamente a partir del CBU de cada fila: los primeros 3 dígitos son el banco y los 4 siguientes la sucursal. \"mismoTitular\" también se calcula solo: \"1\" si CUIT destino y CUIT origen coinciden, \"0\" si no. El resto de los campos del body (concepto=\"VAR\", ClienteId=\"0\", idUsuario=16, internalcode, datosGenerador) van fijos para todo el archivo, no se piden por fila.",
+  "inputMode": "csv",
+  "baseUrlField": "novaBaseUrl",
+  "authOverride": "None",
+  "inputs": [
+    { "variableName": "creditoCuit", "label": "CUIT destino" },
+    { "variableName": "creditoCbu", "label": "CBU destino" },
+    { "variableName": "creditoTitular", "label": "Nombre destino" },
+    { "variableName": "debitoCuit", "label": "CUIT origen" },
+    { "variableName": "debitoCbu", "label": "CBU origen" },
+    { "variableName": "debitoTitular", "label": "Nombre origen" },
+    { "variableName": "idComprobante", "label": "Número de comprobante" },
+    { "variableName": "moneda", "label": "Moneda" },
+    { "variableName": "importe", "label": "Monto" }
+  ],
+  "steps": [
+    {
+      "name": "1. Transferencia DEBIN",
+      "method": "POST",
+      "pathTemplate": "/api/debin/cuenta/credin",
+      "headers": { "Accept": "*/*", "Content-Type": "application/x-www-form-urlencoded" },
+      "bodyTemplate": "{\n  \"credito\": {\n    \"cuit\": \"{{creditoCuit}}\",\n    \"cbu\": \"{{creditoCbu}}\",\n    \"banco\": \"{{creditoBanco}}\",\n    \"sucursal\": \"{{creditoSucursal}}\",\n    \"titular\": \"{{creditoTitular}}\"\n  },\n  \"ClienteId\": \"0\",\n  \"debito\": {\n    \"cuit\": \"{{debitoCuit}}\",\n    \"cbu\": \"{{debitoCbu}}\",\n    \"banco\": \"{{debitoBanco}}\",\n    \"sucursal\": \"{{debitoSucursal}}\",\n    \"titular\": \"{{debitoTitular}}\"\n  },\n  \"concepto\": \"VAR\",\n  \"idUsuario\": 16,\n  \"idComprobante\": {{idComprobante}},\n  \"internalcode\": \" \",\n  \"moneda\": \"{{moneda}}\",\n  \"importe\": {{importe}},\n  \"mismoTitular\": \"{{mismoTitular}}\",\n  \"datosGenerador\": {\n    \"ipCliente\": \"\",\n    \"tipoDispositivo\": \"04\",\n    \"plataforma\": \"\",\n    \"imsi\": \"\",\n    \"imei\": \"\",\n    \"lat\": \"0\",\n    \"lng\": \"0\",\n    \"precision\": \"\"\n  }\n}",
+      "extractVariables": {
+        "codigoRespuesta": "params.response.respuesta.codigo",
+        "descripcionRespuesta": "params.response.respuesta.descripcion",
+        "idRespuesta": "params.response.respuesta.id"
+      },
+      "expectedStatusCode": 200
+    }
+  ]
+}
