@@ -20,12 +20,36 @@ const tokenCache = new Map();
 function writeHttpLog(logsDir, fileName, content) {
   if (!logsDir) return;
   try {
-    if (!fs.existsSync(logsDir)) fs.mkdirSync(logsDir, { recursive: true });
     const filePath = path.join(logsDir, fileName);
+    const fileDir = path.dirname(filePath);
+    if (!fs.existsSync(fileDir)) fs.mkdirSync(fileDir, { recursive: true });
     fs.appendFileSync(filePath, `${content}\n`, 'utf8');
   } catch (err) {
     // Un problema de logging (disco lleno, permisos) nunca debe romper la ejecución del flow.
   }
+}
+
+// Un archivo de log por proceso (cada llamada real a invokeFlow — una
+// corrida manual, o una fila de un CSV, que puede llegar a ser cientos de
+// llamadas seguidas) en vez de todo mezclado en un único http.log: así se
+// puede encontrar el request/response de UNA operación puntual sin tener
+// que grepear un archivo compartido que crece para siempre. Todos los steps
+// de una misma corrida (ej. los 3 steps de una fila de "Alta de Plazo Fijos
+// - File") van al mismo archivo — el nombre se genera una sola vez por
+// invokeFlow y se pasa a cada step. El contador de módulo (además del
+// timestamp con milisegundos) evita colisiones si dos corridas arrancan en
+// el mismo milisegundo (backend Node.js: I/O asíncrono, puede haber más de
+// una corriendo a la vez).
+let runLogCounter = 0;
+function generateRunLogFileName(flowName) {
+  runLogCounter = (runLogCounter + 1) % 10000;
+  const slug = String(flowName || 'flow')
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, '-')
+    .replace(/^-+|-+$/g, '') || 'flow';
+  const timestamp = formatCompactMillis(new Date());
+  const counter = String(runLogCounter).padStart(4, '0');
+  return `http/${timestamp}-${counter}-${slug}.log`;
 }
 
 function getLoggableHeaderLines(headers, apiKeyHeaderName) {
@@ -241,7 +265,7 @@ function getSybaseConnectionString(connectionStringTemplate, usuario, password) 
 }
 
 // Enmascara Pwd=.../Password=... para poder loguear el connection string sin
-// exponer la contraseña real en logs/http.log.
+// exponer la contraseña real en el archivo de log de la corrida (logs/http/...).
 function getRedactedSybaseConnectionString(connectionString) {
   if (!connectionString) return connectionString;
   return connectionString.replace(/(Pwd|Password)\s*=\s*[^;]*/gi, '$1=***REDACTED***');
@@ -267,8 +291,9 @@ async function testSybaseConnection(connectionStringTemplate, usuario, password)
 // { "rows": [ {columna: valor, ...}, ... ] } y de ahí en más se trata
 // exactamente igual que la respuesta JSON de un step HTTP: mismo mecanismo de
 // extractVariables (getJsonPathValue, ej. "rows[0].saldo"), mismo límite de
-// 200.000 caracteres para lo que se manda al navegador, mismo logs/http.log.
-async function invokeSqlStep(step, flowObj, variables, parametria, logsDir, entry, stepStartedAt) {
+// 200.000 caracteres para lo que se manda al navegador, mismo archivo de
+// log por corrida (ver generateRunLogFileName).
+async function invokeSqlStep(step, flowObj, variables, parametria, logsDir, runLogFileName, entry, stepStartedAt) {
   if (!parametria || !parametria.sybase) {
     throw new Error("No hay una conexión Sybase configurada en la Parametría (botón 'Parametría...' > Conexión Sybase).");
   }
@@ -292,7 +317,7 @@ async function invokeSqlStep(step, flowObj, variables, parametria, logsDir, entr
   ].join('\n');
   // Igual que en un step HTTP: se loguea antes de ejecutar la consulta, así queda
   // registrada aunque la conexión nunca llegue a abrirse.
-  writeHttpLog(logsDir, 'http.log', requestLogText);
+  writeHttpLog(logsDir, runLogFileName, requestLogText);
 
   const rows = await querySybaseRows(parametria.sybase, queryText);
 
@@ -304,7 +329,7 @@ async function invokeSqlStep(step, flowObj, variables, parametria, logsDir, entr
     responseBody,
     '---',
   ].join('\n');
-  writeHttpLog(logsDir, 'http.log', responseLogText);
+  writeHttpLog(logsDir, runLogFileName, responseLogText);
 
   entry.httpStatusCode = null;
   entry.responseSummary = responseBody.length > 200000 ? `${responseBody.slice(0, 200000)}...` : responseBody;
@@ -340,7 +365,7 @@ async function querySybaseRows(parametriaSybase, queryText) {
   return sybaseClient.querySybase(parametriaSybase, queryText);
 }
 
-async function invokeHttpStep(step, flowObj, variables, profileObj, logsDir, entry, stepStartedAt) {
+async function invokeHttpStep(step, flowObj, variables, profileObj, logsDir, runLogFileName, entry, stepStartedAt) {
   const stepPath = expandTemplate(step.pathTemplate, variables);
   // Un flow puede pedir la URL base de otro campo del perfil en vez de
   // "baseUrl" (ej. "Transferencia DEBIN" usa "novaBaseUrl" — un mismo
@@ -419,7 +444,7 @@ async function invokeHttpStep(step, flowObj, variables, profileObj, logsDir, ent
   ].join('\n');
   // Se loguea antes de mandar el request: así queda un registro aunque la
   // respuesta nunca llegue (timeout, host inalcanzable, etc.).
-  writeHttpLog(logsDir, 'http.log', requestLogText);
+  writeHttpLog(logsDir, runLogFileName, requestLogText);
 
   const fetchOptions = { method, headers };
   if (bodyText !== null) fetchOptions.body = bodyText;
@@ -433,12 +458,12 @@ async function invokeHttpStep(step, flowObj, variables, profileObj, logsDir, ent
     responseBody,
     '---',
   ].join('\n');
-  writeHttpLog(logsDir, 'http.log', responseLogText);
+  writeHttpLog(logsDir, runLogFileName, responseLogText);
 
   entry.httpStatusCode = response.status;
   // Se manda al navegador casi entera (hasta 200.000 caracteres) — ver
-  // modules/FlowEngine.psm1 para el detalle de por qué. logs/http.log siempre
-  // guarda el body entero.
+  // modules/FlowEngine.psm1 para el detalle de por qué. El archivo de log
+  // de esta corrida (logs/http/...) siempre guarda el body entero.
   entry.responseSummary = responseBody.length > 200000 ? `${responseBody.slice(0, 200000)}...` : responseBody;
 
   const expectedStatus = step.expectedStatusCode ? Number(step.expectedStatusCode) : 200;
@@ -481,6 +506,10 @@ async function invokeFlow(profileObj, flowObj, inputValues, logsDir, parametria)
   Object.assign(variables, getParametriaVariables(parametria));
   Object.assign(variables, inputValues);
 
+  // Un solo archivo de log para TODOS los steps de esta corrida (ver
+  // generateRunLogFileName) — se genera una sola vez acá, no por step.
+  const runLogFileName = generateRunLogFileName(flowObj.name);
+
   const log = [];
 
   for (const step of flowObj.steps || []) {
@@ -497,9 +526,9 @@ async function invokeFlow(profileObj, flowObj, inputValues, logsDir, parametria)
     const stepStartedAt = Date.now();
     try {
       if (String(step.type || '').trim().toLowerCase() === 'sql') {
-        await invokeSqlStep(step, flowObj, variables, parametria, logsDir, entry, stepStartedAt);
+        await invokeSqlStep(step, flowObj, variables, parametria, logsDir, runLogFileName, entry, stepStartedAt);
       } else {
-        await invokeHttpStep(step, flowObj, variables, profileObj, logsDir, entry, stepStartedAt);
+        await invokeHttpStep(step, flowObj, variables, profileObj, logsDir, runLogFileName, entry, stepStartedAt);
       }
     } catch (err) {
       entry.status = 'Error';

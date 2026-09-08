@@ -294,8 +294,8 @@ real corriendo en un navegador sin ningún cambio.
   caracteres (antes 800; se subió porque algunas respuestas con muchas
   cuentas superan ampliamente los 800); el
   detalle completo de cada request/response de negocio (no de la
-  obtención de token) queda siempre entero, sin cortar, en
-  `logs/http.log` — ver "Logs en disco" más abajo.
+  obtención de token) queda siempre entero, sin cortar, en su propio
+  archivo bajo `logs/http/` — ver "Logs en disco" más abajo.
 - Gestión de "perfiles" de conexión desde la UI web (nombre, URL base, tipo de
   autenticación, ApiKey/Bearer estático y los campos básicos de OAuth2 —
   `tokenUrl`/`clientId`/`clientSecret`). Los campos de OAuth2 más avanzados
@@ -428,7 +428,7 @@ token expire ni a que la persona vuelva a loguearse.
 
 ### Auditoría
 
-`logs/security.log` (mismo directorio que `logs/http.log`, no versionado)
+`logs/security.log` (mismo directorio que `logs/http/`, no versionado)
 registra, con fecha/hora: logins exitosos y fallidos (usuario, nunca la
 contraseña), el bootstrap del primer admin, altas/bajas/ediciones de
 usuarios (quién lo hizo y a quién), cambios en la configuración de AD,
@@ -438,8 +438,9 @@ flow CSV, una línea por fila/operación, así queda trazado quién ejecutó
 cada Plazo Fijo dado de alta, y cada archivo guardado en `files/` (nombre
 del archivo y quién lo guardó, ver "Archivos de salida (`files/`)"). Nunca
 incluye los inputs de la fila ni la respuesta del banco (pueden traer datos
-bancarios reales); el detalle completo de cada request/response sigue en
-`logs/http.log`.
+bancarios reales); el detalle completo de cada request/response de esa
+operación puntual queda en su propio archivo bajo `logs/http/` (ver "Logs
+en disco").
 
 ### Limitaciones conocidas
 
@@ -744,7 +745,8 @@ request HTTP. En ese caso no usa `method`/`pathTemplate`/`headers`/
   step se marca en error solo si la conexión o la consulta tiran una
   excepción (ODBC no disponible, SQL inválido, etc.), no por la cantidad de
   filas devueltas.
-- Se loguea en `logs/http.log` igual que un step HTTP (mismo formato
+- Se loguea en el mismo archivo bajo `logs/http/` que el resto de los steps
+  de esa corrida, igual que un step HTTP (mismo formato
   `>>> REQUEST`/`<<< RESPONSE`), con el connection string logueado con la
   contraseña como `***REDACTED***` (nunca en texto plano).
 - `requireVariables` (opcional, array de nombres): después de aplicar
@@ -873,7 +875,8 @@ vez por cada fila (ej. `Flows/plazo-fijo-cocos-files-sql.json`). Para esto:
   tabla de log paso a paso** en pantalla (quedaría enorme con muchas filas) —
   solo el resumen ok/error por paso (ver más abajo). El detalle completo de
   cada request/response de cada fila sigue quedando, igual que siempre, en
-  `logs/http.log`.
+  su propio archivo bajo `logs/http/` (una fila = una corrida = un archivo,
+  ver "Logs en disco").
 - Si `Importe` (u otro campo numérico) viene de un CSV separado por comas,
   los decimales tienen que ir con punto (`1500.50`), no con coma, porque la
   coma es el separador de columnas.
@@ -1271,7 +1274,7 @@ Este flow **no genera ningún archivo de salida propio** (a diferencia de
 "Alta de Plazo Fijos - File", que genera `pfout-...csv`/`pfouterror-...csv`
 — ver más abajo): el resultado de cada fila queda en el resumen por step en
 pantalla (`#csvSummary`) y, con el detalle completo de cada request/response,
-en `logs/http.log`.
+en su propio archivo bajo `logs/http/` (ver "Logs en disco").
 
 ### Panel de resultado de un step SQL
 
@@ -1280,24 +1283,39 @@ Para cualquier flow cuyo último step sea `"type": "sql"` (hoy solo
 corre por nombre) la tabla de log paso a paso tampoco se muestra: en su
 lugar aparece una tabla HTML con el array `rows` de la respuesta (columnas
 = las que devuelve la consulta, en el mismo orden). El detalle completo
-sigue disponible en `logs/http.log` y en "Guardar log...".
+sigue disponible en su archivo bajo `logs/http/` y en "Guardar log...".
 
 ## Logs en disco
 
-Cada paso de un flow que llega a mandar un request (no la obtención interna
-del token OAuth2, para no loguear `client_secret`) se registra en
-`logs/http.log`, creado junto al script: primero el bloque `>>> REQUEST`
-(método, URL, headers, body) y después, cuando llega, el bloque
-`<<< RESPONSE` (HTTP status, duración, body completo sin el corte a
-200.000 caracteres que sí tiene la UI) — en ese orden cronológico, aunque el request
-se escribe antes de mandarse, así queda registrado igual si la respuesta
-nunca llega (timeout, host inalcanzable).
+Cada **corrida** de un flow (una llamada real a `/api/run` — una ejecución
+manual, o **una fila** de un flow CSV, que en un archivo grande son cientos
+de llamadas seguidas) escribe su **propio archivo** bajo `logs/http/`, en
+vez de todas mezcladas en un único log compartido: así se puede encontrar
+el request/response de una operación puntual (una transferencia, un alta
+de Plazo Fijo) sin tener que buscar en un archivo que crece para siempre.
+El nombre de archivo se arma como
+`logs/http/<timestamp con milisegundos>-<contador>-<nombre del flow>.log`
+(ej. `logs/http/20260908192634860-0001-alta-de-plazo-fijos-file.log`) — el
+contador evita colisiones si dos corridas arrancan en el mismo milisegundo.
 
-Es append-only (crece con cada ejecución, nunca se rota ni se limpia solo) y
-**no se versiona** (`logs/` está en `.gitignore`) porque va a contener datos
-bancarios reales — números de cuenta, DNIs, importes. El header
-`Authorization` (y el header de ApiKey, si el perfil usa ese tipo de
-autenticación) se guarda como `***REDACTED***`, nunca el valor real.
+Todos los steps de una misma corrida (ej. los 3 steps de una fila de "Alta
+de Plazo Fijos - File": débito, crédito, alta de Plazo Fijo) van al mismo
+archivo, cada uno con su bloque `>>> REQUEST` (método, URL, headers, body)
+y, cuando llega, su bloque `<<< RESPONSE` (HTTP status, duración, body
+completo sin el corte a 200.000 caracteres que sí tiene la UI) — en ese
+orden cronológico, aunque el request se escribe antes de mandarse, así
+queda registrado igual si la respuesta nunca llega (timeout, host
+inalcanzable). No se registra la obtención interna del token OAuth2, para
+no loguear `client_secret`.
+
+Cada archivo es append-only mientras dura esa corrida (nunca se rota ni se
+limpia solo) y **no se versiona** (`logs/` está en `.gitignore`, incluida
+la subcarpeta `logs/http/`) porque va a contener datos bancarios reales —
+números de cuenta, DNIs, importes. El header `Authorization` (y el header
+de ApiKey, si el perfil usa ese tipo de autenticación) se guarda como
+`***REDACTED***`, nunca el valor real. Con el tiempo `logs/http/` acumula
+un archivo por operación — no hay rotación/limpieza automática; si hace
+falta liberar espacio, es un borrado manual de los más viejos.
 
 `logs/security.log` — ver "Auditoría" en "Módulo de seguridad" — y
 `logs/processed-operations.json` — ver "Prevención de operaciones

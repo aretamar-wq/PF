@@ -65,14 +65,39 @@ function Write-HttpLog {
     if ([string]::IsNullOrEmpty($LogsDir)) { return }
 
     try {
-        if (-not (Test-Path $LogsDir)) {
-            New-Item -ItemType Directory -Path $LogsDir -Force | Out-Null
-        }
         $path = Join-Path $LogsDir $FileName
+        $fileDir = Split-Path -Path $path -Parent
+        if (-not (Test-Path $fileDir)) {
+            New-Item -ItemType Directory -Path $fileDir -Force | Out-Null
+        }
         Add-Content -Path $path -Value $Content -Encoding UTF8
     } catch {
         # Un problema de logging (disco lleno, permisos) nunca debe romper la ejecución del flow.
     }
+}
+
+# Un archivo de log por proceso (cada llamada real a Invoke-Flow — una
+# corrida manual, o una fila de un CSV, que puede llegar a ser cientos de
+# llamadas seguidas) en vez de todo mezclado en un único http.log: así se
+# puede encontrar el request/response de UNA operación puntual sin tener
+# que buscar en un archivo compartido que crece para siempre. Todos los
+# steps de una misma corrida (ej. los 3 steps de una fila de "Alta de
+# Plazo Fijos - File") van al mismo archivo — el nombre se genera una sola
+# vez por Invoke-Flow y se pasa a cada step. El contador de módulo (además
+# del timestamp con milisegundos) evita colisiones si dos corridas
+# arrancan en el mismo milisegundo.
+$script:RunLogCounter = 0
+
+function New-RunLogFileName {
+    param([string]$FlowName)
+
+    $script:RunLogCounter = ($script:RunLogCounter + 1) % 10000
+    $slug = ([string]$FlowName).ToLowerInvariant() -replace '[^a-z0-9]+', '-'
+    $slug = $slug.Trim('-')
+    if ([string]::IsNullOrEmpty($slug)) { $slug = 'flow' }
+    $timestamp = (Get-Date).ToString('yyyyMMddHHmmssfff')
+    $counter = $script:RunLogCounter.ToString('0000')
+    return "http/$timestamp-$counter-$slug.log"
 }
 
 function Get-LoggableHeaderLines {
@@ -264,8 +289,8 @@ function Get-SybaseConnectionString {
 }
 
 # Enmascara Pwd=.../Password=... para poder loguear el connection string sin
-# exponer la contraseña real en logs/http.log (mismo criterio que el header
-# Authorization).
+# exponer la contraseña real en el archivo de log de la corrida
+# (logs/http/..., mismo criterio que el header Authorization).
 function Get-RedactedSybaseConnectionString {
     param([string]$ConnectionString)
     if ([string]::IsNullOrEmpty($ConnectionString)) { return $ConnectionString }
@@ -310,7 +335,8 @@ function Test-SybaseConnection {
 # { "rows": [ {columna: valor, ...}, ... ] } y de ahí en más se trata exactamente
 # igual que la respuesta JSON de un step HTTP: mismo mecanismo de extractVariables
 # (Get-JsonPathValue, ej. "rows[0].saldo"), mismo límite de 200.000 caracteres para
-# lo que se manda al navegador, mismo archivo logs/http.log.
+# lo que se manda al navegador, mismo archivo de log por corrida (ver
+# New-RunLogFileName).
 #
 # IMPORTANTE: $queryText se arma con el mismo Expand-Template sin escapar que usan
 # los bodies HTTP — un valor que traiga una comilla simple puede romper la consulta
@@ -324,6 +350,7 @@ function Invoke-SqlStep {
         [Parameter(Mandatory = $true)] [hashtable]$Variables,
         $Parametria,
         [string]$LogsDir,
+        [string]$RunLogFileName,
         [Parameter(Mandatory = $true)] $Entry
     )
 
@@ -347,7 +374,7 @@ function Invoke-SqlStep {
     ) -join "`n"
     # Igual que en un step HTTP: se loguea antes de ejecutar la consulta, así queda
     # registrada aunque la conexión nunca llegue a abrirse.
-    Write-HttpLog -LogsDir $LogsDir -FileName 'http.log' -Content $requestLogText
+    Write-HttpLog -LogsDir $LogsDir -FileName $RunLogFileName -Content $requestLogText
 
     $connection = New-Object System.Data.Odbc.OdbcConnection($connectionString)
     try {
@@ -384,7 +411,7 @@ function Invoke-SqlStep {
             $responseBody,
             '---'
         ) -join "`n"
-        Write-HttpLog -LogsDir $LogsDir -FileName 'http.log' -Content $responseLogText
+        Write-HttpLog -LogsDir $LogsDir -FileName $RunLogFileName -Content $responseLogText
 
         $Entry.httpStatusCode = $null
         $Entry.responseSummary = if ($responseBody.Length -gt 200000) { $responseBody.Substring(0, 200000) + '...' } else { $responseBody }
@@ -454,6 +481,10 @@ function Invoke-Flow {
         $variables[$key] = $InputValues[$key]
     }
 
+    # Un solo archivo de log para TODOS los steps de esta corrida (ver
+    # New-RunLogFileName) — se genera una sola vez acá, no por step.
+    $runLogFileName = New-RunLogFileName -FlowName $Flow.name
+
     $log = @()
 
     try {
@@ -471,7 +502,7 @@ function Invoke-Flow {
             $stopwatch = [System.Diagnostics.Stopwatch]::StartNew()
             try {
                 if ((([string]$step.type).Trim()) -ieq 'sql') {
-                    Invoke-SqlStep -Step $step -Flow $Flow -Variables $variables -Parametria $Parametria -LogsDir $LogsDir -Entry $entry
+                    Invoke-SqlStep -Step $step -Flow $Flow -Variables $variables -Parametria $Parametria -LogsDir $LogsDir -RunLogFileName $runLogFileName -Entry $entry
                 } else {
                 $path = Expand-Template -Template $step.pathTemplate -Variables $variables
                 # Un flow puede pedir la URL base de otro campo del perfil en vez de
@@ -561,7 +592,7 @@ function Invoke-Flow {
                 ) -join "`n"
                 # Se loguea antes de mandar el request: así queda un registro aunque la
                 # respuesta nunca llegue (timeout, host inalcanzable, etc.).
-                Write-HttpLog -LogsDir $LogsDir -FileName 'http.log' -Content $requestLogText
+                Write-HttpLog -LogsDir $LogsDir -FileName $runLogFileName -Content $requestLogText
 
                 $response = $httpClient.SendAsync($request).GetAwaiter().GetResult()
                 $responseBody = $response.Content.ReadAsStringAsync().GetAwaiter().GetResult()
@@ -573,7 +604,7 @@ function Invoke-Flow {
                     $responseBody,
                     '---'
                 ) -join "`n"
-                Write-HttpLog -LogsDir $LogsDir -FileName 'http.log' -Content $responseLogText
+                Write-HttpLog -LogsDir $LogsDir -FileName $runLogFileName -Content $responseLogText
 
                 $entry.httpStatusCode = [int]$response.StatusCode
                 # Se manda al navegador casi entera (hasta 200.000 caracteres, ~200KB):
@@ -581,7 +612,8 @@ function Invoke-Flow {
                 # superan ampliamente los 800 caracteres que se usaban antes, y la UI necesita
                 # el JSON completo para poder parsearlo (ej. filtrar cuentas por código de
                 # sistema). El corte a 200.000 sigue existiendo solo como resguardo ante una
-                # respuesta verdaderamente enorme. logs/http.log siempre guarda el body entero.
+                # respuesta verdaderamente enorme. El archivo de log de esta corrida
+                # (logs/http/...) siempre guarda el body entero.
                 $entry.responseSummary = if ($responseBody.Length -gt 200000) { $responseBody.Substring(0, 200000) + '...' } else { $responseBody }
 
                 $expectedStatus = 200

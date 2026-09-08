@@ -423,7 +423,8 @@ try {
                     # del archivo — cada operación bancaria individual queda trazada a quién la
                     # ejecutó, no solo a qué flow/perfil). Nunca incluye los inputs ni la
                     # respuesta (pueden traer datos bancarios reales) — el detalle completo de
-                    # cada request/response sigue en logs/http.log.
+                    # cada request/response de esta corrida queda en su propio archivo bajo
+                    # logs/http/ (ver modules/FlowEngine.psm1, Invoke-Flow).
                     $okSteps = @($log | Where-Object { $_.status -eq 'Success' }).Count
                     $errorSteps = @($log | Where-Object { $_.status -ne 'Success' }).Count
                     Write-SecurityLog -LogsDir $logsDir -Message "EJECUCIÓN flow='$($selectedFlow.name)' perfil='$($selectedProfile.name)' usuario='$($session.username)' rol='$($session.role)' pasos_ok=$okSteps pasos_error=$errorSteps"

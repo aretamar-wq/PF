@@ -364,7 +364,8 @@ async function handleRun(req, res, session) {
 
   // Una entrada por cada corrida de /api/run (para un flow CSV, una por fila del
   // archivo) — nunca incluye inputs ni la respuesta (pueden traer datos
-  // bancarios reales). El detalle completo sigue en logs/http.log.
+  // bancarios reales). El detalle completo de request/response de esta corrida
+  // queda en su propio archivo bajo logs/http/ (ver flowEngine.js, invokeFlow).
   const okSteps = log.filter((e) => e.status === 'Success').length;
   const errorSteps = log.filter((e) => e.status !== 'Success').length;
   securityStore.writeSecurityLog(
