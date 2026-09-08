@@ -106,15 +106,33 @@
         <legend>Certificado cliente (TLS mutuo)</legend>
         <p class="muted">
           Solo si el servidor de este perfil exige TLS mutuo (ej. Nova-Link para
-          "Transferencia DEBIN"). Ruta a un archivo .pfx/.p12 ya presente en el
-          servidor (no se sube acá) — no un par certificado+clave en PEM: es el
-          único formato que también carga Windows PowerShell 5.1.
+          "Transferencia DEBIN"). Completá UNA de las dos opciones (nunca las
+          dos) con archivos ya presentes en el servidor — no se suben acá.
         </p>
-        <label>Ruta al certificado (.pfx/.p12)
+        <label>Opción A — certificado ya armado (.pfx/.p12)
           <input name="clientCertPfxPath" placeholder="/opt/apicore/certs/nova-link.pfx" />
+          <button type="button" id="browseCertPfxPathBtn">Buscar...</button>
+        </label>
+        <label>Opción B — certificado (.cer/.crt/.pem)
+          <input name="clientCertPath" placeholder="/opt/apicore/certs/nova-link.crt" />
           <button type="button" id="browseCertPathBtn">Buscar...</button>
         </label>
-        <label>Contraseña del .pfx <input name="clientCertPassphrase" type="password" placeholder="(sin cambios si se deja vacío; vacío si el .pfx no tiene contraseña)" /></label>
+        <label>Opción B — clave privada (.key)
+          <input name="clientKeyPath" placeholder="/opt/apicore/certs/nova-link.key" />
+          <button type="button" id="browseKeyPathBtn">Buscar...</button>
+        </label>
+        <p class="muted">
+          La Opción B requiere <code>openssl</code> instalado en el servidor
+          si corrés el backend PowerShell (Windows PowerShell 5.1 no puede
+          cargar un certificado y una clave privada por separado sin él) — el
+          backend Node.js no lo necesita. Si no tenés <code>openssl</code> a
+          mano, usá la Opción A: convertí el par vos mismo con
+          <code>openssl pkcs12 -export -in cert.crt -inkey key.key -out cert.pfx</code>
+          en cualquier otra máquina que sí lo tenga.
+        </p>
+        <label>Contraseña (de la clave privada, o del .pfx)
+          <input name="clientCertPassphrase" type="password" placeholder="(sin cambios si se deja vacío; vacío si no tiene contraseña)" />
+        </label>
       </fieldset>
       <div class="dialog-actions">
         <button type="button" id="cancelProfileBtn">Cancelar</button>
