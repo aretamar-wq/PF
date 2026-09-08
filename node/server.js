@@ -317,6 +317,7 @@ function handleFlowsGet(res) {
     description: f.description,
     inputMode: f.inputMode,
     inputs: f.inputs,
+    requiredProfileName: f.requiredProfileName || null,
     steps: (f.steps || []).map((s) => ({ name: s.name, type: s.type || null })),
   }));
   writeJsonResponse(res, 200, summary);
@@ -345,6 +346,18 @@ async function handleRun(req, res, session) {
       `EJECUCIÓN DENEGADA usuario='${session.username}' rol='${session.role}' flow='${selectedFlow.name}' (rol sin permiso para ejecutar)`
     );
     writeJsonResponse(res, 403, { error: `Tu rol ('${session.role}') no tiene permiso para ejecutar flows.` });
+    return;
+  }
+  // Un flow puede fijar a qué perfil está atado (ej. "Transferencia DEBIN"
+  // solo tiene sentido contra el servidor de Nova-Link) — evita que se
+  // ejecute por error contra el perfil equivocado (otro servidor, sin las
+  // rutas/API que ese flow espera) si el selector de la UI quedó en el
+  // perfil de otro flow. La UI ya lo autoselecciona/bloquea, esto es la
+  // defensa del lado del servidor.
+  if (selectedFlow.requiredProfileName && selectedFlow.requiredProfileName !== selectedProfile.name) {
+    writeJsonResponse(res, 400, {
+      error: `El flow '${selectedFlow.name}' solo se puede ejecutar con el perfil '${selectedFlow.requiredProfileName}' (se mandó '${selectedProfile.name}').`,
+    });
     return;
   }
 

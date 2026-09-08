@@ -807,6 +807,14 @@ los flows de ejemplo):
   sentido que alguien elija a mano. Es el caso de
   `Flows/recupera-cuentas-sql.json` (ver "Flow 'Recupera cuentas (SQL)'" más
   abajo): existe, se puede ejecutar, pero no aparece en la lista de la UI.
+- `"requiredProfileName": "<nombre de un perfil>"` (opcional) ata el flow a
+  ese perfil puntual, para uno que solo tenga sentido contra un servidor
+  específico (ej. "Transferencia DEBIN" contra "Testing Nova-Link" — ver esa
+  sección más abajo, incluye por qué se agregó). La UI autoselecciona y
+  bloquea el selector de "Perfil" mientras el flow esté elegido, y el
+  servidor rechaza `/api/run` con 400 si de todos modos llega con otro
+  perfil. Sin este campo, el selector queda libre — el comportamiento de
+  siempre.
 
 ### Flows que cargan sus inputs desde un archivo CSV (carga masiva)
 
@@ -1147,12 +1155,29 @@ es un flow CSV — un input por campo, una transferencia por corrida.
 viene en `profiles.sample.json`, junto con "Testing IBS-Link" — ver
 "Configurar perfiles de conexión" más arriba). Como cualquier otro flow, la
 URL se arma como `<baseUrl del perfil seleccionado>` + `pathTemplate`
-(`/api/debin/cuenta/credin`) — así que antes de correrlo hay que elegir en
-"Perfil" **"Testing Nova-Link"**, no "Testing IBS-Link" (el que usa "Alta de
-Plazo Fijos - File"). Si Nova-Link devuelve error de conexión, lo primero a
-revisar es que el perfil correcto esté seleccionado. Si además exige TLS
-mutuo, ese mismo perfil es donde se configuran las rutas al certificado
-cliente — ver "Certificado cliente (TLS mutuo)" más arriba.
+(`/api/debin/cuenta/credin`). Si Nova-Link exige TLS mutuo, ese mismo perfil
+es donde se configuran las rutas al certificado cliente — ver "Certificado
+cliente (TLS mutuo)" más arriba.
+
+**`"requiredProfileName": "Testing Nova-Link"`** en el flow ata este flow a
+ese perfil puntual — nace de un error real: corrió una vez con "Testing
+IBS-Link" seleccionado (quedaba de haber usado "Alta de Plazo Fijos - File"
+antes) y el request fue a parar a `https://ibs-twapi03.voii.com.ar/ibsapi/api/debin/cuenta/credin`,
+que por supuesto no existe (404, "no type was found that matches the
+controller named 'debin'"). Con `requiredProfileName` seteado:
+
+- La UI (`wwwroot/app.js`, `applyRequiredProfile`) autoselecciona "Testing
+  Nova-Link" en el selector de "Perfil" apenas se elige este flow, y
+  **bloquea el selector** mientras siga elegido — no se puede correr contra
+  otro perfil por descuido. Si el perfil todavía no existe, en cambio deja
+  el selector libre y avisa que hay que crearlo antes (el botón "Ejecutar
+  flow" queda deshabilitado hasta entonces).
+- El servidor (`POST /api/run`, los dos backends) igual vuelve a chequear
+  esto de forma independiente: si el `profileName` que llega no coincide con
+  `requiredProfileName`, rechaza con 400 antes de llamar a nada — la UI es
+  solo comodidad, esto es lo que realmente lo impide. Cualquier otro flow
+  sin `requiredProfileName` sigue funcionando exactamente igual que antes
+  (selector libre, sin este chequeo).
 
 **Todos los campos del body son inputs del formulario** — a diferencia del
 resto de los flows, acá no hay nada fijo en Parametría ni hardcodeado en el

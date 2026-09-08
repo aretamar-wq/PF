@@ -1,6 +1,7 @@
 {
   "name": "Transferencia DEBIN",
-  "description": "Transferencia DEBIN/CVU contra el servicio Nova-Link (POST /api/debin/cuenta/credin). Corre contra un servidor DISTINTO del resto de los flows — antes de ejecutarlo, elegí en \"Perfil\" el perfil \"Testing Nova-Link\" (ya viene en profiles.sample.json), no el que uses para \"Alta de Plazo Fijos - File\". Si Nova-Link exige TLS mutuo, ese mismo perfil es donde se configuran las rutas al certificado cliente y la clave privada (ver fieldset \"Certificado cliente (TLS mutuo)\" al editar el perfil). Todos los campos del body van como input: no hay valores fijos en Parametría para este flow — se completan a mano en cada transferencia.",
+  "description": "Transferencia DEBIN/CVU contra el servicio Nova-Link (POST /api/debin/cuenta/credin). Corre contra un servidor DISTINTO del resto de los flows — por eso este flow tiene fijo el perfil \"Testing Nova-Link\" (ver requiredProfileName): la UI lo autoselecciona y bloquea el selector de Perfil al elegir este flow, para que no se pueda correr por error contra el perfil de otro flow (ej. el de \"Alta de Plazo Fijos - File\"). Si Nova-Link exige TLS mutuo, ese mismo perfil es donde se configuran las rutas al certificado cliente y la clave privada (ver fieldset \"Certificado cliente (TLS mutuo)\" al editar el perfil). Todos los campos del body van como input: no hay valores fijos en Parametría para este flow — se completan a mano en cada transferencia.",
+  "requiredProfileName": "Testing Nova-Link",
   "inputs": [
     { "variableName": "creditoCuit", "label": "CUIT (crédito)" },
     { "variableName": "creditoCbu", "label": "CBU (crédito)" },

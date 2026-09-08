@@ -377,11 +377,12 @@ try {
                 $flows = @(Get-Flows -FlowsDir $flowsDir) | Where-Object { -not $_.hidden }
                 $summary = @($flows | ForEach-Object {
                     [pscustomobject][ordered]@{
-                        name        = $_.name
-                        description = $_.description
-                        inputMode   = $_.inputMode
-                        inputs      = $_.inputs
-                        steps       = @($_.steps | ForEach-Object { [pscustomobject]@{ name = $_.name; type = $_.type } })
+                        name                = $_.name
+                        description         = $_.description
+                        inputMode           = $_.inputMode
+                        inputs              = $_.inputs
+                        requiredProfileName = $_.requiredProfileName
+                        steps               = @($_.steps | ForEach-Object { [pscustomobject]@{ name = $_.name; type = $_.type } })
                     }
                 })
                 Write-JsonResponse -Response $response -StatusCode 200 -Body $summary
@@ -403,6 +404,13 @@ try {
                 } elseif (-not (Test-RoleCanRunFlow -Role $session.role -FlowName $selectedFlow.name)) {
                     Write-SecurityLog -LogsDir $logsDir -Message "EJECUCIÓN DENEGADA usuario='$($session.username)' rol='$($session.role)' flow='$($selectedFlow.name)' (rol sin permiso para ejecutar)"
                     Write-JsonResponse -Response $response -StatusCode 403 -Body ([pscustomobject]@{ error = "Tu rol ('$($session.role)') no tiene permiso para ejecutar flows." })
+                } elseif ($selectedFlow.requiredProfileName -and $selectedFlow.requiredProfileName -ne $selectedProfile.name) {
+                    # Un flow puede fijar a qué perfil está atado (ej. "Transferencia DEBIN"
+                    # solo tiene sentido contra el servidor de Nova-Link) — evita que se
+                    # ejecute por error contra el perfil equivocado si el selector de la UI
+                    # quedó en el perfil de otro flow. La UI ya lo autoselecciona/bloquea,
+                    # esto es la defensa del lado del servidor.
+                    Write-JsonResponse -Response $response -StatusCode 400 -Body ([pscustomobject]@{ error = "El flow '$($selectedFlow.name)' solo se puede ejecutar con el perfil '$($selectedFlow.requiredProfileName)' (se mandó '$($selectedProfile.name)')." })
                 } else {
                     $inputValues = @{}
                     if ($payload.inputs) {

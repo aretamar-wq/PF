@@ -254,7 +254,41 @@ function selectFlow(name) {
     }
   }
 
+  applyRequiredProfile();
   updateRunButtonState();
+}
+
+// Un flow puede fijar a qué perfil está atado (flow.requiredProfileName —
+// hoy solo "Transferencia DEBIN", que necesita el perfil de Nova-Link, un
+// servidor distinto del resto de los flows). Autoseleccionarlo y bloquear el
+// selector mientras ese flow esté elegido evita el error real que motivó
+// esto: correr el flow con el perfil de otro servidor seleccionado (el
+// servidor lo rechaza, pero recién ahí — mejor no dejar que pase). El
+// servidor igual lo vuelve a validar en /api/run: esto es solo UX.
+function applyRequiredProfile() {
+  const profileSelect = document.getElementById('profileSelect');
+  const hint = document.getElementById('requiredProfileHint');
+  const requiredProfileName = state.selectedFlow && state.selectedFlow.requiredProfileName;
+
+  if (!requiredProfileName) {
+    profileSelect.disabled = false;
+    hint.style.display = 'none';
+    return;
+  }
+
+  const exists = state.profiles.some((p) => p.name === requiredProfileName);
+  if (exists) {
+    profileSelect.value = requiredProfileName;
+    profileSelect.disabled = true;
+    hint.textContent = `Este flow solo corre con el perfil "${requiredProfileName}".`;
+    // profileSelect.value = ... no dispara 'change', así que hay que refrescar
+    // a mano lo que depende de ese evento (el botón "Probar token").
+    updateTestTokenButtonState();
+  } else {
+    profileSelect.disabled = false;
+    hint.textContent = `Este flow necesita un perfil llamado "${requiredProfileName}" (todavía no existe — crealo con "Nuevo...").`;
+  }
+  hint.style.display = '';
 }
 
 function updateRunButtonState() {
@@ -269,6 +303,11 @@ function updateRunButtonState() {
   // vuelta ocultando/deshabilitando el botón para un rol que ya sabemos que no
   // puede ejecutar nada.
   if (state.currentUser && state.currentUser.role === 'lectura') {
+    enabled = false;
+  }
+  // Si el flow necesita un perfil puntual (ver applyRequiredProfile) que
+  // todavía no existe, no dejar correrlo: fallaría igual en el servidor.
+  if (flow && flow.requiredProfileName && !state.profiles.some((p) => p.name === flow.requiredProfileName)) {
     enabled = false;
   }
   document.getElementById('runBtn').disabled = !enabled;
