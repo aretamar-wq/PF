@@ -1,0 +1,19 @@
+{
+  "name": "Consulta DEBIN (solo)",
+  "description": "GET /api/debin/cuenta/consultar/{id}, contra el mismo servicio Nova-Link (baseUrlField \"novaBaseUrl\", authOverride \"None\") que \"Transferencia DEBIN\". No aparece en la lista de flows (\"hidden\": true): lo usa 'Transferencia DEBIN - File' por atrás, al terminar de procesar todas las filas del CSV, una vez por cada transferencia que sí se hizo (usando el \"id\" que trajo la respuesta de esa transferencia) — ver wwwroot/app.js, función runFlowFromCsv. Se puede seguir ejecutando por nombre vía /api/run aunque no se vea en la UI.",
+  "hidden": true,
+  "baseUrlField": "novaBaseUrl",
+  "authOverride": "None",
+  "inputs": [
+    { "variableName": "idOperacion", "label": "Id de la operación" }
+  ],
+  "steps": [
+    {
+      "name": "1. Consulta DEBIN",
+      "method": "GET",
+      "pathTemplate": "/api/debin/cuenta/consultar/{{idOperacion}}",
+      "headers": { "Accept": "application/json" },
+      "expectedStatusCode": 200
+    }
+  ]
+}

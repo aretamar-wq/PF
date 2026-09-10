@@ -14,9 +14,10 @@ runtime adicional.
 > `Flows/plazo-fijo-cocos-files-sql.json` ("Alta de Plazo Fijos - File"),
 > `Flows/transferencia-debin.json` ("Transferencia DEBIN", manual) y
 > `Flows/transferencia-debin-files.json` ("Transferencia DEBIN - File", por
-> archivo `.csv`) —, más dos dependencias internas que no aparecen en la
-> lista (`Flows/recupera-cuentas-sql.json` y
-> `Flows/plazo-fijo-cocos-files-solo-alta.json`, ver "Módulo de flows
+> archivo `.csv`) —, más tres dependencias internas que no aparecen en la
+> lista (`Flows/recupera-cuentas-sql.json`,
+> `Flows/plazo-fijo-cocos-files-solo-alta.json` y
+> `Flows/transferencia-debin-consultar.json`, ver "Módulo de flows
 > ocultos"). Los demás flows de versiones anteriores (ejemplos con
 > endpoints ficticios, variantes manuales/CSV previas de Plazo Fijo Cocos,
 > consultas sueltas) se borraron del repo — el historial de git los tiene
@@ -904,15 +905,15 @@ vez por cada fila (ej. `Flows/plazo-fijo-cocos-files-sql.json`). Para esto:
 ### Archivos de salida (`files/`)
 
 `wwwroot/app.js` (`saveOutputFiles`) arma, al terminar de procesar un flow
-CSV, hasta dos archivos y los manda a `POST /api/save-output`
+CSV, hasta tres archivos y los manda a `POST /api/save-output`
 (`server.ps1`), que los escribe en `<carpeta de la app>/files/` (se crea
 sola si no existe; **no se versiona**, está en `.gitignore`, porque va a
-tener datos bancarios reales). Los dos comparten el mismo timestamp
+tener datos bancarios reales). Todos comparten el mismo timestamp
 (`yyyyMMddHHmmss`, generado una sola vez al terminar el lote), para que se
 identifiquen como del mismo archivo procesado. Solo dos flows CSV generan
 estos archivos hoy — "Alta de Plazo Fijos - File" (`pfout-`/`pfouterror-`)
-y "Transferencia DEBIN - File" (`dbnout-`/`dbnouterror-`) — y, como cada
-corrida es de un solo flow, nunca se mezclan entre sí:
+y "Transferencia DEBIN - File" (`dbnout-`/`dbnouterror-`/`dbnconsulta-`) —
+y, como cada corrida es de un solo flow, nunca se mezclan entre sí:
 
 - **`pfout-<timestamp>.csv`** — **una fila por cada fila del CSV de
   origen**, se haya completado o no, con columna `realizado` (`s`/`n`) al
@@ -957,14 +958,21 @@ corrida es de un solo flow, nunca se mezclan entre sí:
 - **`dbnouterror-<timestamp>.csv`** (solo "Transferencia DEBIN - File") —
   mismo formato que `pfouterror-...` (fila de entrada tal cual + IdMensaje,
   sin encabezado), para las filas que fallaron.
+- **`dbnconsulta-<timestamp>.csv`** (solo "Transferencia DEBIN - File") —
+  una fila por cada transferencia consultada (`realizado = "s"` en
+  `dbnout-...`), con el resultado de `GET /api/debin/cuenta/consultar/{id}`
+  — ver "Flow 'Transferencia DEBIN - File'" más abajo para el detalle
+  completo de columnas. **Con encabezado.** Si ninguna fila llegó a
+  transferirse, no se genera.
 
 Si no hubo ningún plazo fijo dado de alta, no se genera `pfout-...`; si no
 hubo ninguna fila fallada, no se genera `pfouterror-.../dbnouterror-...`.
 `POST /api/save-output` valida que `prefix`
-(`pfout-`/`pfouterror-`/`dbnout-`/`dbnouterror-`) y `timestamp` tengan un
-formato estricto (`[a-zA-Z0-9-]` y 14 dígitos, respectivamente) antes de
-armar el nombre de archivo — es la única defensa contra path traversal en
-un endpoint que escribe a disco a partir de un valor que arma el cliente.
+(`pfout-`/`pfouterror-`/`dbnout-`/`dbnouterror-`/`dbnconsulta-`) y
+`timestamp` tengan un formato estricto (`[a-zA-Z0-9-]` y 14 dígitos,
+respectivamente) antes de armar el nombre de archivo — es la única defensa
+contra path traversal en un endpoint que escribe a disco a partir de un
+valor que arma el cliente.
 
 Además de guardarse en `files/`, cada archivo se descarga automáticamente
 al navegador apenas se guarda (`downloadTextFile`, mismo mecanismo Blob +
@@ -973,14 +981,15 @@ lo pida.
 
 **Panel "Archivos de salida..."** (botón en la barra superior, visible para
 cualquier usuario logueado): lista todo lo que hay guardado en `files/` que
-matchee el patrón `(pfout|pfouterror|dbnout|dbnouterror)-<14 dígitos>.csv`
-— nombre, tipo ("Detalle de Plazos Fijos" para `pfout-...`, "Detalle de
-Transferencias DEBIN" para `dbnout-...`, "Filas con error" para
-`pfouterror-.../dbnouterror-...`), fecha y tamaño, más recientes primero —
-y permite volver a descargar cualquiera (incluidos `pfout-.../dbnout-...`,
-no solo los de error), útil si se cerró el navegador antes de que la
-descarga automática terminara o si hace falta recuperar el de una corrida
-anterior. Tiene
+matchee el patrón
+`(pfout|pfouterror|dbnout|dbnouterror|dbnconsulta)-<14 dígitos>.csv` —
+nombre, tipo ("Detalle de Plazos Fijos" para `pfout-...`, "Detalle de
+Transferencias DEBIN" para `dbnout-...`, "Consulta de estado DEBIN" para
+`dbnconsulta-...`, "Filas con error" para `pfouterror-.../dbnouterror-...`),
+fecha y tamaño, más recientes primero — y permite volver a descargar
+cualquiera (incluidos los de detalle/consulta, no solo los de error), útil
+si se cerró el navegador antes de que la descarga automática terminara o si
+hace falta recuperar el de una corrida anterior. Tiene
 filtro por rango de fechas (Desde/Hasta, ambos límites inclusive,
 comparados contra la fecha de modificación del archivo en hora local) —
 se aplica en el cliente sobre la misma lista que ya trajo `/api/output-files`,
@@ -1287,16 +1296,40 @@ la mayoría de los campos del body salen de tres fuentes distintas:
   un cliente final que no existen en una carga por archivo.
 
 Igual que "Alta de Plazo Fijos - File" (ver "Archivos de salida (`files/`)"
-más abajo), al terminar genera hasta 2 archivos con el mismo timestamp:
+más abajo), al terminar genera hasta 3 archivos con el mismo timestamp:
 `dbnout-<timestamp>.csv` (una fila por cada fila del archivo de entrada —
 los 9 valores de entrada más `codigoRespuesta`/`descripcionRespuesta`/
 `idRespuesta` de la respuesta, `idMensaje` y `realizado` = `"s"`/`"n"`; si
 es `"n"` las 3 columnas de respuesta quedan en blanco porque nunca se
-transfirió) y `dbnouterror-<timestamp>.csv` (la fila de entrada + IdMensaje
-de cada fila que falló, mismo formato que `pfouterror-...csv`). El
-resultado de cada fila también queda en el resumen por step en pantalla
-(`#csvSummary`) y, con el detalle completo de cada request/response, en su
-propio archivo bajo `logs/http/` (ver "Logs en disco").
+transfirió), `dbnouterror-<timestamp>.csv` (la fila de entrada + IdMensaje
+de cada fila que falló, mismo formato que `pfouterror-...csv`) y
+`dbnconsulta-<timestamp>.csv` (ver más abajo). El resultado de cada fila
+también queda en el resumen por step en pantalla (`#csvSummary`) y, con el
+detalle completo de cada request/response, en su propio archivo bajo
+`logs/http/` (ver "Logs en disco").
+
+**Consulta de estado, al terminar todas las transferencias.** La respuesta
+de la transferencia en sí solo trae el resultado de la evaluación inicial
+del DEBIN, no necesariamente el estado final de acreditación — por eso,
+después de procesar **todas** las filas del archivo (no intercalado fila
+por fila), `runFlowFromCsv` corre una consulta más por cada transferencia
+que sí se hizo (`realizado = "s"`, con un `idRespuesta` disponible):
+`GET /api/debin/cuenta/consultar/{id}` (`Flows/transferencia-debin-consultar.json`,
+`"name": "Consulta DEBIN (solo)"`, oculto — mismo servidor/perfil/auth que
+el resto), donde `{id}` es el `idRespuesta` que ya había quedado guardado
+para esa fila (el campo `id` de `params.response.respuesta` en la
+respuesta de la transferencia). El resultado de cada consulta se acumula
+en `dbnconsulta-<timestamp>.csv`, con columnas `idMensaje`/`idComprobante`
+(para cruzar con `dbnout-...`), `idOperacion` (el `id` consultado),
+`numError`, `codigoRespuesta`/`descripcionRespuesta` (`params.response.respuesta.*`),
+`evaluacionReglas`/`evaluacionPuntaje` (`...respuesta.evaluacion.*`),
+`estadoCodigo`/`estadoDescripcion` (`params.response.operacion.estado.*` —
+ej. `"ACREDITADO"`/`"0600 - ACREDITADO"`), `garantiaOk`, `tipoOperacion`,
+`loteId`, `fechaNegocio` (`...operacion.*`), `fechaDetalle`/`importeDetalle`
+(`...operacion.detalle.fecha`/`.importe`) y `errorConsulta` (vacío salvo
+que esa consulta puntual haya fallado — un error acá no aborta el resto:
+la transferencia ya se hizo, la consulta es solo informativa). Si ninguna
+fila llegó a transferirse, no se genera este archivo.
 
 ### Panel de resultado de un step SQL
 

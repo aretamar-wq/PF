@@ -5,6 +5,7 @@ const state = {
   lastLog: [],
   pfDetailRows: [],
   debinDetailRows: [],
+  debinConsultaRows: [],
   errorRows: [],
   successfulOperations: [],
   token: sessionStorage.getItem('pf_token') || null,
@@ -201,6 +202,7 @@ function selectFlow(name) {
   hideSqlResult();
   state.pfDetailRows = [];
   state.debinDetailRows = [];
+  state.debinConsultaRows = [];
   state.errorRows = [];
   state.successfulOperations = [];
 
@@ -408,6 +410,15 @@ function isTransferenciaDebinFilesFlow(flow) {
 // TODAS las filas antes del loop, vía fetchAccountsByCuit — no depende de
 // Circuito.
 const PLAZO_FIJO_SOLO_ALTA_FLOW_NAME = 'Alta de Plazo Fijo (solo)';
+
+// Al terminar de procesar todas las filas de "Transferencia DEBIN - File",
+// se consulta el estado de cada transferencia que sí se hizo (GET
+// /api/debin/cuenta/consultar/{id}) — la respuesta de la transferencia en
+// sí solo trae el resultado de la evaluación inicial, no necesariamente el
+// estado final de acreditación. Se corre DESPUÉS de todo el archivo (no
+// intercalado fila por fila) porque así lo pidieron: primero todas las
+// transferencias, después todas las consultas.
+const DEBIN_CONSULTAR_FLOW_NAME = 'Consulta DEBIN (solo)';
 
 // Manda al servidor las (cuit, numeroComprobante) de TODAS las filas del
 // archivo en una sola consulta (evita duplicar una operación bancaria real
@@ -638,6 +649,7 @@ async function runFlowFromCsv() {
   state.lastLog = [];
   state.pfDetailRows = [];
   state.debinDetailRows = [];
+  state.debinConsultaRows = [];
   state.errorRows = [];
   state.successfulOperations = [];
 
@@ -1037,6 +1049,75 @@ async function runFlowFromCsv() {
       }
     }
 
+    // "Transferencia DEBIN - File": una consulta por cada transferencia que
+    // sí se hizo (realizado = "s" y con idRespuesta), usando
+    // DEBIN_CONSULTAR_FLOW_NAME. Un error puntual en una consulta (red,
+    // HTTP distinto de 200, respuesta con formato inesperado) no aborta el
+    // resto — queda registrado en la columna errorConsulta de esa fila, ya
+    // que la transferencia en sí ya se hizo y no depende de esto.
+    if (isTransferenciaDebinFilesFlow(flow)) {
+      const toQuery = state.debinDetailRows.filter((row) => row.realizado === 's' && row.idRespuesta);
+      for (let i = 0; i < toQuery.length; i++) {
+        const detailRow = toQuery[i];
+        progressEl.textContent = `Consultando estado de transferencias (${i + 1} de ${toQuery.length})...`;
+
+        const consultaRow = {
+          idMensaje: detailRow.idMensaje,
+          idComprobante: detailRow.idComprobante,
+          idOperacion: detailRow.idRespuesta,
+          numError: '',
+          codigoRespuesta: '',
+          descripcionRespuesta: '',
+          evaluacionReglas: '',
+          evaluacionPuntaje: '',
+          estadoCodigo: '',
+          estadoDescripcion: '',
+          garantiaOk: '',
+          tipoOperacion: '',
+          loteId: '',
+          fechaNegocio: '',
+          fechaDetalle: '',
+          importeDetalle: '',
+          errorConsulta: '',
+        };
+
+        try {
+          const consultaEntries = await runFlowByName(DEBIN_CONSULTAR_FLOW_NAME, { idOperacion: detailRow.idRespuesta });
+          const lastEntry = consultaEntries[consultaEntries.length - 1];
+          if (lastEntry && lastEntry.status === 'Success' && lastEntry.responseSummary) {
+            const parsed = JSON.parse(lastEntry.responseSummary);
+            const response = (parsed && parsed.params && parsed.params.response) || {};
+            const respuesta = response.respuesta || {};
+            const evaluacion = respuesta.evaluacion || {};
+            const operacion = response.operacion || {};
+            const estado = operacion.estado || {};
+            const detalle = operacion.detalle || {};
+            Object.assign(consultaRow, {
+              numError: parsed.numError != null ? parsed.numError : '',
+              codigoRespuesta: respuesta.codigo != null ? respuesta.codigo : '',
+              descripcionRespuesta: respuesta.descripcion != null ? respuesta.descripcion : '',
+              evaluacionReglas: evaluacion.reglas != null ? evaluacion.reglas : '',
+              evaluacionPuntaje: evaluacion.puntaje != null ? evaluacion.puntaje : '',
+              estadoCodigo: estado.codigo != null ? estado.codigo : '',
+              estadoDescripcion: estado.descripcion != null ? estado.descripcion : '',
+              garantiaOk: operacion.garantiaOk != null ? operacion.garantiaOk : '',
+              tipoOperacion: operacion.tipo != null ? operacion.tipo : '',
+              loteId: operacion.loteId != null ? operacion.loteId : '',
+              fechaNegocio: operacion.fechaNegocio != null ? operacion.fechaNegocio : '',
+              fechaDetalle: detalle.fecha != null ? detalle.fecha : '',
+              importeDetalle: detalle.importe != null ? detalle.importe : '',
+            });
+          } else {
+            consultaRow.errorConsulta = (lastEntry && lastEntry.errorMessage) || 'No se pudo consultar el estado de la transferencia.';
+          }
+        } catch (err) {
+          consultaRow.errorConsulta = err.message;
+        }
+
+        state.debinConsultaRows.push(consultaRow);
+      }
+    }
+
     const savedFiles = await saveOutputFiles(flow);
     if (savedFiles.length > 0) {
       doneText += ` Guardado en files/: ${savedFiles.join(', ')}.`;
@@ -1128,24 +1209,32 @@ async function saveOutputFile(prefix, timestamp, content) {
   }
 }
 
-// Al terminar de procesar el CSV: guarda, si corresponde, hasta 2 archivos
+// Al terminar de procesar el CSV: guarda, si corresponde, hasta 3 archivos
 // con el mismo timestamp (para que se identifiquen como del mismo lote).
 // Para "Alta de Plazo Fijos - File": pfout-<timestamp>.csv con una fila por
 // cada fila del archivo de entrada (se haya completado o no: "realizado" =
 // "s"/"n" — si es "n", el resto de las columnas del plazo fijo quedan en
 // blanco porque nunca se dio de alta) y pfouterror-<timestamp>.csv con la
 // fila de entrada + IdMensaje de cada fila que falló. Para "Transferencia
-// DEBIN - File": mismo esquema, pero dbnout-<timestamp>.csv (con las
+// DEBIN - File": mismo esquema para dbnout-<timestamp>.csv (con las
 // columnas de la transferencia en vez de las del plazo fijo) y
-// dbnouterror-<timestamp>.csv. Como cada corrida es de un solo flow CSV,
-// nunca se mezclan pfDetailRows con debinDetailRows en la misma corrida —
-// alcanza con mirar cuál de los dos tiene filas para saber cuál generar.
-// Las filas con "realizado" = "n" están en los dos archivos de ese flow,
-// con formato distinto cada vez (acá el de salida normal, en el de error
-// tal cual vino en el archivo de entrada).
+// dbnouterror-<timestamp>.csv, más dbnconsulta-<timestamp>.csv con el
+// resultado de consultar el estado de cada transferencia que sí se hizo
+// (ver el loop en runFlowFromCsv, después de procesar todas las filas).
+// Como cada corrida es de un solo flow CSV, nunca se mezclan pfDetailRows
+// con debinDetailRows/debinConsultaRows en la misma corrida — alcanza con
+// mirar cuál de los dos tiene filas para saber cuál generar. Las filas con
+// "realizado" = "n" están en los dos archivos de ese flow, con formato
+// distinto cada vez (acá el de salida normal, en el de error tal cual vino
+// en el archivo de entrada).
 async function saveOutputFiles(flow) {
   const savedFiles = [];
-  if (state.pfDetailRows.length === 0 && state.debinDetailRows.length === 0 && state.errorRows.length === 0) {
+  if (
+    state.pfDetailRows.length === 0 &&
+    state.debinDetailRows.length === 0 &&
+    state.debinConsultaRows.length === 0 &&
+    state.errorRows.length === 0
+  ) {
     return savedFiles;
   }
 
@@ -1168,6 +1257,16 @@ async function saveOutputFiles(flow) {
       lines.push(headers.map((h) => csvEscape(row[h])).join(','));
     }
     const fileName = await saveOutputFile('dbnout-', timestamp, lines.join('\r\n'));
+    if (fileName) savedFiles.push(fileName);
+  }
+
+  if (state.debinConsultaRows.length > 0) {
+    const headers = ['idMensaje', 'idComprobante', 'idOperacion', 'numError', 'codigoRespuesta', 'descripcionRespuesta', 'evaluacionReglas', 'evaluacionPuntaje', 'estadoCodigo', 'estadoDescripcion', 'garantiaOk', 'tipoOperacion', 'loteId', 'fechaNegocio', 'fechaDetalle', 'importeDetalle', 'errorConsulta'];
+    const lines = [headers.join(',')];
+    for (const row of state.debinConsultaRows) {
+      lines.push(headers.map((h) => csvEscape(row[h])).join(','));
+    }
+    const fileName = await saveOutputFile('dbnconsulta-', timestamp, lines.join('\r\n'));
     if (fileName) savedFiles.push(fileName);
   }
 
@@ -1587,11 +1686,13 @@ function formatFileSize(bytes) {
 }
 
 // pfout-... = detalle de plazos fijos dados de alta; dbnout-... = detalle
-// de transferencias DEBIN; pfouterror-.../dbnouterror-... = filas que
-// fallaron, de cada uno de los dos flows (ver "Archivos de salida (files/)"
-// en el README).
+// de transferencias DEBIN; dbnconsulta-... = resultado de consultar el
+// estado de cada transferencia DEBIN; pfouterror-.../dbnouterror-... =
+// filas que fallaron, de cada uno de los dos flows (ver "Archivos de
+// salida (files/)" en el README).
 function outputFileTypeLabel(name) {
   if (name.startsWith('pfouterror-') || name.startsWith('dbnouterror-')) return 'Filas con error';
+  if (name.startsWith('dbnconsulta-')) return 'Consulta de estado DEBIN';
   if (name.startsWith('dbnout-')) return 'Detalle de Transferencias DEBIN';
   return 'Detalle de Plazos Fijos';
 }
