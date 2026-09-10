@@ -10,6 +10,11 @@ sencilla (HTML/CSS/JS, sin frameworks ni dependencias) para manejarla desde el
 navegador. No hay que compilar nada ni instalar .NET, Node, Python ni ningún
 runtime adicional.
 
+> Esta es la distribución para Windows de ApiCore (backend PowerShell,
+> `*.local.json` como almacenamiento). La distribución para Linux (backend
+> Node.js + MariaDB, pensada para RHEL 8) vive en la branch
+> `distribucion-linux`.
+
 > **Importante:** hoy la app tiene 3 flows operativos —
 > `Flows/plazo-fijo-cocos-files-sql.json` ("Alta de Plazo Fijos - File"),
 > `Flows/transferencia-debin-files.json` ("Transferencia DEBIN - File", por
@@ -45,26 +50,12 @@ runtime adicional.
 
 ## Instalación en Linux (nginx + systemd)
 
-Ninguno de los dos backends usa PHP para nada. En un servidor Linux con
+`server.ps1` corre igual de bien en Linux (vía PowerShell 7+/`pwsh`, no hace
+falta Windows) que en su uso portable habitual. En un servidor Linux con
 nginx + PHP ya instalados (por ejemplo, sirviendo otros sitios), esto se
 agrega aparte sin tocar el PHP existente: nginx solo hace de reverse proxy
-hacia el backend elegido, igual que podría hacerlo hacia un backend PHP-FPM
-en otro `server {}`.
-
-Hay **dos backends intercambiables**, que sirven exactamente la misma
-`wwwroot/`, los mismos `Flows/*.json` y los mismos `*.local.json` — el
-frontend no sabe ni le importa cuál de los dos tiene enfrente. Elegí uno,
-**no hace falta correr los dos a la vez** en el mismo servidor:
-
-- **PowerShell** (`server.ps1`, el mismo motor que Windows) — conviene si ya
-  vas a instalar `pwsh` en el servidor de todos modos, o si preferís no
-  agregar Node.js como dependencia nueva.
-- **Node.js** (`node/server.js`) — conviene si el servidor ya tiene Node.js
-  o si preferís no instalar PowerShell en Linux. Ver el aviso sobre Sybase
-  más abajo antes de elegir esta opción si el flow de Alta de Plazo Fijos
-  es imprescindible desde el día uno.
-
-### Opción A: backend PowerShell
+hacia `server.ps1`, igual que podría hacerlo hacia un backend PHP-FPM en
+otro `server {}`.
 
 Requisitos en el servidor:
 
@@ -96,7 +87,7 @@ Pasos:
    HTTPS comentado para producción — recomendado, porque el login manda la
    contraseña de AD en el body del POST.
 
-#### Notas específicas de RHEL/CentOS/Rocky/Alma (backend PowerShell)
+### Notas específicas de RHEL/CentOS/Rocky/Alma
 
 - **Paquetes**: `pwsh` viene del repo de Microsoft
   (`sudo dnf install -y https://packages.microsoft.com/config/rhel/<versión>/packages-microsoft-prod.rpm`
@@ -128,320 +119,6 @@ Pasos:
   sudo firewall-cmd --permanent --add-service=https   # si vas a usar el bloque TLS
   sudo firewall-cmd --reload
   ```
-
-### Opción B: backend Node.js
-
-Todo el código vive en `node/` — ver "Backend Node.js (`node/`)" un poco más
-abajo para el detalle de qué está portado y qué no.
-
-Requisitos en el servidor:
-
-- **Node.js 18 o superior** (usa `fetch` global — no hace falta instalar
-  ningún paquete HTTP client aparte). En RHEL/CentOS/Rocky/Alma:
-  `sudo dnf module install -y nodejs:20` (o el módulo LTS disponible en tu
-  versión); en Debian/Ubuntu, el paquete `nodejs` del repo del sistema suele
-  quedar viejo — conviene el repo de [NodeSource](https://github.com/nodesource/distributions).
-- Conectividad de red hacia el core bancario y el Domain Controller de
-  Active Directory (igual que la Opción A). Sybase queda aparte — ver el
-  aviso de abajo.
-
-Pasos:
-
-1. Copiar el repo al servidor (por ejemplo `/opt/apicore`).
-2. `cd /opt/apicore/node && npm install --omit=dev` (instala
-   `ldapts` y `mysql2`).
-3. Tener una base MariaDB 10 accesible (en el mismo server o en otro),
-   aplicar `deploy/mariadb-schema.sql` y completar `db.local.json` en la
-   **raíz del repo** con los datos de conexión — ver "Base de datos
-   (MariaDB)" más abajo para el paso a paso completo. Ahí es donde viven
-   usuarios/roles, config de AD, perfiles de conexión y parametría para
-   este backend (**no** en `profiles.local.json`/`parametria.local.json`/
-   `security.local.json` — esos son del backend PowerShell).
-4. Instalar el servicio con **`deploy/apicore-node.service`**
-   (unidad systemd — corre `node server.js` como usuario sin privilegios,
-   solo escucha en `127.0.0.1:8787`). El archivo trae los pasos de
-   instalación en su propio comentario.
-5. Publicarlo con **`deploy/nginx-apicore-node.conf`** (reverse
-   proxy nginx → `127.0.0.1:8787`, probado contra nginx 1.18/1.24). Incluye
-   un bloque HTTPS comentado para producción.
-
-Las mismas notas de RHEL de la Opción A aplican tal cual acá (SELinux
-`httpd_can_network_connect`, firewalld, `conf.d/` en vez de
-`sites-available`) — son cosas de nginx, no cambian según el backend.
-
-### Conexión a Sybase en el backend Node.js
-
-A diferencia del backend PowerShell (ODBC directo vía `System.Data.Odbc`),
-Node.js no tiene ningún driver ODBC/Sybase maduro y mantenido, y SAP no
-provee ningún binding oficial de Node.js para su Open Client/Server ("OCS",
-el sucesor de Sybase OpenClient) — sí para Python, Perl y PHP. La solución
-implementada en `node/lib/sybaseClient.js` es invocar **`isql`** (la
-herramienta de línea de comandos que trae el OCS) **como subproceso** por
-cada query, y parsear su salida.
-
-**Requisitos en el servidor** (además de lo que ya pide la Opción B más
-arriba):
-
-- SAP OCS instalado (probado contra OCS 16.0) — el instalador deja todo en
-  `/opt/sap` por default (configurable, ver más abajo). No hace falta
-  `unixODBC` ni ningún driver ODBC: `sybaseClient.js` habla directo con
-  `isql`.
-- El archivo `interfaces` de Sybase **no hace falta que tenga el server
-  registrado** — `sybaseClient.js` conecta directo por `host:puerto`,
-  tomándolos del mismo `NetworkAddress=host,puerto` que ya tiene el
-  `connectionString` de Parametría (no hay que duplicar esa configuración
-  en ningún otro lado).
-
-**Variables de entorno** (todas opcionales, con default para una instalación
-estándar en `/opt/sap`):
-
-| Variable | Default | Para qué |
-|---|---|---|
-| `SYBASE_HOME` | `/opt/sap` | Raíz de la instalación del OCS |
-| `SYBASE_OCS_DIR` | `OCS-16_0` | Subcarpeta de la versión del OCS instalada |
-| `SYBASE_ISQL_PATH` | `$SYBASE_HOME/$SYBASE_OCS_DIR/bin/isql` | Ruta al binario, por si no sigue la convención de carpetas de arriba |
-| `SYBASE_ENV_SCRIPT` | `$SYBASE_HOME/SYBASE.sh` | Script que arma el entorno del OCS (`SYBASE`/`SYBASE_OCS`/`PATH`/`LD_LIBRARY_PATH`, incluida `lib3p64/`, donde vive la librería de cifrado del login) — `sybaseClient.js` lo "sourcea" en un `bash -c` antes de invocar `isql`, en vez de reconstruir esas variables a mano (armarlas a mano y olvidarse de `lib3p64/` es justo lo que rompía el login con `CS-LIBRARY error: comn_cryptolib_load()... Failed to load library`) |
-| `SYBASE_LANG` | `en_US.UTF-8` | Locale que se le fuerza a `isql` — sin esto falla con "context allocation routine failed... localization files" si el `LANG` del sistema (ej. `es_ES.UTF-8`) no está en `locales.dat` del OCS |
-| `SYBASE_ISQL_TIMEOUT_MS` | `30000` | Corta y mata el proceso `isql` si no respondió en ese tiempo |
-| `SYBASE_ISQL_WIDTH` | `8000` | Ancho de pantalla que se le pide a `isql` (`-w`) — evita que una tabla ancha se corte en varias líneas y rompa el parseo |
-
-Para setearlas, agregá líneas `Environment=` a `deploy/apicore-node.service`
-(por ejemplo `Environment=SYBASE_LANG=es_AR.UTF-8`) y
-`sudo systemctl daemon-reload && sudo systemctl restart apicore-node`.
-
-**Trade-offs conocidos de este enfoque** (aceptados, no son bugs — están
-documentados también como comentario en el propio `sybaseClient.js`):
-
-- La contraseña de Sybase viaja como argumento de línea de comandos (`-P`)
-  del proceso `isql` mientras corre esa query puntual — visible vía
-  `ps aux`/`/proc/<pid>/cmdline` para cualquier otro usuario con acceso al
-  mismo servidor durante esa ventana. Si esto es inaceptable en tu
-  organización, la alternativa es restringir `hidepid=2` en `/proc` a nivel
-  de sistema operativo.
-- El parseo de la tabla de resultados de `isql` es por posición de columna
-  (usa la línea de guiones para ubicar cada columna) — funciona bien con
-  los datos típicos de esta app (códigos de cuenta, DNI, montos), pero un
-  valor con salto de línea embebido rompería el parseo.
-- Solo se parsea el primer result set de la query — los flows de este repo
-  hacen un único `SELECT` por step SQL, no hace falta más.
-
-**Verificar la conectividad antes de correr un flow real:**
-
-```bash
-source /opt/sap/SYBASE.sh
-LANG=en_US.UTF-8 isql -S<host>:<puerto> -U<usuario> -P<clave>
-1> select getdate()
-2> go
-```
-
-Si devuelve la fecha/hora del servidor, la conectividad de base está OK.
-El botón **"Probar conexión"** de Parametría en la propia app hace
-exactamente esta misma prueba (usando el `connectionString` ya guardado),
-así que una vez configurado no hace falta repetir esto a mano.
-
-### Backend Node.js (`node/`)
-
-Port completo del backend a Node.js (sin dependencias de frameworks web —
-usa el módulo `http` nativo, igual de "a mano" que el router de
-`server.ps1`), pensado para el mismo contrato de API que ya consume
-`wwwroot/app.js`:
-
-```
-node/
-  server.js              Entry point: mismas rutas /api/* + estáticos que server.ps1
-  package.json           Dependencias externas: ldapts (bind LDAP), mysql2 (MariaDB)
-  scripts/
-    migrate-json-to-mariadb.js  Migración única de *.local.json a MariaDB, ver "Base de datos (MariaDB)"
-  lib/
-    jsonPath.js               Port de modules/JsonPath.psm1
-    variableSubstitution.js   Port de modules/VariableSubstitution.psm1
-    flowStore.js              Port de modules/FlowStore.psm1
-    flowEngine.js             Port de modules/FlowEngine.psm1 (fetch en vez de HttpClient)
-    sybaseClient.js           Sin equivalente PowerShell — conecta a Sybase vía isql (subproceso), ver "Conexión a Sybase en el backend Node.js" arriba
-    mariadbClient.js          Pool de conexiones a MariaDB (mysql2/promise), ver "Base de datos (MariaDB)"
-    dbConfigStore.js          Lee db.local.json (conexión a MariaDB + clave de cifrado)
-    cryptoUtil.js             Cifra/descifra campos sensibles (AES-256-GCM), ver "Campos cifrados"
-    profileStore.js           Perfiles — en MariaDB, no en profiles.local.json (ver "Base de datos (MariaDB)")
-    parametriaStore.js        Parametría — en MariaDB, no en parametria.local.json (ídem)
-    securityStore.js          Usuarios/roles/config de AD — en MariaDB (ídem); login LDAP con ldapts, sesiones en memoria (sin cambios)
-    processedOperationsStore.js  Antiduplicado — en MariaDB, no en logs/processed-operations.json (ídem)
-```
-
-`jsonPath.js`, `variableSubstitution.js`, `flowStore.js`, `flowEngine.js` y
-`sybaseClient.js` son ports 1:1 de su `.psm1` equivalente (mismo
-comportamiento, mismos nombres de campo en las respuestas JSON) — se
-verificó ejecutando el mismo flow HTTP de punta a punta (login LDAP real,
-extractVariables, omitIfNull, OAuth2, guardado de archivos) contra un
-servidor de prueba, y además con el `wwwroot/app.js` real corriendo en un
-navegador sin ningún cambio.
-
-> **Este backend Node.js ya NO comparte estado con `server.ps1` para
-> usuarios/roles, perfiles, parametría ni el registro antiduplicado** — ver
-> "Base de datos (MariaDB)" más abajo. Sigue compartiendo `Flows/` (los
-> flows en sí son los mismos archivos) y el contrato HTTP con
-> `wwwroot/app.js`, pero el backend PowerShell sigue usando
-> `security.local.json`/`profiles.local.json`/`parametria.local.json`/
-> `logs/processed-operations.json` tal cual siempre — los dos backends ya
-> no son intercambiables contra la misma instalación para estas 4 cosas. Si
-> hace falta que server.ps1 también use MariaDB, es trabajo aparte, no
-> hecho todavía.
-
-> **Login contra Active Directory en Linux:** tanto el bind LDAP de
-> PowerShell (`System.DirectoryServices.Protocols`) como el de Node.js
-> (`ldapts`) son multiplataforma — el login funciona igual contra el mismo
-> Domain Controller sin importar qué backend elijas. Si el Domain
-> Controller usa un certificado de una CA interna y tildás "Usar LDAPS
-> (SSL)" en la config de AD, esa CA tiene que estar en el almacén de
-> confianza del servidor Linux o el bind va a fallar por certificado no
-> confiable.
-
-> **Un usuario a la vez:** como dice "Limitaciones conocidas" más abajo,
-> ninguno de los dos backends está pensado como servicio con muchos
-> usuarios concurrentes ejecutando flows largos al mismo tiempo. Si varias
-> personas van a usar este deployment Linux a la vez, tenerlo en cuenta.
-
-### Base de datos (MariaDB)
-
-El backend Node.js guarda usuarios/roles, la configuración de Active
-Directory, perfiles de conexión, parametría y el registro antiduplicado en
-**MariaDB 10** en vez de en archivos JSON locales — pensado para un
-deployment en RHEL 8 con MariaDB ya instalada en el mismo servidor. El
-backend PowerShell (`server.ps1`) no se tocó: sigue usando los
-`*.local.json` de siempre (ver la nota más arriba).
-
-**1. Crear la base y el usuario de MariaDB** (una sola vez, con las
-credenciales que decidas usar):
-
-```sql
-CREATE DATABASE apicore CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
-CREATE USER 'apicore'@'localhost' IDENTIFIED BY 'elegí-una-contraseña';
-GRANT ALL PRIVILEGES ON apicore.* TO 'apicore'@'localhost';
-FLUSH PRIVILEGES;
-```
-
-**2. Aplicar el schema** (`deploy/mariadb-schema.sql` — crea las tablas y
-precarga los 3 roles válidos):
-
-```sh
-mysql -u apicore -p apicore < deploy/mariadb-schema.sql
-```
-
-**3. Configurar la conexión**: copiá `db.sample.json` a `db.local.json`
-(en la raíz del repo, **nunca se versiona** — está en `.gitignore`, mismo
-criterio que `profiles.local.json`) y completá host/puerto/base/usuario/
-contraseña reales, más una clave de cifrado (`encryptionKey`, ver más abajo):
-
-```json
-{
-  "host": "127.0.0.1",
-  "port": 3306,
-  "database": "apicore",
-  "user": "apicore",
-  "password": "elegí-una-contraseña",
-  "encryptionKey": "generar-con-el-comando-de-abajo"
-}
-```
-
-`encryptionKey` es la clave (AES-256, 32 bytes en hexadecimal) que cifra
-los secretos guardados en la base — ver "Campos cifrados" más abajo. Se
-genera una sola vez con:
-
-```sh
-node -e "console.log(require('crypto').randomBytes(32).toString('hex'))"
-```
-
-**Guardala con el mismo cuidado que una contraseña de producción: si se
-pierde, los valores ya cifrados en la base quedan irrecuperables** (no hay
-clave maestra de respaldo ni forma de "resetearla" sin perder esos datos —
-solo se podría volver a cargar esos campos a mano desde la UI). Mientras no
-guardes ningún secreto (contraseña de Sybase, client secret, etc.), la app
-funciona igual sin `encryptionKey` configurada; el error recién aparece
-cuando de verdad hace falta cifrar o descifrar algo.
-
-**4. Instalar la dependencia nueva** (`mysql2`, driver puro JS — sin nada
-que compilar) y **migrar los datos que ya hubiera** en los `*.local.json`
-viejos (si es una instalación nueva sin esos archivos, este paso no hace
-nada y no rompe nada):
-
-```sh
-cd node
-npm install
-node scripts/migrate-json-to-mariadb.js
-```
-
-El script es seguro de correr más de una vez (usuarios/perfiles se
-upsertean por su clave, las operaciones procesadas tienen una `UNIQUE KEY`
-que evita duplicados) — no borra ni modifica los archivos `*.local.json`
-originales, así que quedan de respaldo hasta que confirmes que todo
-funciona bien contra MariaDB.
-
-**Tablas** (ver `deploy/mariadb-schema.sql` para el detalle completo de
-columnas):
-
-- **`usuarios`** — un registro por usuario habilitado en la app
-  (`username`, `display_name`, `enabled`). Nunca guarda contraseña: la app
-  autentica contra Active Directory (bind LDAP puntual, ver "Módulo de
-  seguridad" más abajo) — es un allowlist de qué cuentas de AD pueden
-  entrar y con qué rol, no un almacén de credenciales.
-- **`rol`** — los 3 roles válidos (`admin`/`operador`/`lectura`), fila fija
-  precargada por el schema.
-- **`rol_usuarios`** — relación usuarios↔rol con tabla intermedia, pero
-  `usuario_id` es su `PRIMARY KEY`: fuerza como máximo una fila por
-  usuario, o sea **un solo rol por usuario** — mismo comportamiento que
-  antes (un rol plano por usuario en el JSON), solo que normalizado.
-- **`configuracion_ad`** — server/port/useSsl/domain del Domain Controller
-  contra el que se autentica el login. Fila única (`id = 1`).
-- **`parametria`** — valores fijos por categoría de cuenta (Cuenta
-  Corriente/Caja de Ahorro/Plazo Fijo) + conexión Sybase. Fila única
-  (`id = 1`), mismo criterio que `configuracion_ad`. `sybase_password`
-  cifrada — ver "Campos cifrados" más abajo.
-- **`perfiles`** — perfiles de conexión (`baseUrl`/`novaBaseUrl`/auth/
-  certificado cliente), `name` como clave única. Los campos OAuth2
-  avanzados que la UI no expone (`tokenParams`, `tokenHeaders`, etc. — ver
-  "Limitaciones conocidas") se guardan en una columna `token_extra_json`
-  (JSON) en vez de tener una columna sparse por cada uno; `profileStore.js`
-  los aplana de vuelta al nivel superior del objeto perfil al leer, así el
-  resto del código (`flowEngine.js`) no nota la diferencia. `client_id`/
-  `client_secret`/`client_cert_passphrase` cifrados — ver "Campos
-  cifrados" más abajo.
-- **`operaciones_procesadas`** — registro antiduplicado (`cuit` +
-  `numero_comprobante` ya procesados). `UNIQUE KEY (cuit,
-  numero_comprobante)` — mismo criterio de deduplicación que antes usaba
-  una `Map` en memoria sobre el archivo completo, ahora resuelto con una
-  sola consulta SQL en vez de traer todo el archivo a memoria en cada
-  chequeo.
-
-`node/lib/mariadbClient.js` mantiene un solo pool de conexiones
-(`mysql2/promise`) para todo el proceso — se crea la primera vez que hace
-falta y se reusa después, no una conexión nueva por request.
-
-#### Campos cifrados
-
-`node/lib/cryptoUtil.js` cifra estos campos con **AES-256-GCM** (cifrado
-autenticado: además de que nadie pueda leer el valor con un `SELECT`
-directo, si algo se corrompe o se edita a mano en la base, el descifrado lo
-detecta y tira un error en vez de devolver datos truncados/corruptos en
-silencio) antes de guardarlos, y los descifra al leerlos — el resto del
-código (`server.js`, `flowEngine.js`) sigue viendo el valor en texto plano
-de siempre, sin enterarse de que está cifrado en la base:
-
-- `parametria.sybase_password` (la contraseña real de la base bancaria).
-- `perfiles.client_id`, `perfiles.client_secret`,
-  `perfiles.client_cert_passphrase`.
-
-El resto de los campos no está cifrado hoy: ni `apiKeyOrToken` (perfiles),
-ni nada de `usuarios`/`configuracion_ad`/`operaciones_procesadas` — si hace
-falta sumar alguno más a la lista, es agregarlo a `ENCRYPTED_FIELDS` en
-`profileStore.js` (o el equivalente en `parametriaStore.js`) y ensanchar la
-columna en el schema si hace falta (el valor cifrado ocupa ~56 bytes más
-que el texto plano: `iv:authTag:ciphertext` en hexadecimal).
-
-Cada valor cifrado usa un IV (vector de inicialización) al azar — cifrar el
-mismo valor dos veces da un resultado distinto cada vez, a propósito (evita
-que alguien con acceso de solo lectura a la base note qué perfiles
-comparten la misma contraseña, por ejemplo). La clave es una sola para toda
-la app (`encryptionKey` en `db.local.json`, ver arriba) — no una por campo
-ni una por fila.
 
 ## Qué resuelve
 
@@ -488,15 +165,12 @@ modules/
   FlowEngine.psm1        Ejecuta un flow paso a paso, incluye el caché de token OAuth2
   SecurityStore.psm1     Login (AD) + sesiones + usuarios/roles + auditoría (ver "Módulo de seguridad")
   ProcessedOperationsStore.psm1  Registro de operaciones ya procesadas, evita duplicados (ver "Prevención de operaciones duplicadas")
-node/                    Backend Node.js alternativo (ver "Backend Node.js (node/)")
 wwwroot/
-  index.html, app.js, styles.css   Front-end (vanilla JS, sin build step) — compartido por los dos backends
+  index.html, app.js, styles.css   Front-end (vanilla JS, sin build step)
 deploy/
-  apicore.service         Unidad systemd, backend PowerShell (ver "Instalación en Linux")
-  nginx-apicore.conf      Reverse proxy nginx, backend PowerShell (ver "Instalación en Linux")
-  apicore-node.service    Unidad systemd, backend Node.js (ver "Instalación en Linux")
-  nginx-apicore-node.conf Reverse proxy nginx, backend Node.js (ver "Instalación en Linux")
-Flows/                   *.json de flows (ver "Cómo definir un flow nuevo") — compartido por los dos backends
+  apicore.service         Unidad systemd (ver "Instalación en Linux")
+  nginx-apicore.conf      Reverse proxy nginx (ver "Instalación en Linux")
+Flows/                   *.json de flows (ver "Cómo definir un flow nuevo")
 files/                   Archivos de salida pfout-/pfouterror-/dbnout-/dbnouterror-... (no versionado, se crea solo)
 profiles.sample.json      Plantilla de perfiles (sin secretos)
 parametria.sample.json   Plantilla de parametría (ver "Módulo de parametría")
@@ -566,11 +240,9 @@ servidor rechaza esas tres rutas con 403 igual si se llaman directo.
 
 Los roles están fijos en
 `Test-RoleCanRunFlow`/`Test-RoleCanManageUsers`/`Test-RoleCanManageParametria`
-(`modules/SecurityStore.psm1`, con el mismo criterio en
-`node/lib/securityStore.js` para el backend Node.js) — no hay UI para
-inventar roles nuevos ni para restringir un rol a un subconjunto de flows
-todavía, aunque el código queda en un único lugar para agregarlo si hiciera
-falta. La app nunca deja sin ningún admin habilitado: no se puede eliminar,
+(`modules/SecurityStore.psm1`) — no hay UI para inventar roles nuevos ni
+para restringir un rol a un subconjunto de flows todavía, aunque el código
+queda en un único lugar para agregarlo si hiciera falta. La app nunca deja sin ningún admin habilitado: no se puede eliminar,
 deshabilitar, ni sacarle el rol de admin al último administrador habilitado
 (tanto desde la UI como llamando a `/api/users` directo).
 
@@ -745,21 +417,13 @@ de Transferencia DEBIN), no solo por tener `clientCertPfxPath` completo en
 el perfil. Antes se intentaba cargar para **cualquier** uso de ese perfil,
 incluida la obtención del token OAuth2 ("Probar token", o cualquier flow
 como "Alta de Plazo Fijos - File" que ni siquiera toca Nova-Link): si la
-ruta o la contraseña del `.pfx` estaban mal, el error (`mac verify
-failure` — falla al verificar el MAC del PKCS#12 con esa contraseña, en
-Node; una excepción de `X509Certificate2` en PowerShell) rompía también
-esas otras cosas que no tenían nada que ver con el certificado. Con un solo
-perfil sirviendo a los dos servidores (ver "Un perfil, más de un servidor"
-más abajo), esto importa: "Testing" tiene casi siempre los dos mecanismos
-de auth configurados a la vez.
+ruta o la contraseña del `.pfx` estaban mal, la excepción de
+`X509Certificate2` rompía también esas otras cosas que no tenían nada que
+ver con el certificado. Con un solo perfil sirviendo a los dos servidores
+(ver "Un perfil, más de un servidor" más abajo), esto importa: "Testing"
+tiene casi siempre los dos mecanismos de auth configurados a la vez.
 
-Implementación (mismo comportamiento en los dos backends): en Node,
-`node/lib/flowEngine.js` arma el request a mano con el módulo `https` nativo
-en vez de con `fetch` cuando el perfil tiene `clientCertPfxPath` (fetch no
-expone un client certificate sin pasar por un dispatcher de undici, no
-siempre disponible como módulo público según la versión de Node) — usa las
-opciones nativas `pfx`/`passphrase` de `https.request`, sin parsear nada a
-mano. En PowerShell, `modules/FlowEngine.psm1` carga el certificado con
+Implementación: `modules/FlowEngine.psm1` carga el certificado con
 `New-Object X509Certificate2($pfxPath, $passphrase, ...Exportable)` y lo
 agrega a `HttpClientHandler.ClientCertificates` — mismo constructor que
 funciona en PS 5.1 y en pwsh 7+, sin necesidad de ningún workaround.
@@ -869,10 +533,7 @@ directamente en su propio `bodyTemplate` (fijos o por fila, según el paso —
 ver "Flow 'Alta de Plazo Fijos - File'" más abajo), no desde Parametría.
 Si necesitás otra combinación de campos parametrizados, agregá una nueva
 categoría a `parametria.local.json`/`parametria.sample.json` y a
-`Get-ParametriaVariables` en `modules/FlowEngine.psm1` (y su equivalente
-`getParametriaVariables` en `node/lib/flowEngine.js` — los dos backends
-comparten el mismo `parametria.local.json`, así que tienen que quedar en
-sincronía).
+`Get-ParametriaVariables` en `modules/FlowEngine.psm1`.
 
 ### Conexión a una base Sybase (para steps SQL)
 
@@ -1624,11 +1285,10 @@ filas, no 5 archivos. Esto lo arma el cliente (`wwwroot/app.js`,
 log, el servidor genera uno y lo devuelve en el header de respuesta
 `X-Run-Log-File`; el cliente lo guarda y lo reenvía en el campo
 `runLogFileName` del body de `/api/run` en cada fila siguiente del mismo
-archivo, así todas terminan en el mismo log (`invokeFlow` en
-`node/lib/flowEngine.js` / `Invoke-Flow` en `modules/FlowEngine.psm1`
-valida que el nombre recibido tenga exactamente el formato de arriba antes
-de confiarlo como ruta de archivo — cualquier otro valor se ignora y
-genera uno nuevo). Para "Transferencia DEBIN - File", la consulta de
+archivo, así todas terminan en el mismo log (`Invoke-Flow` en
+`modules/FlowEngine.psm1` valida que el nombre recibido tenga exactamente
+el formato de arriba antes de confiarlo como ruta de archivo — cualquier
+otro valor se ignora y genera uno nuevo). Para "Transferencia DEBIN - File", la consulta de
 estado posterior (`Consulta DEBIN (solo)`, una llamada por transferencia)
 es un flow distinto, así que junta sus propias filas en **su propio**
 archivo compartido, aparte del de la transferencia.
@@ -1670,21 +1330,14 @@ duplicadas" — viven en la misma carpeta, tampoco se versionan.
   Sybase en `parametria.local.json`) se guardan en texto plano en disco. Son
   archivos locales, no se versionan, pero no están cifrados.
 - Los steps `"type": "sql"` requieren un driver ODBC de Sybase/SAP ASE ya
-  instalado en la máquina (backend PowerShell) o el Open Client/Server de
-  SAP con `isql` disponible (backend Node.js) — la app no instala ni
-  empaqueta ninguno de los dos. Tampoco escapan el SQL armado por `query`
-  (mismo mecanismo de texto plano que `pathTemplate`/`bodyTemplate`);
-  pensado para inputs ya confiables, no para datos externos sin validar
-  (ver "Steps de tipo SQL" más arriba). El backend Node.js además parsea
-  la salida de texto de `isql` por posición de columna — ver "Conexión a
-  Sybase en el backend Node.js" para el detalle y sus trade-offs conocidos.
-- El **backend PowerShell** atiende un request HTTP a la vez
-  (`HttpListener.GetContext()` sincrónico) — pensado para un solo usuario
-  ejecutando flows manualmente, no para uso concurrente. El **backend
-  Node.js** sí atiende requests en paralelo (I/O asíncrono nativo), pero
-  ninguno de los dos backends fue pensado ni probado como servicio
-  productivo con muchos usuarios concurrentes ejecutando flows largos al
-  mismo tiempo.
+  instalado en la máquina — la app no instala ni empaqueta ninguno. Tampoco
+  escapan el SQL armado por `query` (mismo mecanismo de texto plano que
+  `pathTemplate`/`bodyTemplate`); pensado para inputs ya confiables, no para
+  datos externos sin validar (ver "Steps de tipo SQL" más arriba).
+- El backend atiende un request HTTP a la vez (`HttpListener.GetContext()`
+  sincrónico) — pensado para un solo usuario ejecutando flows manualmente,
+  no para uso concurrente ni como servicio productivo con muchos usuarios
+  al mismo tiempo ejecutando flows largos.
 - El diálogo de perfiles de la UI no expone los campos de OAuth2 más
   avanzados (`tokenParams`, `tokenHeaders`, `tokenAccessTokenPath`, etc.) —
   se completan editando `profiles.local.json` directamente.
