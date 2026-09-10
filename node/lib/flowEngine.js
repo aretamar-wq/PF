@@ -374,6 +374,16 @@ async function invokeHttpStep(step, flowObj, variables, profileObj, logsDir, run
   // siempre.
   const baseUrlFieldName = flowObj.baseUrlField || 'baseUrl';
   const baseUrl = String(profileObj[baseUrlFieldName] || '').replace(/\/+$/, '');
+  if (!baseUrl) {
+    // Sin esto, fetch tira "Failed to parse URL from /api/..." (porque la
+    // URL queda relativa, sin protocolo ni host) — un mensaje que no dice
+    // nada sobre la causa real: el perfil no tiene declarado el campo de
+    // URL base que este flow necesita (baseUrl, o el que diga baseUrlField,
+    // ej. novaBaseUrl para los flows de Transferencia DEBIN).
+    throw new Error(
+      `El perfil '${profileObj.name}' no tiene configurado el campo '${baseUrlFieldName}' — no se puede armar la URL para este flow.`
+    );
+  }
   const relativePath = String(stepPath || '').replace(/^\/+/, '');
   const url = `${baseUrl}/${relativePath}`;
 

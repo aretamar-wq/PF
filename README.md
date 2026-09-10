@@ -534,6 +534,14 @@ de un header) — completá `novaBaseUrl` (y, si hace falta, el certificado
 cliente — ver la sección siguiente) en el mismo perfil que ya usás para el
 resto, no hace falta crear uno nuevo.
 
+Si el perfil seleccionado **no** tiene completo el campo que pide
+`baseUrlField` (`novaBaseUrl` vacío, por ejemplo), el flow falla de
+entrada con un mensaje explícito (`El perfil '...' no tiene configurado el
+campo 'novaBaseUrl' — no se puede armar la URL para este flow.`) en vez de
+una excepción críptica de red o de parseo de URL — ese mensaje queda tanto
+en la UI como en el archivo de esa corrida bajo `logs/http/` (ver "Logs en
+disco").
+
 ### Certificado cliente (TLS mutuo)
 
 Un perfil puede además presentar un certificado cliente en la conexión TLS
