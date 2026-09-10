@@ -402,10 +402,10 @@ async function handleSaveOutput(req, res, session) {
   writeJsonResponse(res, 200, { ok: true, fileName });
 }
 
-// Mismo patrón de nombre que genera handleSaveOutput (pfout-/pfouterror- +
-// 14 dígitos + .csv) — única defensa contra path traversal al leer un
-// nombre de archivo que llega por querystring.
-const OUTPUT_FILE_NAME_PATTERN = /^(pfout|pfouterror)-\d{14}\.csv$/;
+// Mismo patrón de nombre que genera handleSaveOutput (pfout-/pfouterror-/
+// dbnout-/dbnouterror- + 14 dígitos + .csv) — única defensa contra path
+// traversal al leer un nombre de archivo que llega por querystring.
+const OUTPUT_FILE_NAME_PATTERN = /^(pfout|pfouterror|dbnout|dbnouterror)-\d{14}\.csv$/;
 
 function handleOutputFilesGet(res) {
   if (!fs.existsSync(filesDir)) {

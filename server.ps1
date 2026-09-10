@@ -465,12 +465,13 @@ try {
             elseif ($method -eq 'GET' -and $path -eq '/api/output-files') {
                 # Lista lo que hay guardado en files/ (ver /api/save-output) para el
                 # panel "Archivos de salida" del front-end — mismo patrón de nombre
-                # (pfout-/pfouterror- + 14 dígitos + .csv) que valida ese endpoint al
-                # guardar, acá para filtrar cualquier otra cosa que haya en la carpeta.
+                # (pfout-/pfouterror-/dbnout-/dbnouterror- + 14 dígitos + .csv) que
+                # valida ese endpoint al guardar, acá para filtrar cualquier otra
+                # cosa que haya en la carpeta.
                 $items = @()
                 if (Test-Path $filesDir) {
                     $items = @(Get-ChildItem -Path $filesDir -File |
-                        Where-Object { $_.Name -match '^(pfout|pfouterror)-\d{14}\.csv$' } |
+                        Where-Object { $_.Name -match '^(pfout|pfouterror|dbnout|dbnouterror)-\d{14}\.csv$' } |
                         Sort-Object LastWriteTimeUtc -Descending |
                         ForEach-Object { [pscustomobject]@{ name = $_.Name; size = $_.Length; mtime = $_.LastWriteTimeUtc.ToString('o') } })
                 }
@@ -480,7 +481,7 @@ try {
                 # Nombre de archivo por querystring: se valida con el mismo patrón
                 # estricto de arriba — única defensa contra path traversal.
                 $name = [string]$request.QueryString['name']
-                if ($name -notmatch '^(pfout|pfouterror)-\d{14}\.csv$') {
+                if ($name -notmatch '^(pfout|pfouterror|dbnout|dbnouterror)-\d{14}\.csv$') {
                     Write-JsonResponse -Response $response -StatusCode 400 -Body ([pscustomobject]@{ error = 'Nombre de archivo inválido.' })
                 } else {
                     $filePath = Join-Path $filesDir $name

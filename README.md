@@ -330,7 +330,7 @@ deploy/
   apicore-node.service    Unidad systemd, backend Node.js (ver "Instalación en Linux")
   nginx-apicore-node.conf Reverse proxy nginx, backend Node.js (ver "Instalación en Linux")
 Flows/                   *.json de flows (ver "Cómo definir un flow nuevo") — compartido por los dos backends
-files/                   Archivos de salida pfout-.../pfouterror-... (no versionado, se crea solo)
+files/                   Archivos de salida pfout-/pfouterror-/dbnout-/dbnouterror-... (no versionado, se crea solo)
 profiles.sample.json      Plantilla de perfiles (sin secretos)
 parametria.sample.json   Plantilla de parametría (ver "Módulo de parametría")
 security.sample.json    Plantilla de seguridad (conexión AD + usuarios, ver "Módulo de seguridad")
@@ -909,7 +909,10 @@ CSV, hasta dos archivos y los manda a `POST /api/save-output`
 sola si no existe; **no se versiona**, está en `.gitignore`, porque va a
 tener datos bancarios reales). Los dos comparten el mismo timestamp
 (`yyyyMMddHHmmss`, generado una sola vez al terminar el lote), para que se
-identifiquen como del mismo archivo procesado:
+identifiquen como del mismo archivo procesado. Solo dos flows CSV generan
+estos archivos hoy — "Alta de Plazo Fijos - File" (`pfout-`/`pfouterror-`)
+y "Transferencia DEBIN - File" (`dbnout-`/`dbnouterror-`) — y, como cada
+corrida es de un solo flow, nunca se mezclan entre sí:
 
 - **`pfout-<timestamp>.csv`** — **una fila por cada fila del CSV de
   origen**, se haya completado o no, con columna `realizado` (`s`/`n`) al
@@ -943,14 +946,25 @@ identifiquen como del mismo archivo procesado:
   `IdMensaje` generado para esa fila al final. **Sin encabezado**, igual
   que el archivo de entrada — pensado para poder inspeccionar o volver a
   subir las filas que fallaron.
+- **`dbnout-<timestamp>.csv`** (solo "Transferencia DEBIN - File") — mismo
+  criterio que `pfout-...` pero con las columnas de la transferencia: los 9
+  valores de la fila de entrada (`creditoCuit`/`creditoCbu`/
+  `creditoTitular`/`debitoCuit`/`debitoCbu`/`debitoTitular`/
+  `idComprobante`/`moneda`/`importe`) más `codigoRespuesta`/
+  `descripcionRespuesta`/`idRespuesta` (de `params.response.respuesta` en
+  la respuesta de Nova-Link), `idMensaje` y `realizado`. `realizado = "n"`
+  deja esas 3 columnas de respuesta en blanco. **Con encabezado.**
+- **`dbnouterror-<timestamp>.csv`** (solo "Transferencia DEBIN - File") —
+  mismo formato que `pfouterror-...` (fila de entrada tal cual + IdMensaje,
+  sin encabezado), para las filas que fallaron.
 
 Si no hubo ningún plazo fijo dado de alta, no se genera `pfout-...`; si no
-hubo ninguna fila fallada, no se genera `pfouterror-...`. `POST
-/api/save-output` valida que `prefix` (`pfout-`/`pfouterror-`) y
-`timestamp` tengan un formato estricto (`[a-zA-Z0-9-]` y 14 dígitos,
-respectivamente) antes de armar el nombre de archivo — es la única defensa
-contra path traversal en un endpoint que escribe a disco a partir de un
-valor que arma el cliente.
+hubo ninguna fila fallada, no se genera `pfouterror-.../dbnouterror-...`.
+`POST /api/save-output` valida que `prefix`
+(`pfout-`/`pfouterror-`/`dbnout-`/`dbnouterror-`) y `timestamp` tengan un
+formato estricto (`[a-zA-Z0-9-]` y 14 dígitos, respectivamente) antes de
+armar el nombre de archivo — es la única defensa contra path traversal en
+un endpoint que escribe a disco a partir de un valor que arma el cliente.
 
 Además de guardarse en `files/`, cada archivo se descarga automáticamente
 al navegador apenas se guarda (`downloadTextFile`, mismo mecanismo Blob +
@@ -959,12 +973,14 @@ lo pida.
 
 **Panel "Archivos de salida..."** (botón en la barra superior, visible para
 cualquier usuario logueado): lista todo lo que hay guardado en `files/` que
-matchee el patrón `(pfout|pfouterror)-<14 dígitos>.csv` — nombre, tipo
-("Detalle de Plazos Fijos" para `pfout-...`, "Filas con error" para
-`pfouterror-...`), fecha y tamaño, más recientes primero — y permite volver
-a descargar cualquiera (incluido `pfout-...`, no solo `pfouterror-...`),
-útil si se cerró el navegador antes de que la descarga automática
-terminara o si hace falta recuperar el de una corrida anterior. Tiene
+matchee el patrón `(pfout|pfouterror|dbnout|dbnouterror)-<14 dígitos>.csv`
+— nombre, tipo ("Detalle de Plazos Fijos" para `pfout-...`, "Detalle de
+Transferencias DEBIN" para `dbnout-...`, "Filas con error" para
+`pfouterror-.../dbnouterror-...`), fecha y tamaño, más recientes primero —
+y permite volver a descargar cualquiera (incluidos `pfout-.../dbnout-...`,
+no solo los de error), útil si se cerró el navegador antes de que la
+descarga automática terminara o si hace falta recuperar el de una corrida
+anterior. Tiene
 filtro por rango de fechas (Desde/Hasta, ambos límites inclusive,
 comparados contra la fecha de modificación del archivo en hora local) —
 se aplica en el cliente sobre la misma lista que ya trajo `/api/output-files`,
@@ -1270,11 +1286,17 @@ la mayoría de los campos del body salen de tres fuentes distintas:
   en blanco; `tipoDispositivo` = `"04"`; `lat`/`lng` = `"0"`) — son datos de
   un cliente final que no existen en una carga por archivo.
 
-Este flow **no genera ningún archivo de salida propio** (a diferencia de
-"Alta de Plazo Fijos - File", que genera `pfout-...csv`/`pfouterror-...csv`
-— ver más abajo): el resultado de cada fila queda en el resumen por step en
-pantalla (`#csvSummary`) y, con el detalle completo de cada request/response,
-en su propio archivo bajo `logs/http/` (ver "Logs en disco").
+Igual que "Alta de Plazo Fijos - File" (ver "Archivos de salida (`files/`)"
+más abajo), al terminar genera hasta 2 archivos con el mismo timestamp:
+`dbnout-<timestamp>.csv` (una fila por cada fila del archivo de entrada —
+los 9 valores de entrada más `codigoRespuesta`/`descripcionRespuesta`/
+`idRespuesta` de la respuesta, `idMensaje` y `realizado` = `"s"`/`"n"`; si
+es `"n"` las 3 columnas de respuesta quedan en blanco porque nunca se
+transfirió) y `dbnouterror-<timestamp>.csv` (la fila de entrada + IdMensaje
+de cada fila que falló, mismo formato que `pfouterror-...csv`). El
+resultado de cada fila también queda en el resumen por step en pantalla
+(`#csvSummary`) y, con el detalle completo de cada request/response, en su
+propio archivo bajo `logs/http/` (ver "Logs en disco").
 
 ### Panel de resultado de un step SQL
 

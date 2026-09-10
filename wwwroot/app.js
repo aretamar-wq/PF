@@ -4,6 +4,7 @@ const state = {
   selectedFlow: null,
   lastLog: [],
   pfDetailRows: [],
+  debinDetailRows: [],
   errorRows: [],
   successfulOperations: [],
   token: sessionStorage.getItem('pf_token') || null,
@@ -199,6 +200,7 @@ function selectFlow(name) {
   hideCsvSummary();
   hideSqlResult();
   state.pfDetailRows = [];
+  state.debinDetailRows = [];
   state.errorRows = [];
   state.successfulOperations = [];
 
@@ -635,6 +637,7 @@ async function runFlowFromCsv() {
   hideCsvSummary();
   state.lastLog = [];
   state.pfDetailRows = [];
+  state.debinDetailRows = [];
   state.errorRows = [];
   state.successfulOperations = [];
 
@@ -860,9 +863,11 @@ async function runFlowFromCsv() {
       // llegó a llamar a ningún endpoint), o algún paso terminó en error.
       // Se guarda la fila tal cual vino en el archivo (aunque esté mal
       // formada) + el IdMensaje que se le generó, para el archivo
-      // pfouterror-... — ver saveOutputFiles.
+      // pfouterror-.../dbnouterror-... (mismo formato para los dos flows,
+      // ver saveOutputFiles) — como cada corrida es de un solo flow, el
+      // mismo state.errorRows sirve para cualquiera de los dos sin mezclarse.
       const rowFailed = rowEntries.some((entry) => entry.status !== 'Success');
-      if (rowFailed && isPlazoFijoCocosFilesSqlFlow(flow)) {
+      if (rowFailed && (isPlazoFijoCocosFilesSqlFlow(flow) || isTransferenciaDebinFilesFlow(flow))) {
         state.errorRows.push([...row, rowIdMensaje]);
       }
 
@@ -926,6 +931,44 @@ async function runFlowFromCsv() {
         }
       }
 
+      // Análogo al bloque de arriba, pero para "Transferencia DEBIN - File":
+      // la respuesta trae el resultado de la evaluación en
+      // params.response.respuesta (codigo/descripcion/id — mismo jsonPath
+      // que extractVariables usa para codigoRespuesta/descripcionRespuesta/
+      // idRespuesta, ver Flows/transferencia-debin-files.json) — se vuelca
+      // en dbnout-...csv (ver saveOutputFiles) junto con los 9 valores de la
+      // fila de entrada, para no tener que cruzar ese archivo con el CSV
+      // original.
+      if (stepEntries && isTransferenciaDebinFilesFlow(flow)) {
+        const lastEntry = stepEntries[stepEntries.length - 1];
+        if (lastEntry && lastEntry.status === 'Success' && lastEntry.responseSummary) {
+          try {
+            const parsed = JSON.parse(lastEntry.responseSummary);
+            const respuesta = (parsed.params && parsed.params.response && parsed.params.response.respuesta) || {};
+            state.debinDetailRows.push({
+              creditoCuit: row[0] || '',
+              creditoCbu: row[1] || '',
+              creditoTitular: row[2] || '',
+              debitoCuit: row[3] || '',
+              debitoCbu: row[4] || '',
+              debitoTitular: row[5] || '',
+              idComprobante: row[6] || '',
+              moneda: row[7] || '',
+              importe: row[8] || '',
+              codigoRespuesta: respuesta.codigo != null ? respuesta.codigo : '',
+              descripcionRespuesta: respuesta.descripcion != null ? respuesta.descripcion : '',
+              idRespuesta: respuesta.id != null ? respuesta.id : '',
+              idMensaje: rowIdMensaje,
+              realizado: 's',
+            });
+          } catch (err) {
+            // La respuesta no vino en el formato esperado; no se agrega
+            // detalle de esta fila, pero la fila sigue contando como éxito
+            // en el resumen de arriba.
+          }
+        }
+      }
+
       // Fila fallada (mismo criterio que errorRows más arriba): también entra
       // a pfout-...csv, con los datos que sí tenemos del archivo de entrada
       // (numeroComprobante/cuit/apellidoNombre) y en blanco el resto de las
@@ -946,6 +989,27 @@ async function runFlowFromCsv() {
           montoCapital: '',
           montoInteres: '',
           otros: '',
+          idMensaje: rowIdMensaje,
+          realizado: 'n',
+        });
+      }
+
+      // Análogo al bloque de arriba, para "Transferencia DEBIN - File":
+      // columnas de la respuesta en blanco (nunca se llegó a transferir).
+      if (rowFailed && isTransferenciaDebinFilesFlow(flow)) {
+        state.debinDetailRows.push({
+          creditoCuit: row[0] || '',
+          creditoCbu: row[1] || '',
+          creditoTitular: row[2] || '',
+          debitoCuit: row[3] || '',
+          debitoCbu: row[4] || '',
+          debitoTitular: row[5] || '',
+          idComprobante: row[6] || '',
+          moneda: row[7] || '',
+          importe: row[8] || '',
+          codigoRespuesta: '',
+          descripcionRespuesta: '',
+          idRespuesta: '',
           idMensaje: rowIdMensaje,
           realizado: 'n',
         });
@@ -973,7 +1037,7 @@ async function runFlowFromCsv() {
       }
     }
 
-    const savedFiles = await saveOutputFiles();
+    const savedFiles = await saveOutputFiles(flow);
     if (savedFiles.length > 0) {
       doneText += ` Guardado en files/: ${savedFiles.join(', ')}.`;
     }
@@ -1065,19 +1129,25 @@ async function saveOutputFile(prefix, timestamp, content) {
 }
 
 // Al terminar de procesar el CSV: guarda, si corresponde, hasta 2 archivos
-// con el mismo timestamp (para que se identifiquen como del mismo lote) —
-// pfout-<timestamp>.csv con una fila por cada fila del archivo de entrada
-// (se haya completado o no: "realizado" = "s"/"n" — si es "n", el resto de
-// las columnas del plazo fijo quedan en blanco porque nunca se dio de alta)
-// y pfouterror-<timestamp>.csv con la fila de entrada + IdMensaje de cada
-// fila que falló (columnas de más/menos, cuenta no encontrada, o algún
-// paso del banco en error), para poder revisarlas o reintentarlas — las
-// filas con "realizado" = "n" están en los dos archivos, con formato
-// distinto cada vez (acá el de salida normal, en pfouterror- tal cual vino
-// en el archivo de entrada).
-async function saveOutputFiles() {
+// con el mismo timestamp (para que se identifiquen como del mismo lote).
+// Para "Alta de Plazo Fijos - File": pfout-<timestamp>.csv con una fila por
+// cada fila del archivo de entrada (se haya completado o no: "realizado" =
+// "s"/"n" — si es "n", el resto de las columnas del plazo fijo quedan en
+// blanco porque nunca se dio de alta) y pfouterror-<timestamp>.csv con la
+// fila de entrada + IdMensaje de cada fila que falló. Para "Transferencia
+// DEBIN - File": mismo esquema, pero dbnout-<timestamp>.csv (con las
+// columnas de la transferencia en vez de las del plazo fijo) y
+// dbnouterror-<timestamp>.csv. Como cada corrida es de un solo flow CSV,
+// nunca se mezclan pfDetailRows con debinDetailRows en la misma corrida —
+// alcanza con mirar cuál de los dos tiene filas para saber cuál generar.
+// Las filas con "realizado" = "n" están en los dos archivos de ese flow,
+// con formato distinto cada vez (acá el de salida normal, en el de error
+// tal cual vino en el archivo de entrada).
+async function saveOutputFiles(flow) {
   const savedFiles = [];
-  if (state.pfDetailRows.length === 0 && state.errorRows.length === 0) return savedFiles;
+  if (state.pfDetailRows.length === 0 && state.debinDetailRows.length === 0 && state.errorRows.length === 0) {
+    return savedFiles;
+  }
 
   const timestamp = generateFileTimestamp();
 
@@ -1091,12 +1161,23 @@ async function saveOutputFiles() {
     if (fileName) savedFiles.push(fileName);
   }
 
+  if (state.debinDetailRows.length > 0) {
+    const headers = ['creditoCuit', 'creditoCbu', 'creditoTitular', 'debitoCuit', 'debitoCbu', 'debitoTitular', 'idComprobante', 'moneda', 'importe', 'codigoRespuesta', 'descripcionRespuesta', 'idRespuesta', 'idMensaje', 'realizado'];
+    const lines = [headers.join(',')];
+    for (const row of state.debinDetailRows) {
+      lines.push(headers.map((h) => csvEscape(row[h])).join(','));
+    }
+    const fileName = await saveOutputFile('dbnout-', timestamp, lines.join('\r\n'));
+    if (fileName) savedFiles.push(fileName);
+  }
+
   if (state.errorRows.length > 0) {
     // Sin fila de encabezado, a propósito: cada fila queda igual a como
     // vino en el archivo de entrada (que tampoco lleva encabezado) más el
     // IdMensaje al final.
     const lines = state.errorRows.map((row) => row.map(csvEscape).join(','));
-    const fileName = await saveOutputFile('pfouterror-', timestamp, lines.join('\r\n'));
+    const errorPrefix = isTransferenciaDebinFilesFlow(flow) ? 'dbnouterror-' : 'pfouterror-';
+    const fileName = await saveOutputFile(errorPrefix, timestamp, lines.join('\r\n'));
     if (fileName) savedFiles.push(fileName);
   }
 
@@ -1489,7 +1570,7 @@ userForm.addEventListener('submit', async (event) => {
   await loadUsersList();
 });
 
-// --- Archivos de salida (pfout-.../pfouterror-... guardados en files/) -----
+// --- Archivos de salida (pfout-/pfouterror-/dbnout-/dbnouterror-... guardados en files/) -----
 // Además de la descarga automática al terminar un CSV (ver saveOutputFile),
 // este panel deja ver y volver a descargar cualquier archivo ya guardado en
 // el servidor — útil si se cerró el navegador antes de que la descarga
@@ -1505,10 +1586,14 @@ function formatFileSize(bytes) {
   return `${(bytes / 1024).toFixed(1)} KB`;
 }
 
-// pfout-... = detalle de plazos fijos dados de alta; pfouterror-... = filas
-// que fallaron (ver "Archivos de salida (files/)" en el README).
+// pfout-... = detalle de plazos fijos dados de alta; dbnout-... = detalle
+// de transferencias DEBIN; pfouterror-.../dbnouterror-... = filas que
+// fallaron, de cada uno de los dos flows (ver "Archivos de salida (files/)"
+// en el README).
 function outputFileTypeLabel(name) {
-  return name.startsWith('pfouterror-') ? 'Filas con error' : 'Detalle de Plazos Fijos';
+  if (name.startsWith('pfouterror-') || name.startsWith('dbnouterror-')) return 'Filas con error';
+  if (name.startsWith('dbnout-')) return 'Detalle de Transferencias DEBIN';
+  return 'Detalle de Plazos Fijos';
 }
 
 function renderOutputFilesTable(files) {
