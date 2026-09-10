@@ -1,19 +1,21 @@
 # ApiCore
 
-Aplicación web local, **portable** (nada para instalar), que ejecuta *flows* —
-secuencias de llamadas a las APIs REST de un core bancario — definidos en
-archivos JSON editables sin reiniciar nada.
+Aplicación web local, **portable** (no hace falta compilar ni instalar ningún
+runtime — el que trae Windows alcanza), que ejecuta *flows* — secuencias de
+llamadas a las APIs REST de un core bancario — definidos en archivos JSON
+editables sin reiniciar nada.
 
 El servidor es un script de **PowerShell** (el que ya viene instalado en
 cualquier Windows 10/11), que expone una API local y sirve una página web
 sencilla (HTML/CSS/JS, sin frameworks ni dependencias) para manejarla desde el
 navegador. No hay que compilar nada ni instalar .NET, Node, Python ni ningún
-runtime adicional.
+runtime adicional — sí hace falta una base **MariaDB** accesible por red (en
+el mismo servidor o en otro), donde vive todo lo que antes eran archivos
+`*.local.json` — ver "Base de datos (MariaDB)" más abajo.
 
-> Esta es la distribución para Windows de ApiCore (backend PowerShell,
-> `*.local.json` como almacenamiento). La distribución para Linux (backend
-> Node.js + MariaDB, pensada para RHEL 8) vive en la branch
-> `distribucion-linux`.
+> Esta es la distribución para Windows de ApiCore (backend PowerShell). La
+> distribución para Linux (backend Node.js, pensada para RHEL 8) vive en la
+> branch `distribucion-linux` — las dos comparten la misma MariaDB.
 
 > **Importante:** hoy la app tiene 3 flows operativos —
 > `Flows/plazo-fijo-cocos-files-sql.json` ("Alta de Plazo Fijos - File"),
@@ -30,15 +32,15 @@ runtime adicional.
 > consultas sueltas) se borraron del repo — el historial de git los tiene
 > si hace falta recuperar alguno como referencia.
 
-## Cómo correrla (sin instalar nada)
+## Cómo correrla
 
-1. Descargá o cloná el repo — es solo texto, no hay nada para compilar.
-2. Copiá `profiles.sample.json` a `profiles.local.json` (este archivo **no se
-   versiona**, ver `.gitignore`) y completá tus credenciales — ver
-   "Configurar perfiles" más abajo. Copiá también `security.sample.json` a
-   `security.local.json` y completá los datos de tu Active Directory — ver
-   "Módulo de seguridad" más abajo (el primer login exitoso se da de alta
-   solo como administrador, no hace falta crear usuarios a mano).
+1. Descargá o cloná el repo — es solo texto y un puñado de librerías .NET
+   vendorizadas (ver "Base de datos (MariaDB)"), no hay nada para compilar.
+2. Tené a mano una base **MariaDB 10** (en el mismo equipo o en otro
+   alcanzable por red), aplicá el schema y completá `db.local.json` con los
+   datos de conexión — ver "Base de datos (MariaDB)" más abajo para el paso a
+   paso completo (el primer login exitoso contra Active Directory se da de
+   alta solo como administrador, no hace falta crear usuarios a mano).
 3. Hacé doble click en **`Iniciar.bat`**. Esto abre PowerShell, levanta el
    servidor local y abre tu navegador en `http://localhost:8787/`
    automáticamente.
@@ -74,9 +76,10 @@ Requisitos en el servidor:
 Pasos:
 
 1. Copiar el repo al servidor (por ejemplo `/opt/apicore`).
-2. Completar `profiles.local.json`, `parametria.local.json` y
-   `security.local.json` igual que en Windows (ver las secciones
-   correspondientes más abajo) — estos archivos no viajan con el repo.
+2. Tener una base MariaDB 10 accesible, aplicar `deploy/mariadb-schema.sql`
+   y completar `db.local.json` en la raíz del repo con los datos de
+   conexión — ver "Base de datos (MariaDB)" más abajo para el paso a paso
+   completo (este archivo no viaja con el repo).
 3. Instalar el servicio con **`deploy/apicore.service`** (unidad
    systemd — corre `server.ps1` como usuario sin privilegios, reinicia solo
    si se cae, y solo escucha en `127.0.0.1:8787`, nunca expuesto directo a
@@ -120,6 +123,228 @@ Pasos:
   sudo firewall-cmd --reload
   ```
 
+### Backend PowerShell (`modules/`)
+
+El backend PowerShell (`server.ps1` + `modules/*.psm1`) usa la **misma**
+MariaDB que el backend Node.js para usuarios/roles, config de AD, perfiles,
+parametría, el registro antiduplicado y el registro de dbnout-/dbnconsulta-
+(ver "Base de datos (MariaDB)" más abajo) — los dos backends son
+intercambiables contra la misma instalación para estas 6 cosas, además de
+`Flows/` y el contrato HTTP con `wwwroot/app.js`, que ya compartían.
+PowerShell no tiene un driver nativo para MariaDB (a diferencia de Sybase,
+que sí tiene ODBC vía `System.Data.Odbc`) ni una clase de AES-GCM en su
+biblioteca estándar (`System.Security.Cryptography.AesGcm` recién existe en
+.NET moderno, no en .NET Framework) — se usan dos librerías .NET
+vendorizadas para esto:
+
+```
+modules/
+  MariaDbClient.psm1     Cliente MariaDB (MySqlConnector) — Get-DbConfig/Get-EncryptionKey (lee db.local.json), Invoke-DbQuery/Invoke-DbNonQuery/New-DbConnection
+  CryptoUtil.psm1        Cifra/descifra campos sensibles (AES-256-GCM vía BouncyCastle.Cryptography) — mismo formato y clave que node/lib/cryptoUtil.js
+  DebinOutputStore.psm1  Registro en MariaDB (dbn_out/dbn_consulta) del contenido de dbnout-/dbnconsulta-...csv
+  lib/
+    desktop/             DLLs para Windows PowerShell 5.1 (.NET Framework): MySqlConnector.dll (build net461) + System.Buffers/System.Memory/System.Numerics.Vectors/System.Runtime.CompilerServices.Unsafe/System.Threading.Tasks.Extensions (paquetes que le agregan Span<T>/Memory<T> a .NET Framework) + BouncyCastle.Cryptography.dll
+    core/                DLLs para pwsh 7+: MySqlConnector.dll (build net6.0) + BouncyCastle.Cryptography.dll — autocontenidas, sin dependencias extra
+  scripts/
+    Migrate-JsonToMariaDb.ps1  Migración única de *.local.json a MariaDB — equivalente PowerShell de node/scripts/migrate-json-to-mariadb.js, para instalaciones sin Node.js
+```
+
+`MariaDbClient.psm1` elige qué carpeta de `lib/` cargar según
+`$PSVersionTable.PSEdition` ("Desktop" = Windows PowerShell 5.1, "Core" =
+pwsh 7+) — mismo criterio en `CryptoUtil.psm1`. Los placeholders de una
+consulta van con `?` en orden (MySqlConnector soporta ese estilo además del
+`@nombre` que es el suyo propio), igual que ya usa `mariadbClient.js` del
+lado Node — las consultas SQL de los dos backends son prácticamente
+idénticas.
+
+**Cifrado cruzado entre los dos backends:** `CryptoUtil.psm1` produce
+exactamente el mismo formato guardado (`iv:authTag:ciphertext` en
+hexadecimal) que `cryptoUtil.js`, con la misma clave (`encryptionKey` en
+`db.local.json`) — un valor cifrado por un backend lo descifra el otro sin
+problema. Verificado cifrando en un backend y descifrando en el otro (y
+viceversa) contra los mismos bytes.
+
+> **Login contra Active Directory en Linux:** tanto el bind LDAP de
+> PowerShell (`System.DirectoryServices.Protocols`) como el de Node.js
+> (`ldapts`) son multiplataforma — el login funciona igual contra el mismo
+> Domain Controller sin importar qué backend elijas. Si el Domain
+> Controller usa un certificado de una CA interna y tildás "Usar LDAPS
+> (SSL)" en la config de AD, esa CA tiene que estar en el almacén de
+> confianza del servidor Linux o el bind va a fallar por certificado no
+> confiable.
+
+> **Un usuario a la vez:** como dice "Limitaciones conocidas" más abajo,
+> ninguno de los dos backends está pensado como servicio con muchos
+> usuarios concurrentes ejecutando flows largos al mismo tiempo. Si varias
+> personas van a usar este deployment Linux a la vez, tenerlo en cuenta.
+
+### Base de datos (MariaDB)
+
+Los dos backends (PowerShell y Node.js) guardan usuarios/roles, la
+configuración de Active Directory, perfiles de conexión, parametría, el
+registro antiduplicado y el registro de dbnout-/dbnconsulta- en **MariaDB
+10** en vez de en archivos JSON locales — la misma base sirve a los dos, no
+hace falta una por backend. Pensado originalmente para un deployment en
+RHEL 8 (backend Node.js) con MariaDB ya instalada en el mismo servidor,
+pero aplica igual si corrés el backend PowerShell (Windows o Linux vía
+`pwsh`).
+
+**1. Crear la base y el usuario de MariaDB** (una sola vez, con las
+credenciales que decidas usar):
+
+```sql
+CREATE DATABASE apicore CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
+CREATE USER 'apicore'@'localhost' IDENTIFIED BY 'elegí-una-contraseña';
+GRANT ALL PRIVILEGES ON apicore.* TO 'apicore'@'localhost';
+FLUSH PRIVILEGES;
+```
+
+**2. Aplicar el schema** (`deploy/mariadb-schema.sql` — crea las tablas y
+precarga los 3 roles válidos):
+
+```sh
+mysql -u apicore -p apicore < deploy/mariadb-schema.sql
+```
+
+**3. Configurar la conexión**: copiá `db.sample.json` a `db.local.json`
+(en la raíz del repo, **nunca se versiona** — está en `.gitignore`) y
+completá host/puerto/base/usuario/contraseña reales, más una clave de
+cifrado (`encryptionKey`, ver más abajo):
+
+```json
+{
+  "host": "127.0.0.1",
+  "port": 3306,
+  "database": "apicore",
+  "user": "apicore",
+  "password": "elegí-una-contraseña",
+  "encryptionKey": "generar-con-el-comando-de-abajo"
+}
+```
+
+`encryptionKey` es la clave (AES-256, 32 bytes en hexadecimal) que cifra
+los secretos guardados en la base — ver "Campos cifrados" más abajo. Se
+genera una sola vez con:
+
+```sh
+node -e "console.log(require('crypto').randomBytes(32).toString('hex'))"
+```
+
+**Guardala con el mismo cuidado que una contraseña de producción: si se
+pierde, los valores ya cifrados en la base quedan irrecuperables** (no hay
+clave maestra de respaldo ni forma de "resetearla" sin perder esos datos —
+solo se podría volver a cargar esos campos a mano desde la UI). Mientras no
+guardes ningún secreto (contraseña de Sybase, client secret, etc.), la app
+funciona igual sin `encryptionKey` configurada; el error recién aparece
+cuando de verdad hace falta cifrar o descifrar algo.
+
+**4. Migrar los datos que ya hubiera** en los `*.local.json` viejos (si es
+una instalación nueva sin esos archivos, este paso no hace nada y no rompe
+nada):
+
+```powershell
+pwsh modules/scripts/Migrate-JsonToMariaDb.ps1
+```
+
+El script migra las 4 fuentes (`security.local.json`, `profiles.local.json`,
+`parametria.local.json`, `logs/processed-operations.json`). Es seguro de
+correr más de una vez (usuarios/perfiles se upsertean por su clave, las
+operaciones procesadas tienen una `UNIQUE KEY` que evita duplicados) — no
+borra ni modifica los archivos `*.local.json`
+originales, así que quedan de respaldo hasta que confirmes que todo
+funciona bien contra MariaDB.
+
+**Tablas** (ver `deploy/mariadb-schema.sql` para el detalle completo de
+columnas):
+
+- **`usuarios`** — un registro por usuario habilitado en la app
+  (`username`, `display_name`, `enabled`). Nunca guarda contraseña: la app
+  autentica contra Active Directory (bind LDAP puntual, ver "Módulo de
+  seguridad" más abajo) — es un allowlist de qué cuentas de AD pueden
+  entrar y con qué rol, no un almacén de credenciales.
+- **`rol`** — los 3 roles válidos (`admin`/`operador`/`lectura`), fila fija
+  precargada por el schema.
+- **`rol_usuarios`** — relación usuarios↔rol con tabla intermedia, pero
+  `usuario_id` es su `PRIMARY KEY`: fuerza como máximo una fila por
+  usuario, o sea **un solo rol por usuario** — mismo comportamiento que
+  antes (un rol plano por usuario en el JSON), solo que normalizado.
+- **`configuracion_ad`** — server/port/useSsl/domain del Domain Controller
+  contra el que se autentica el login. Fila única (`id = 1`).
+- **`parametria`** — valores fijos por categoría de cuenta (Cuenta
+  Corriente/Caja de Ahorro/Plazo Fijo) + conexión Sybase. Fila única
+  (`id = 1`), mismo criterio que `configuracion_ad`. `sybase_password`
+  cifrada — ver "Campos cifrados" más abajo.
+- **`perfiles`** — perfiles de conexión (`baseUrl`/`novaBaseUrl`/auth/
+  certificado cliente), `name` como clave única. Los campos OAuth2
+  avanzados que la UI no expone (`tokenParams`, `tokenHeaders`, etc. — ver
+  "Limitaciones conocidas") se guardan en una columna `token_extra_json`
+  (JSON) en vez de tener una columna sparse por cada uno; `profileStore.js`
+  los aplana de vuelta al nivel superior del objeto perfil al leer, así el
+  resto del código (`flowEngine.js`) no nota la diferencia. `client_id`/
+  `client_secret`/`client_cert_passphrase` cifrados — ver "Campos
+  cifrados" más abajo.
+- **`operaciones_procesadas`** — registro antiduplicado (`cuit` +
+  `numero_comprobante` ya procesados). `UNIQUE KEY (cuit,
+  numero_comprobante)` — mismo criterio de deduplicación que antes usaba
+  una `Map` en memoria sobre el archivo completo, ahora resuelto con una
+  sola consulta SQL en vez de traer todo el archivo a memoria en cada
+  chequeo.
+- **`dbn_out`** y **`dbn_consulta`** — registro en base (no de
+  deduplicación, puramente de auditoría) del contenido de
+  `dbnout-...csv`/`dbnconsulta-...csv` (ver "Archivos de salida (`files/`)"
+  más abajo), una fila por fila del `.csv` correspondiente, con quién
+  ejecutó la carga (`ejecutado_por`) y cuándo (`ejecutado_en`). En
+  `dbn_consulta`, las ~58 columnas que trae la respuesta de "Consulta DEBIN
+  (solo)" (ver `DEBIN_CONSULTA_COLUMNS` en `wwwroot/app.js`) se guardan
+  enteras en `respuesta_json`, no una por columna — mismo criterio que
+  `token_extra_json` en `perfiles`. Se llenan desde `POST
+  /api/save-output` (`node/lib/debinOutputStore.js` /
+  `modules/DebinOutputStore.psm1`, según el backend), en el mismo momento
+  en que se guarda el `.csv` en `files/`; si el `INSERT` falla (ej.
+  MariaDB no disponible en ese momento) no aborta la respuesta — el `.csv`
+  ya se guardó bien, que es lo principal de ese endpoint — solo queda
+  constancia del error en `logs/security.log`.
+
+`modules/MariaDbClient.psm1` abre y cierra su propia conexión en cada
+consulta (`Invoke-DbQuery`/`Invoke-DbNonQuery`) — `server.ps1` atiende un
+request HTTP a la vez (ver "Limitaciones conocidas"), así que no hace
+falta un pool propio; el pooling interno de MySqlConnector (activado por
+default en el connection string) ya evita rehacer el handshake TCP en
+cada llamada.
+
+#### Campos cifrados
+
+`node/lib/cryptoUtil.js` (backend Node.js) y `modules/CryptoUtil.psm1`
+(backend PowerShell, ver "Backend PowerShell (`modules/`)" más arriba)
+cifran estos campos con **AES-256-GCM** (cifrado autenticado: además de que
+nadie pueda leer el valor con un `SELECT` directo, si algo se corrompe o se
+edita a mano en la base, el descifrado lo detecta y tira un error en vez de
+devolver datos truncados/corruptos en silencio) antes de guardarlos, y los
+descifran al leerlos — el resto del código (`server.js`/`flowEngine.js` o
+`server.ps1`/`FlowEngine.psm1`) sigue viendo el valor en texto plano de
+siempre, sin enterarse de que está cifrado en la base. Mismo formato
+guardado y misma clave en los dos backends (ver "Cifrado cruzado entre los
+dos backends" más arriba):
+
+- `parametria.sybase_password` (la contraseña real de la base bancaria).
+- `perfiles.client_id`, `perfiles.client_secret`,
+  `perfiles.client_cert_passphrase`.
+
+El resto de los campos no está cifrado hoy: ni `apiKeyOrToken` (perfiles),
+ni nada de `usuarios`/`configuracion_ad`/`operaciones_procesadas` — si hace
+falta sumar alguno más a la lista, es agregarlo a `ENCRYPTED_FIELDS` en
+`profileStore.js`/`ProfileStore.psm1` (o el equivalente en
+`parametriaStore.js`/`ParametriaStore.psm1`, en los dos backends) y
+ensanchar la columna en el schema si hace falta (el valor cifrado ocupa
+~56 bytes más que el texto plano: `iv:authTag:ciphertext` en hexadecimal).
+
+Cada valor cifrado usa un IV (vector de inicialización) al azar — cifrar el
+mismo valor dos veces da un resultado distinto cada vez, a propósito (evita
+que alguien con acceso de solo lectura a la base note qué perfiles
+comparten la misma contraseña, por ejemplo). La clave es una sola para toda
+la app (`encryptionKey` en `db.local.json`, ver arriba) — no una por campo
+ni una por fila.
+
 ## Qué resuelve
 
 - Login obligatorio contra **Active Directory** (la contraseña nunca se
@@ -142,14 +367,14 @@ Pasos:
   archivo bajo `logs/http/` — ver "Logs en disco" más abajo.
 - Gestión de "perfiles" de conexión desde la UI web (nombre, URL base, tipo de
   autenticación, ApiKey/Bearer estático y los campos básicos de OAuth2 —
-  `tokenUrl`/`clientId`/`clientSecret`). Los campos de OAuth2 más avanzados
-  (`tokenParams`, `tokenHeaders`, etc., ver más abajo) se completan editando
-  `profiles.local.json`.
+  `tokenUrl`/`clientId`/`clientSecret`), guardados en MariaDB. Los campos de
+  OAuth2 más avanzados (`tokenParams`, `tokenHeaders`, etc., ver más abajo)
+  todavía no tienen UI propia.
 - Botón **"Probar token"** para verificar la obtención del token OAuth2 sin
   ejecutar ningún flow de negocio.
-- Los flows y perfiles viven en archivos JSON junto al script: se pueden
-  editar, agregar o distribuir sin tocar código. Los cambios en `Flows/` se
-  ven apenas se recarga la página (no hace falta reiniciar el servidor).
+- Los flows viven en archivos JSON junto al script: se pueden editar,
+  agregar o distribuir sin tocar código. Los cambios en `Flows/` se ven
+  apenas se recarga la página (no hace falta reiniciar el servidor).
 
 ## Estructura del proyecto
 
@@ -159,22 +384,27 @@ Iniciar.bat             Doble click para arrancar sin lidiar con la política de
 modules/
   JsonPath.psm1          Navegación de JSON por notación de puntos ("data.balance", "items[0].id")
   VariableSubstitution.psm1  Reemplazo de {{variable}} en templates
-  ProfileStore.psm1      Lee/escribe profiles.local.json
-  ParametriaStore.psm1   Lee/escribe parametria.local.json
+  MariaDbClient.psm1     Cliente MariaDB (ver "Backend PowerShell (modules/)")
+  CryptoUtil.psm1        Cifra/descifra campos sensibles (AES-256-GCM, ver "Campos cifrados")
+  ProfileStore.psm1      Perfiles — en MariaDB (ver "Base de datos (MariaDB)")
+  ParametriaStore.psm1   Parametría — en MariaDB (ídem)
   FlowStore.psm1         Lee todos los Flows/*.json
   FlowEngine.psm1        Ejecuta un flow paso a paso, incluye el caché de token OAuth2
   SecurityStore.psm1     Login (AD) + sesiones + usuarios/roles + auditoría (ver "Módulo de seguridad")
   ProcessedOperationsStore.psm1  Registro de operaciones ya procesadas, evita duplicados (ver "Prevención de operaciones duplicadas")
+  DebinOutputStore.psm1  Registro en MariaDB (dbn_out/dbn_consulta) del contenido de dbnout-/dbnconsulta-...csv
+  lib/                   DLLs vendorizadas (MySqlConnector, BouncyCastle.Cryptography — ver "Backend PowerShell (modules/)")
+  scripts/
+    Migrate-JsonToMariaDb.ps1  Migración única de *.local.json a MariaDB
 wwwroot/
   index.html, app.js, styles.css   Front-end (vanilla JS, sin build step)
 deploy/
   apicore.service         Unidad systemd (ver "Instalación en Linux")
   nginx-apicore.conf      Reverse proxy nginx (ver "Instalación en Linux")
+  mariadb-schema.sql      DDL de las tablas de MariaDB (ver "Base de datos (MariaDB)")
 Flows/                   *.json de flows (ver "Cómo definir un flow nuevo")
 files/                   Archivos de salida pfout-/pfouterror-/dbnout-/dbnouterror-... (no versionado, se crea solo)
-profiles.sample.json      Plantilla de perfiles (sin secretos)
-parametria.sample.json   Plantilla de parametría (ver "Módulo de parametría")
-security.sample.json    Plantilla de seguridad (conexión AD + usuarios, ver "Módulo de seguridad")
+db.sample.json           Plantilla de conexión a MariaDB + clave de cifrado (ver "Base de datos (MariaDB)")
 ```
 
 ## Módulo de seguridad (login + Active Directory + roles)
@@ -188,35 +418,26 @@ usuario habilitado, su nombre de cuenta de AD y qué **rol** tiene acá adentro.
 
 ### Configuración inicial
 
-1. Copiá `security.sample.json` a `security.local.json` (no se versiona, ver
-   `.gitignore` — igual que `profiles.local.json`/`parametria.local.json`).
-2. Completá el bloque `ad` con los datos del Domain Controller contra el que
-   validar contraseñas — **no hace falta que la PC donde corre
-   ApiCore esté unida al dominio**, alcanza con que llegue por red
-   al DC (mismo criterio que la conexión a Sybase: apuntás a un host/puerto
-   puntual, no se asume nada del entorno):
-   ```json
-   {
-     "ad": {
-       "server": "dc01.voii.com.ar",
-       "port": 389,
-       "useSsl": false,
-       "domain": "voii.com.ar"
-     },
-     "users": []
-   }
-   ```
-   `port`/`useSsl` también se pueden dejar en los valores de arriba (389,
-   `false`) para LDAP simple; para LDAPS usá `"port": 636, "useSsl": true`.
-3. **Bootstrap del primer administrador:** con `"users": []` (lista vacía),
-   el primer login que valide correctamente contra AD se da de alta
+1. Con la base MariaDB ya creada y el schema aplicado (ver "Base de datos
+   (MariaDB)"), la tabla `configuracion_ad` arranca con todos los campos
+   vacíos (fila singleton `id = 1`).
+2. Completá los datos del Domain Controller contra el que validar
+   contraseñas — **no hace falta que la máquina donde corre ApiCore esté
+   unida al dominio**, alcanza con que llegue por red al DC (mismo criterio
+   que la conexión a Sybase: apuntás a un host/puerto puntual, no se asume
+   nada del entorno) — desde la propia UI (botón "Usuarios..." en el
+   header, solo visible para rol `admin`) o con un `UPDATE` directo a
+   `configuracion_ad` (`server`, `port`, `use_ssl`, `domain`). `port`/
+   `use_ssl` también se pueden dejar en `389`/`0` para LDAP simple; para
+   LDAPS usá `port = 636, use_ssl = 1`.
+3. **Bootstrap del primer administrador:** con la tabla `usuarios` vacía, el
+   primer login que valide correctamente contra AD se da de alta
    automáticamente como el primer usuario, con rol `admin` — así no hace
-   falta editar el JSON a mano para crear el primer usuario. Una vez que
-   existe al menos un usuario en la lista, este atajo deja de aplicar: a
-   partir de ahí, un usuario que no esté en la lista (o que esté
-   deshabilitado) no puede entrar aunque su contraseña de AD sea correcta,
-   tenga que darlo de alta un admin desde el panel "Usuarios..." (o editando
-   `security.local.json` directamente).
+   falta insertar filas a mano para crear el primer usuario. Una vez que
+   existe al menos un usuario, este atajo deja de aplicar: a partir de ahí,
+   un usuario que no esté dado de alta (o que esté deshabilitado) no puede
+   entrar aunque su contraseña de AD sea correcta, tenga que darlo de alta
+   un admin desde el panel "Usuarios...".
 4. Los pasos siguientes (agregar más usuarios, cambiar roles, reconfigurar la
    conexión AD) se hacen desde la propia UI: botón **"Usuarios..."** en el
    header, visible solo para rol `admin`.
@@ -240,9 +461,11 @@ servidor rechaza esas tres rutas con 403 igual si se llaman directo.
 
 Los roles están fijos en
 `Test-RoleCanRunFlow`/`Test-RoleCanManageUsers`/`Test-RoleCanManageParametria`
-(`modules/SecurityStore.psm1`) — no hay UI para inventar roles nuevos ni
-para restringir un rol a un subconjunto de flows todavía, aunque el código
-queda en un único lugar para agregarlo si hiciera falta. La app nunca deja sin ningún admin habilitado: no se puede eliminar,
+(`modules/SecurityStore.psm1`, con el mismo criterio en
+`node/lib/securityStore.js` para el backend Node.js) — no hay UI para
+inventar roles nuevos ni para restringir un rol a un subconjunto de flows
+todavía, aunque el código queda en un único lugar para agregarlo si hiciera
+falta. La app nunca deja sin ningún admin habilitado: no se puede eliminar,
 deshabilitar, ni sacarle el rol de admin al último administrador habilitado
 (tanto desde la UI como llamando a `/api/users` directo).
 
@@ -259,8 +482,8 @@ llamada limpia la sesión del lado del cliente y vuelve a mostrar la pantalla
 de login.
 
 En cada request autenticado, el servidor no solo mira si el token existe:
-vuelve a leer `security.local.json` y confirma que ese usuario siga
-habilitado y toma su rol **actual** (no el que tenía al momento del login) —
+vuelve a consultar la base y confirma que ese usuario siga habilitado y
+toma su rol **actual** (no el que tenía al momento del login) —
 si un admin deshabilita a alguien, le cambia el rol, o lo elimina, eso tiene
 efecto inmediato en la próxima request de esa sesión, sin esperar a que el
 token expire ni a que la persona vuelva a loguearse.
@@ -291,24 +514,23 @@ en disco").
   donde el token/login viajan por HTTP plano dentro de la propia máquina —
   aceptable en ese contexto. Si se expone en red (por ejemplo, el
   deployment Linux de "Instalación en Linux (nginx + systemd)"), usar el
-  bloque HTTPS de `deploy/nginx-apicore.conf` para que ese
-  tráfico no viaje en claro entre el navegador y el servidor.
+  bloque HTTPS de `deploy/nginx-apicore.conf`/`deploy/nginx-apicore-node.conf`
+  (según el backend) para que ese tráfico no viaje en claro entre el
+  navegador y el servidor.
 
 ## Configurar perfiles de conexión
 
-Los perfiles se completan editando `profiles.local.json` (o desde la UI web
-para los campos que ya soporta: nombre, URL base, tipo de autenticación,
-header/token de ApiKey o Bearer). Para crearlo:
+Los perfiles se completan desde la UI web (nombre, URL base, tipo de
+autenticación, header/token de ApiKey o Bearer, campos básicos de OAuth2) y
+se guardan en la tabla `perfiles` de MariaDB (ver "Base de datos
+(MariaDB)").
 
-```powershell
-copy profiles.sample.json profiles.local.json
-```
-
-La plantilla trae el perfil de testing que ya se usa hoy: **un solo perfil**
-que le pega a los dos servidores de testing que necesita algún flow (IBS-Link
-para "Alta de Plazo Fijos - File", Nova-Link para "Transferencia DEBIN") — no
-uno por servidor. Ver "Un perfil, más de un servidor (`novaBaseUrl`)" más
-abajo para el detalle de cómo un flow elige a cuál de los dos le pega:
+Un uso típico es **un solo perfil** que le pega a los dos servidores de
+testing que necesita algún flow (IBS-Link para "Alta de Plazo Fijos - File",
+Nova-Link para "Transferencia DEBIN") — no uno por servidor. Ver "Un perfil,
+más de un servidor (`novaBaseUrl`)" más abajo para el detalle de cómo un
+flow elige a cuál de los dos le pega. Ejemplo del perfil de testing que ya
+se usa hoy (tal como quedaría almacenado, en formato JSON equivalente):
 
 ```json
 [
@@ -337,12 +559,14 @@ abajo para el detalle de cómo un flow elige a cuál de los dos le pega:
 
 Podés completar `tokenUrl`/`clientId`/`clientSecret` desde el diálogo
 "Nuevo.../Editar..." de la UI (elegí `OAuth2ClientCredentials` en "Tipo de
-autenticación"), o editando `profiles.local.json` directamente con un editor
-de texto. En cualquier caso, **nunca pegues un secreto real en un archivo que
-se vaya a commitear** (ni en `Flows/*.json`, ni en `profiles.sample.json`) —
-`profiles.local.json` está en `.gitignore` justamente para esto. Los campos
-más avanzados (`tokenParams`, `tokenHeaders`, `tokenAccessTokenPath`, etc.)
-todavía no tienen UI propia y se completan por archivo.
+autenticación") — nunca pegues un secreto real en un archivo que se vaya a
+commitear (ni en `Flows/*.json`, ni en `db.sample.json`). Los campos más
+avanzados (`tokenParams`, `tokenHeaders`, `tokenAccessTokenPath`, etc.)
+todavía no tienen UI propia — se guardan en la columna `token_extra_json`
+de la tabla `perfiles` (ver "Backend PowerShell (`modules/`)") y hoy solo
+se completan con un `UPDATE` directo a MariaDB, o migrando un
+`profiles.local.json` viejo que ya los tuviera (ver "Base de datos
+(MariaDB)").
 
 ### Un perfil, más de un servidor (`novaBaseUrl`)
 
@@ -420,8 +644,9 @@ como "Alta de Plazo Fijos - File" que ni siquiera toca Nova-Link): si la
 ruta o la contraseña del `.pfx` estaban mal, la excepción de
 `X509Certificate2` rompía también esas otras cosas que no tenían nada que
 ver con el certificado. Con un solo perfil sirviendo a los dos servidores
-(ver "Un perfil, más de un servidor" más abajo), esto importa: "Testing"
-tiene casi siempre los dos mecanismos de auth configurados a la vez.
+(ver "Un perfil, más de un servidor"
+más abajo), esto importa: "Testing" tiene casi siempre los dos mecanismos
+de auth configurados a la vez.
 
 Implementación: `modules/FlowEngine.psm1` carga el certificado con
 `New-Object X509Certificate2($pfxPath, $passphrase, ...Exportable)` y lo
@@ -512,9 +737,9 @@ cambian de una ejecución a otra, agrupados por tipo de cuenta:
   usar en cualquier flow: solo lo usan internamente los steps de tipo
   `"type": "sql"`.
 
-Se guardan en `parametria.local.json` (plantilla en `parametria.sample.json`,
-igual mecánica que los perfiles: el archivo local **no se versiona**, está en
-`.gitignore`, porque va a tener códigos de cuenta reales del banco).
+Se guardan en la tabla `parametria` de MariaDB (fila singleton, ver "Base de
+datos (MariaDB)") — la contraseña de Sybase se guarda cifrada (ver "Campos
+cifrados").
 
 Dentro de un flow, estos valores están disponibles como variables de sistema
 con nombre fijo (no hace falta declararlos como inputs):
@@ -532,8 +757,11 @@ formulario — no hay nada fijo para ese flow en Parametría.
 directamente en su propio `bodyTemplate` (fijos o por fila, según el paso —
 ver "Flow 'Alta de Plazo Fijos - File'" más abajo), no desde Parametría.
 Si necesitás otra combinación de campos parametrizados, agregá una nueva
-categoría a `parametria.local.json`/`parametria.sample.json` y a
-`Get-ParametriaVariables` en `modules/FlowEngine.psm1`.
+columna a la tabla `parametria` (`deploy/mariadb-schema.sql`), al mapeo de
+fila en `parametriaStore.js`/`ParametriaStore.psm1` y a
+`getParametriaVariables`/`Get-ParametriaVariables` en
+`flowEngine.js`/`FlowEngine.psm1` (para exponerla como variable `{{...}}`)
+— en los dos backends, para que queden en sincronía.
 
 ### Conexión a una base Sybase (para steps SQL)
 
@@ -826,6 +1054,12 @@ y, como cada corrida es de un solo flow, nunca se mezclan entre sí:
   completo de columnas. **Con encabezado.** Si ninguna fila llegó a
   transferirse, no se genera.
 
+El contenido de `dbnout-...`/`dbnconsulta-...` además queda registrado en
+MariaDB (tablas `dbn_out`/`dbn_consulta`, ver "Base de datos (MariaDB)")
+con quién ejecutó la carga y cuándo — el `.csv` en `files/` se sigue
+generando igual, esto es un registro adicional consultable sin tener que
+ir a buscar el archivo.
+
 Si no hubo ningún plazo fijo dado de alta, no se genera `pfout-...`; si no
 hubo ninguna fila fallada, no se genera `pfouterror-.../dbnouterror-...`.
 `POST /api/save-output` valida que `prefix`
@@ -881,17 +1115,18 @@ Una fila cuyo `(cuit, numeroComprobante)` ya está registrado queda
 ningún endpoint del banco para esa fila (se chequea antes incluso que la
 cuenta en Sybase) y termina en `pfouterror-...` con el motivo del bloqueo.
 No hay forma de "forzar" el reproceso desde la UI — si hace falta de
-verdad, hoy solo se puede editando a mano
-`logs/processed-operations.json`.
+verdad, hoy solo se puede borrando la fila correspondiente de la tabla
+`operaciones_procesadas` en MariaDB.
 
-El registro (`modules/ProcessedOperationsStore.psm1`,
-`logs/processed-operations.json`, no versionado) solo se llena con
-operaciones que **realmente se dieron de alta** (mismo criterio que decide
-si una fila entra a `pfout-...`) — nunca con filas que fallaron o se
-bloquearon, así que sí se pueden reintentar sin quedar frenadas para
-siempre por su propio intento fallido. El registro se guarda en un solo
-`POST /api/register-operations` al terminar de procesar todo el archivo
-(no una llamada por fila), con todas las operaciones exitosas de ese lote.
+El registro (tabla `operaciones_procesadas`, ver "Base de datos
+(MariaDB)"; `processedOperationsStore.js`/`ProcessedOperationsStore.psm1`)
+solo se llena con operaciones que **realmente se dieron de alta** (mismo
+criterio que decide si una fila entra a `pfout-...`) — nunca con filas que
+fallaron o se bloquearon, así que sí se pueden reintentar sin quedar
+frenadas para siempre por su propio intento fallido. El registro se guarda
+en un solo `POST /api/register-operations` al terminar de procesar todo el
+archivo (no una llamada por fila), con todas las operaciones exitosas de
+ese lote.
 
 Cada vez que `POST /api/check-operations` encuentra una o más operaciones
 duplicadas se deja constancia en `logs/security.log`, con el usuario que
@@ -1285,10 +1520,11 @@ filas, no 5 archivos. Esto lo arma el cliente (`wwwroot/app.js`,
 log, el servidor genera uno y lo devuelve en el header de respuesta
 `X-Run-Log-File`; el cliente lo guarda y lo reenvía en el campo
 `runLogFileName` del body de `/api/run` en cada fila siguiente del mismo
-archivo, así todas terminan en el mismo log (`Invoke-Flow` en
-`modules/FlowEngine.psm1` valida que el nombre recibido tenga exactamente
-el formato de arriba antes de confiarlo como ruta de archivo — cualquier
-otro valor se ignora y genera uno nuevo). Para "Transferencia DEBIN - File", la consulta de
+archivo, así todas terminan en el mismo log (`invokeFlow` en
+`node/lib/flowEngine.js` / `Invoke-Flow` en `modules/FlowEngine.psm1`
+valida que el nombre recibido tenga exactamente el formato de arriba antes
+de confiarlo como ruta de archivo — cualquier otro valor se ignora y
+genera uno nuevo). Para "Transferencia DEBIN - File", la consulta de
 estado posterior (`Consulta DEBIN (solo)`, una llamada por transferencia)
 es un flow distinto, así que junta sus propias filas en **su propio**
 archivo compartido, aparte del de la transferencia.
@@ -1318,29 +1554,39 @@ de ApiKey, si el perfil usa ese tipo de autenticación) se guarda como
 un archivo por operación — no hay rotación/limpieza automática; si hace
 falta liberar espacio, es un borrado manual de los más viejos.
 
-`logs/security.log` — ver "Auditoría" en "Módulo de seguridad" — y
-`logs/processed-operations.json` — ver "Prevención de operaciones
-duplicadas" — viven en la misma carpeta, tampoco se versionan.
+`logs/security.log` — ver "Auditoría" en "Módulo de seguridad" — vive en la
+misma carpeta, tampoco se versiona. El registro antiduplicado y el de
+dbnout-/dbnconsulta- viven en MariaDB (tablas `operaciones_procesadas` y
+`dbn_out`/`dbn_consulta`), no en `logs/`.
 
 ## Limitaciones conocidas
 
 - Soporta REST con ApiKey, Bearer estático u OAuth2 client_credentials. No
-  soporta mTLS ni SOAP.
-- Las credenciales (`apiKeyOrToken`, `clientSecret`, y la contraseña de
-  Sybase en `parametria.local.json`) se guardan en texto plano en disco. Son
-  archivos locales, no se versionan, pero no están cifrados.
+  soporta mTLS del lado servidor propio ni SOAP (sí mTLS como **cliente**,
+  ver "Certificado cliente (TLS mutuo)").
+- `apiKeyOrToken` se guarda en texto plano en MariaDB; `clientSecret`,
+  `clientId`, `clientCertPassphrase` y la contraseña de Sybase se guardan
+  cifrados (AES-256-GCM, ver "Campos cifrados").
 - Los steps `"type": "sql"` requieren un driver ODBC de Sybase/SAP ASE ya
-  instalado en la máquina — la app no instala ni empaqueta ninguno. Tampoco
-  escapan el SQL armado por `query` (mismo mecanismo de texto plano que
-  `pathTemplate`/`bodyTemplate`); pensado para inputs ya confiables, no para
-  datos externos sin validar (ver "Steps de tipo SQL" más arriba).
-- El backend atiende un request HTTP a la vez (`HttpListener.GetContext()`
-  sincrónico) — pensado para un solo usuario ejecutando flows manualmente,
-  no para uso concurrente ni como servicio productivo con muchos usuarios
-  al mismo tiempo ejecutando flows largos.
+  instalado en la máquina (backend PowerShell) o el Open Client/Server de
+  SAP con `isql` disponible (backend Node.js) — la app no instala ni
+  empaqueta ninguno de los dos. Tampoco escapan el SQL armado por `query`
+  (mismo mecanismo de texto plano que `pathTemplate`/`bodyTemplate`);
+  pensado para inputs ya confiables, no para datos externos sin validar
+  (ver "Steps de tipo SQL" más arriba). El backend Node.js además parsea
+  la salida de texto de `isql` por posición de columna — ver "Conexión a
+  Sybase en el backend Node.js" para el detalle y sus trade-offs conocidos.
+- El **backend PowerShell** atiende un request HTTP a la vez
+  (`HttpListener.GetContext()` sincrónico) — pensado para un solo usuario
+  ejecutando flows manualmente, no para uso concurrente. El **backend
+  Node.js** sí atiende requests en paralelo (I/O asíncrono nativo), pero
+  ninguno de los dos backends fue pensado ni probado como servicio
+  productivo con muchos usuarios concurrentes ejecutando flows largos al
+  mismo tiempo.
 - El diálogo de perfiles de la UI no expone los campos de OAuth2 más
   avanzados (`tokenParams`, `tokenHeaders`, `tokenAccessTokenPath`, etc.) —
-  se completan editando `profiles.local.json` directamente.
+  se completan con un `UPDATE` directo a MariaDB (ver "Configurar perfiles
+  de conexión").
 - Ningún step de un flow debe llevar body en un método `GET`/`HEAD`: el
   motor lo ignora aunque `bodyTemplate` esté definido, porque en Windows
   PowerShell 5.1 (.NET Framework) `HttpClient` tira una excepción si se le
