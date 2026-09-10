@@ -1359,9 +1359,15 @@ archivo, cada uno con su bloque `>>> REQUEST` (método, URL, headers, body)
 y, cuando llega, su bloque `<<< RESPONSE` (HTTP status, duración, body
 completo sin el corte a 200.000 caracteres que sí tiene la UI) — en ese
 orden cronológico, aunque el request se escribe antes de mandarse, así
-queda registrado igual si la respuesta nunca llega (timeout, host
-inalcanzable). No se registra la obtención interna del token OAuth2, para
-no loguear `client_secret`.
+queda registrado igual si la respuesta nunca llega. Si el step tira una
+excepción **antes** de recibir cualquier respuesta (conexión rechazada,
+timeout, DNS, certificado cliente mal configurado, URL inválida, etc.), se
+escribe en cambio un bloque `<<< ERROR` con el mensaje de esa excepción y
+la duración hasta el momento del error — sin este bloque, una falla de
+conectividad (típicamente mTLS contra Nova-Link) dejaba el archivo con
+el `REQUEST` pero ningún indicio de por qué no hubo respuesta. No se
+registra la obtención interna del token OAuth2, para no loguear
+`client_secret`.
 
 Cada archivo es append-only mientras dura esa corrida (nunca se rota ni se
 limpia solo) y **no se versiona** (`logs/` está en `.gitignore`, incluida

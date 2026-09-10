@@ -642,6 +642,20 @@ function Invoke-Flow {
             } catch {
                 $entry.status = 'Error'
                 $entry.errorMessage = $_.Exception.Message
+                # Una excepción acá (cert mal configurado, conexión rechazada,
+                # timeout, DNS, URL inválida, etc.) corta antes de recibir
+                # cualquier respuesta — sin esto, el archivo de log de la
+                # corrida se queda solo con el bloque REQUEST (o ni eso, si la
+                # excepción fue antes de mandar el request) y no queda
+                # registrado en ningún lado POR QUÉ falló, aunque la UI sí
+                # muestre el mensaje. Mismo archivo que el resto de los steps
+                # de esta corrida ($runLogFileName).
+                $errorLogTimestamp = (Get-Date).ToString('yyyy-MM-dd HH:mm:ss.fff')
+                $errorLogText = (
+                    "<<< ERROR [$errorLogTimestamp] Flow=$($Flow.name) | Step=$($step.name) | $($_.Exception.Message) ($($stopwatch.ElapsedMilliseconds) ms)",
+                    '---'
+                ) -join "`n"
+                Write-HttpLog -LogsDir $LogsDir -FileName $runLogFileName -Content $errorLogText
             } finally {
                 $stopwatch.Stop()
                 $entry.durationMs = $stopwatch.ElapsedMilliseconds
