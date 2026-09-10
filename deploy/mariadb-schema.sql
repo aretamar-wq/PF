@@ -81,7 +81,11 @@ CREATE TABLE IF NOT EXISTS parametria (
   pf_codigo_movimiento VARCHAR(100) NOT NULL DEFAULT '',
   sybase_connection_string VARCHAR(1000) NOT NULL DEFAULT '',
   sybase_usuario VARCHAR(255) NOT NULL DEFAULT '',
-  sybase_password VARCHAR(255) NOT NULL DEFAULT '',
+  -- Cifrada (AES-256-GCM, ver node/lib/cryptoUtil.js) — más ancha que un
+  -- VARCHAR(255) de contraseña en texto plano porque el formato guardado es
+  -- "iv:authTag:ciphertext" en hexadecimal (~56 bytes de overhead antes de
+  -- contar la contraseña en sí).
+  sybase_password VARCHAR(500) NOT NULL DEFAULT '',
   updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
   PRIMARY KEY (id),
   CONSTRAINT chk_parametria_singleton CHECK (id = 1)
@@ -112,7 +116,12 @@ CREATE TABLE IF NOT EXISTS perfiles (
   api_key_or_token VARCHAR(1000) NOT NULL DEFAULT '',
   api_key_header_name VARCHAR(255) NOT NULL DEFAULT '',
   token_url VARCHAR(500) NOT NULL DEFAULT '',
-  client_id VARCHAR(255) NOT NULL DEFAULT '',
+  -- client_id/client_secret/client_cert_passphrase cifrados (AES-256-GCM,
+  -- ver node/lib/cryptoUtil.js) — más anchos que el dato en texto plano
+  -- porque el formato guardado es "iv:authTag:ciphertext" en hexadecimal
+  -- (~56 bytes de overhead antes de contar el valor real). apiKeyOrToken
+  -- queda sin cifrar por ahora.
+  client_id VARCHAR(500) NOT NULL DEFAULT '',
   client_secret VARCHAR(500) NOT NULL DEFAULT '',
   client_cert_pfx_path VARCHAR(500) NOT NULL DEFAULT '',
   client_cert_passphrase VARCHAR(500) NOT NULL DEFAULT '',

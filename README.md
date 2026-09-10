@@ -259,7 +259,8 @@ node/
     flowEngine.js             Port de modules/FlowEngine.psm1 (fetch en vez de HttpClient)
     sybaseClient.js           Sin equivalente PowerShell — conecta a Sybase vía isql (subproceso), ver "Conexión a Sybase en el backend Node.js" arriba
     mariadbClient.js          Pool de conexiones a MariaDB (mysql2/promise), ver "Base de datos (MariaDB)"
-    dbConfigStore.js          Lee db.local.json (conexión a MariaDB)
+    dbConfigStore.js          Lee db.local.json (conexión a MariaDB + clave de cifrado)
+    cryptoUtil.js             Cifra/descifra campos sensibles (AES-256-GCM), ver "Campos cifrados"
     profileStore.js           Perfiles — en MariaDB, no en profiles.local.json (ver "Base de datos (MariaDB)")
     parametriaStore.js        Parametría — en MariaDB, no en parametria.local.json (ídem)
     securityStore.js          Usuarios/roles/config de AD — en MariaDB (ídem); login LDAP con ldapts, sesiones en memoria (sin cambios)
@@ -328,7 +329,7 @@ mysql -u apicore -p apicore < deploy/mariadb-schema.sql
 **3. Configurar la conexión**: copiá `db.sample.json` a `db.local.json`
 (en la raíz del repo, **nunca se versiona** — está en `.gitignore`, mismo
 criterio que `profiles.local.json`) y completá host/puerto/base/usuario/
-contraseña reales:
+contraseña reales, más una clave de cifrado (`encryptionKey`, ver más abajo):
 
 ```json
 {
@@ -336,9 +337,26 @@ contraseña reales:
   "port": 3306,
   "database": "apicore",
   "user": "apicore",
-  "password": "elegí-una-contraseña"
+  "password": "elegí-una-contraseña",
+  "encryptionKey": "generar-con-el-comando-de-abajo"
 }
 ```
+
+`encryptionKey` es la clave (AES-256, 32 bytes en hexadecimal) que cifra
+los secretos guardados en la base — ver "Campos cifrados" más abajo. Se
+genera una sola vez con:
+
+```sh
+node -e "console.log(require('crypto').randomBytes(32).toString('hex'))"
+```
+
+**Guardala con el mismo cuidado que una contraseña de producción: si se
+pierde, los valores ya cifrados en la base quedan irrecuperables** (no hay
+clave maestra de respaldo ni forma de "resetearla" sin perder esos datos —
+solo se podría volver a cargar esos campos a mano desde la UI). Mientras no
+guardes ningún secreto (contraseña de Sybase, client secret, etc.), la app
+funciona igual sin `encryptionKey` configurada; el error recién aparece
+cuando de verdad hace falta cifrar o descifrar algo.
 
 **4. Instalar la dependencia nueva** (`mysql2`, driver puro JS — sin nada
 que compilar) y **migrar los datos que ya hubiera** en los `*.local.json`
@@ -375,14 +393,17 @@ columnas):
   contra el que se autentica el login. Fila única (`id = 1`).
 - **`parametria`** — valores fijos por categoría de cuenta (Cuenta
   Corriente/Caja de Ahorro/Plazo Fijo) + conexión Sybase. Fila única
-  (`id = 1`), mismo criterio que `configuracion_ad`.
+  (`id = 1`), mismo criterio que `configuracion_ad`. `sybase_password`
+  cifrada — ver "Campos cifrados" más abajo.
 - **`perfiles`** — perfiles de conexión (`baseUrl`/`novaBaseUrl`/auth/
   certificado cliente), `name` como clave única. Los campos OAuth2
   avanzados que la UI no expone (`tokenParams`, `tokenHeaders`, etc. — ver
   "Limitaciones conocidas") se guardan en una columna `token_extra_json`
   (JSON) en vez de tener una columna sparse por cada uno; `profileStore.js`
   los aplana de vuelta al nivel superior del objeto perfil al leer, así el
-  resto del código (`flowEngine.js`) no nota la diferencia.
+  resto del código (`flowEngine.js`) no nota la diferencia. `client_id`/
+  `client_secret`/`client_cert_passphrase` cifrados — ver "Campos
+  cifrados" más abajo.
 - **`operaciones_procesadas`** — registro antiduplicado (`cuit` +
   `numero_comprobante` ya procesados). `UNIQUE KEY (cuit,
   numero_comprobante)` — mismo criterio de deduplicación que antes usaba
@@ -393,6 +414,34 @@ columnas):
 `node/lib/mariadbClient.js` mantiene un solo pool de conexiones
 (`mysql2/promise`) para todo el proceso — se crea la primera vez que hace
 falta y se reusa después, no una conexión nueva por request.
+
+#### Campos cifrados
+
+`node/lib/cryptoUtil.js` cifra estos campos con **AES-256-GCM** (cifrado
+autenticado: además de que nadie pueda leer el valor con un `SELECT`
+directo, si algo se corrompe o se edita a mano en la base, el descifrado lo
+detecta y tira un error en vez de devolver datos truncados/corruptos en
+silencio) antes de guardarlos, y los descifra al leerlos — el resto del
+código (`server.js`, `flowEngine.js`) sigue viendo el valor en texto plano
+de siempre, sin enterarse de que está cifrado en la base:
+
+- `parametria.sybase_password` (la contraseña real de la base bancaria).
+- `perfiles.client_id`, `perfiles.client_secret`,
+  `perfiles.client_cert_passphrase`.
+
+El resto de los campos no está cifrado hoy: ni `apiKeyOrToken` (perfiles),
+ni nada de `usuarios`/`configuracion_ad`/`operaciones_procesadas` — si hace
+falta sumar alguno más a la lista, es agregarlo a `ENCRYPTED_FIELDS` en
+`profileStore.js` (o el equivalente en `parametriaStore.js`) y ensanchar la
+columna en el schema si hace falta (el valor cifrado ocupa ~56 bytes más
+que el texto plano: `iv:authTag:ciphertext` en hexadecimal).
+
+Cada valor cifrado usa un IV (vector de inicialización) al azar — cifrar el
+mismo valor dos veces da un resultado distinto cada vez, a propósito (evita
+que alguien con acceso de solo lectura a la base note qué perfiles
+comparten la misma contraseña, por ejemplo). La clave es una sola para toda
+la app (`encryptionKey` en `db.local.json`, ver arriba) — no una por campo
+ni una por fila.
 
 ## Qué resuelve
 

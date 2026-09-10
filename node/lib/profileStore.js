@@ -7,8 +7,20 @@
 // de node/server.js más allá de agregar "await": saveProfiles sigue
 // recibiendo el array completo y reemplaza el contenido entero de la tabla
 // en una transacción, igual que antes sobrescribía el archivo entero.
+//
+// client_id/client_secret/client_cert_passphrase se guardan cifrados
+// (AES-256-GCM, ver cryptoUtil.js) — no algo que deba quedar legible con un
+// SELECT directo a la tabla. apiKeyOrToken queda sin cifrar por ahora (no
+// se pidió); el resto de los campos (baseUrl/novaBaseUrl/authType/tokenUrl/
+// clientCertPfxPath) no son secretos.
 
 const db = require('./mariadbClient');
+const { encrypt, decrypt } = require('./cryptoUtil');
+const { getEncryptionKey } = require('./dbConfigStore');
+
+// Campos de un perfil que se guardan cifrados en la base — un solo lugar
+// donde agregar/sacar uno si hace falta cambiar el alcance más adelante.
+const ENCRYPTED_FIELDS = ['clientId', 'clientSecret', 'clientCertPassphrase'];
 
 // Campos OAuth2 avanzados que no tienen columna propia (ver
 // deploy/mariadb-schema.sql, token_extra_json) — se guardan tal cual en un
@@ -26,7 +38,7 @@ const TOKEN_EXTRA_FIELDS = [
   'tokenMethod',
 ];
 
-function mapProfileRow(row) {
+function mapProfileRow(row, rootDir) {
   const profile = {
     name: row.name,
     baseUrl: row.base_url,
@@ -44,12 +56,20 @@ function mapProfileRow(row) {
     const extra = typeof row.token_extra_json === 'string' ? JSON.parse(row.token_extra_json) : row.token_extra_json;
     Object.assign(profile, extra);
   }
+
+  if (ENCRYPTED_FIELDS.some((field) => profile[field])) {
+    const key = getEncryptionKey(rootDir);
+    for (const field of ENCRYPTED_FIELDS) {
+      if (profile[field]) profile[field] = decrypt(profile[field], key);
+    }
+  }
+
   return profile;
 }
 
 async function getProfiles(rootDir) {
   const rows = await db.query(rootDir, 'SELECT * FROM perfiles ORDER BY name');
-  return rows.map(mapProfileRow);
+  return rows.map((row) => mapProfileRow(row, rootDir));
 }
 
 async function saveProfiles(rootDir, profiles) {
@@ -62,6 +82,13 @@ async function saveProfiles(rootDir, profiles) {
     // antes: se borra todo y se vuelve a insertar la lista entera, en vez de
     // hacer un diff fila por fila.
     await connection.query('DELETE FROM perfiles');
+
+    let key = null;
+    for (const profile of array) {
+      if (ENCRYPTED_FIELDS.some((field) => profile[field])) {
+        if (!key) key = getEncryptionKey(rootDir);
+      }
+    }
 
     for (const profile of array) {
       const tokenExtra = {};
@@ -83,10 +110,10 @@ async function saveProfiles(rootDir, profiles) {
           profile.apiKeyHeaderName || '',
           profile.apiKeyOrToken || '',
           profile.tokenUrl || '',
-          profile.clientId || '',
-          profile.clientSecret || '',
+          profile.clientId ? encrypt(profile.clientId, key) : '',
+          profile.clientSecret ? encrypt(profile.clientSecret, key) : '',
           profile.clientCertPfxPath || '',
-          profile.clientCertPassphrase || '',
+          profile.clientCertPassphrase ? encrypt(profile.clientCertPassphrase, key) : '',
           Object.keys(tokenExtra).length > 0 ? JSON.stringify(tokenExtra) : null,
         ]
       );

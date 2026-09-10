@@ -5,8 +5,16 @@
 // fila única id=1) — reemplaza parametria.local.json (ver
 // deploy/mariadb-schema.sql y "Base de datos (MariaDB)" en el README). Misma
 // API pública que antes (getParametria/saveParametria, ahora async).
+//
+// sybase_password se guarda cifrada (AES-256-GCM, ver cryptoUtil.js) — es la
+// contraseña real de la base bancaria, no algo que deba quedar legible con
+// un SELECT directo a la tabla. El resto de los campos de Parametría no son
+// secretos (códigos de cuenta/producto/movimiento, o el connection string
+// sin la contraseña) y se guardan tal cual.
 
 const db = require('./mariadbClient');
+const { encrypt, decrypt } = require('./cryptoUtil');
+const { getEncryptionKey } = require('./dbConfigStore');
 
 function getDefaultParametria() {
   return {
@@ -48,7 +56,12 @@ function mapParametriaRow(row) {
 async function getParametria(rootDir) {
   const rows = await db.query(rootDir, 'SELECT * FROM parametria WHERE id = 1');
   if (rows.length === 0) return getDefaultParametria();
-  return mapParametriaRow(rows[0]);
+
+  const parametria = mapParametriaRow(rows[0]);
+  if (parametria.sybase.password) {
+    parametria.sybase.password = decrypt(parametria.sybase.password, getEncryptionKey(rootDir));
+  }
+  return parametria;
 }
 
 async function saveParametria(rootDir, parametria) {
@@ -57,6 +70,8 @@ async function saveParametria(rootDir, parametria) {
   const ca = p.cajaDeAhorro || {};
   const pf = p.plazoFijo || {};
   const sybase = p.sybase || {};
+
+  const encryptedPassword = sybase.password ? encrypt(sybase.password, getEncryptionKey(rootDir)) : '';
 
   await db.query(
     rootDir,
@@ -87,7 +102,7 @@ async function saveParametria(rootDir, parametria) {
       pf.codigoMovimiento || '',
       sybase.connectionString || '',
       sybase.usuario || '',
-      sybase.password || '',
+      encryptedPassword,
     ]
   );
 }

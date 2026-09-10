@@ -3,5 +3,6 @@
   "port": 3306,
   "database": "apicore",
   "user": "apicore",
-  "password": ""
+  "password": "",
+  "encryptionKey": ""
 }

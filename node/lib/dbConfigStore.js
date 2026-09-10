@@ -12,16 +12,18 @@ function getDbConfigFilePath(rootDir) {
   return path.join(rootDir, 'db.local.json');
 }
 
-function getDbConfig(rootDir) {
+function readDbConfigFile(rootDir) {
   const filePath = getDbConfigFilePath(rootDir);
   if (!fs.existsSync(filePath)) {
     throw new Error(
       `No se encontró ${filePath}. Copiá db.sample.json a db.local.json y completá los datos de conexión a MariaDB.`
     );
   }
+  return JSON.parse(fs.readFileSync(filePath, 'utf8'));
+}
 
-  const json = fs.readFileSync(filePath, 'utf8');
-  const parsed = JSON.parse(json);
+function getDbConfig(rootDir) {
+  const parsed = readDbConfigFile(rootDir);
   if (!parsed || !parsed.host || !parsed.database || !parsed.user) {
     throw new Error('db.local.json está incompleto: hacen falta al menos host, database y user.');
   }
@@ -35,4 +37,22 @@ function getDbConfig(rootDir) {
   };
 }
 
-module.exports = { getDbConfigFilePath, getDbConfig };
+// Clave de cifrado (AES-256-GCM, ver cryptoUtil.js) para parametria.sybase_password
+// — vive en el mismo db.local.json que el resto de la conexión a MariaDB, no
+// en la base (cifrar con una clave guardada en la misma tabla que lo cifrado
+// no protege nada). Se genera una sola vez con:
+//   node -e "console.log(require('crypto').randomBytes(32).toString('hex'))"
+// y se completa a mano en db.local.json, campo "encryptionKey" — no hay
+// forma de recuperar el valor cifrado si se pierde esta clave.
+function getEncryptionKey(rootDir) {
+  const parsed = readDbConfigFile(rootDir);
+  if (!parsed || !parsed.encryptionKey) {
+    throw new Error(
+      'db.local.json no tiene configurado "encryptionKey" (hace falta para cifrar/descifrar la contraseña de Sybase en Parametría). ' +
+        'Generá una con: node -e "console.log(require(\'crypto\').randomBytes(32).toString(\'hex\'))" y agregala a db.local.json.'
+    );
+  }
+  return String(parsed.encryptionKey);
+}
+
+module.exports = { getDbConfigFilePath, getDbConfig, getEncryptionKey };
