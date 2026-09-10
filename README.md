@@ -871,10 +871,13 @@ vez por cada fila (ej. `Flows/plazo-fijo-cocos-files-sql.json`). Para esto:
 - `"inputMode": "csv"` es lo único que cambia respecto de un flow normal —
   hace que la UI muestre una zona de archivo (con drag & drop, además del
   selector de siempre) en vez del formulario.
-- El CSV **no lleva fila de encabezado**: la columna 1 de cada fila es el
-  primer elemento de `inputs`, la columna 2 el segundo, y así — el mismo
-  orden en que están declarados en `inputs`. Los valores no necesitan
-  comillas salvo que el campo tenga una coma (ver más abajo).
+- El CSV **lleva una fila de encabezado** (nombres de columna) como
+  primera línea del archivo — `runFlowFromCsv` la descarta sin mirarla
+  (no valida que los nombres coincidan con nada) antes de procesar
+  cualquier fila. A partir de la segunda línea, la columna 1 de cada fila
+  es el primer elemento de `inputs`, la columna 2 el segundo, y así — el
+  mismo orden en que están declarados en `inputs`. Los valores no
+  necesitan comillas salvo que el campo tenga una coma (ver más abajo).
 - Cada fila se ejecuta como una corrida independiente del flow completo (los
   mismos pasos, en el mismo orden, con la misma lógica de "si un paso falla
   no se ejecutan los siguientes de esa fila"). El motor de ejecución
@@ -1134,8 +1137,10 @@ ejecutable por nombre vía `/api/run` si hiciera falta correrlo suelto.
 operaciones de Plazo Fijo y, por cada fila,
 busca las cuentas del cliente en Sybase, debita de Cuenta Corriente,
 acredita en Caja de Ahorro y da de alta el Plazo Fijo. El CSV de entrada
-tiene 6 columnas, sin encabezado, en este orden: `CUIT, Apellido y Nombre,
-Monto, Plazo, Nro_Comprobante, Circuito`. `Apellido y Nombre` (input
+tiene 6 columnas (más la fila de encabezado, que se descarta — ver "Flows
+que cargan sus inputs desde un archivo CSV"), en este orden: `CUIT,
+Apellido y Nombre, Monto, Plazo, Nro_Comprobante, Circuito`. `Apellido y
+Nombre` (input
 `apellidoNombre`) se usa en el `Renglon2` del paso de débito — ver más abajo.
 `idMensaje` no es columna del CSV: se genera solo por fila
 (`{{idMensajeGenerado}}`, ver "Variables de sistema").
@@ -1274,8 +1279,9 @@ exigencia, es el único header que hay que tocar en `Flows/transferencia-debin.j
 `Flows/transferencia-debin-files.json` es la versión por archivo `.csv` de
 "Transferencia DEBIN": una transferencia por fila, contra el mismo servicio
 Nova-Link y con el mismo mecanismo `baseUrlField`/`authOverride` que la
-versión manual (ver más arriba). El CSV de entrada no lleva encabezado y
-tiene 9 columnas, en este orden: `CUIT destino, CBU destino, Nombre
+versión manual (ver más arriba). El CSV de entrada tiene 9 columnas (más
+la fila de encabezado, que se descarta — ver "Flows que cargan sus inputs
+desde un archivo CSV"), en este orden: `CUIT destino, CBU destino, Nombre
 destino, CUIT origen, CBU origen, Nombre origen, Nro. comprobante, Moneda,
 Monto`.
 
@@ -1321,9 +1327,9 @@ detalle completo de cada request/response, en su propio archivo bajo
 de la transferencia en sí solo trae el resultado de la evaluación inicial
 del DEBIN, no necesariamente el estado final de acreditación — por eso,
 después de procesar **todas** las filas del archivo (no intercalado fila
-por fila), `runFlowFromCsv` espera **60 segundos** (`DEBIN_CONSULTA_DELAY_SECONDS`
+por fila), `runFlowFromCsv` espera **30 segundos** (`DEBIN_CONSULTA_DELAY_SECONDS`
 en `wwwroot/app.js`, con un contador regresivo visible en pantalla —
-`"Esperando 60s antes de consultar..."` — para que se note que la app
+`"Esperando 30s antes de consultar..."` — para que se note que la app
 sigue viva y no que se colgó) antes de arrancar las consultas, dándole
 tiempo a Nova-Link a terminar de resolver el DEBIN. Solo espera si hay algo
 para consultar (ninguna fila con `realizado = "s"`, no espera nada). Recién

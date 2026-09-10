@@ -216,7 +216,7 @@ function selectFlow(name) {
     document.getElementById('logTable').style.display = 'none';
     const columnList = inputs.map((i) => i.label || i.variableName).join(', ');
     document.getElementById('csvColumnsHint').textContent =
-      `El CSV no lleva encabezado. Orden de columnas: ${columnList}.`;
+      `La primera línea del CSV es el encabezado (se ignora). Orden de columnas: ${columnList}.`;
   } else {
     form.style.display = '';
     csvSection.style.display = 'none';
@@ -427,7 +427,7 @@ const DEBIN_CONSULTAR_FLOW_NAME = 'Consulta DEBIN (solo)';
 // Espera antes de arrancar las consultas (ver runFlowFromCsv) — le da tiempo
 // a Nova-Link a terminar de resolver el DEBIN antes de preguntar por su
 // estado.
-const DEBIN_CONSULTA_DELAY_SECONDS = 60;
+const DEBIN_CONSULTA_DELAY_SECONDS = 30;
 
 // Todas las columnas de dbnconsulta-...csv que salen de la respuesta de
 // "Consulta DEBIN (solo)" (todo lo que trae params.response, sin recortar
@@ -786,10 +786,15 @@ async function runFlowFromCsv() {
 
   try {
     const text = await readFileAsText(file);
-    const rows = parseCsvText(text);
+    const parsedRows = parseCsvText(text);
+    // La primera línea del archivo es encabezado (nombres de columna), no
+    // una fila de datos — se descarta antes de procesar nada. Vale para
+    // cualquier flow CSV: los archivos de entrada ahora vienen todos con
+    // esa cabecera.
+    const rows = parsedRows.slice(1);
 
     if (rows.length === 0) {
-      alert('El archivo CSV no tiene ninguna fila con datos.');
+      alert('El archivo CSV no tiene ninguna fila con datos (además del encabezado).');
       return;
     }
 
