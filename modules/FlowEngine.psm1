@@ -3,19 +3,32 @@
 
 # Perfiles con clientCertPfxPath (TLS mutuo — hoy, el único caso es el flow
 # "Transferencia DEBIN" contra Nova-Link) arman el HttpClientHandler con el
-# certificado cliente cargado; el resto de los perfiles (sin ese campo) quedan
-# exactamente igual que antes. Se usa un .pfx/.p12 (no un par cert+key en PEM)
-# a propósito: el constructor X509Certificate2(ruta, contraseña) funciona igual
-# en Windows PowerShell 5.1 (.NET Framework) que en pwsh 7+ (.NET moderno) —
-# CreateFromPemFile, en cambio, no existe en .NET Framework y tira
-# "no contiene ningún método llamado 'CreateFromPemFile'" en PS 5.1.
+# certificado cliente cargado, pero SOLO si $UseClientCert -eq $true — el
+# llamador lo pide explícitamente (Invoke-Flow, cuando Flow.authOverride es
+# 'None') en vez de inferirlo solo de que el perfil tenga el campo cargado.
+# Antes se cargaba el certificado para CUALQUIER uso del perfil (incluida la
+# obtención del token OAuth2 de "Probar token", que no tiene nada que ver con
+# Nova-Link/mTLS): si la contraseña del .pfx estaba mal o el archivo no era
+# el correcto, el error ("mac verify failure" — falla al verificar el MAC del
+# PKCS#12 con esa contraseña) rompía también flows y pruebas que ni siquiera
+# necesitaban el certificado. Con $UseClientCert de por medio, ese error solo
+# puede aparecer cuando de verdad hace falta el certificado.
+#
+# Se usa un .pfx/.p12 (no un par cert+key en PEM) a propósito: el constructor
+# X509Certificate2(ruta, contraseña) funciona igual en Windows PowerShell 5.1
+# (.NET Framework) que en pwsh 7+ (.NET moderno) — CreateFromPemFile, en
+# cambio, no existe en .NET Framework y tira "no contiene ningún método
+# llamado 'CreateFromPemFile'" en PS 5.1.
 function New-ProfileHttpClientHandler {
-    param([Parameter(Mandatory = $true)] $Profile)
+    param(
+        [Parameter(Mandatory = $true)] $Profile,
+        [bool]$UseClientCert = $false
+    )
 
     $handler = New-Object System.Net.Http.HttpClientHandler
 
     $pfxPath = [string]$Profile.clientCertPfxPath
-    if (-not [string]::IsNullOrWhiteSpace($pfxPath)) {
+    if ($UseClientCert -and -not [string]::IsNullOrWhiteSpace($pfxPath)) {
         if (-not (Test-Path $pfxPath)) {
             throw "No se encontró el archivo de certificado '$pfxPath' del perfil '$($Profile.name)'."
         }
@@ -457,7 +470,12 @@ function Invoke-Flow {
         $Parametria
     )
 
-    $handler = New-ProfileHttpClientHandler -Profile $Profile
+    # El certificado cliente (mTLS) solo se carga si este flow en particular lo
+    # necesita (authOverride 'None' — hoy, únicamente los flows de
+    # Transferencia DEBIN contra Nova-Link) — así un perfil con
+    # clientCertPfxPath mal configurado no rompe otros flows que ni siquiera
+    # tocan Nova-Link (ej. Alta de Plazo Fijos - File).
+    $handler = New-ProfileHttpClientHandler -Profile $Profile -UseClientCert:($Flow.authOverride -eq 'None')
     $httpClient = New-Object System.Net.Http.HttpClient($handler)
     $httpClient.Timeout = [TimeSpan]::FromSeconds(60)
 
@@ -700,6 +718,10 @@ function Test-TokenAcquisition {
         $Global:TokenCache.Remove($Profile.name)
     }
 
+    # Probar el token OAuth2 nunca necesita el certificado cliente (es mTLS
+    # contra Nova-Link, un servidor distinto) — $UseClientCert queda en su
+    # default ($false) a propósito, para no depender de si el perfil tiene
+    # o no clientCertPfxPath configurado.
     $handler = New-ProfileHttpClientHandler -Profile $Profile
     $httpClient = New-Object System.Net.Http.HttpClient($handler)
     $httpClient.Timeout = [TimeSpan]::FromSeconds(30)

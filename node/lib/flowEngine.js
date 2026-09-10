@@ -131,8 +131,18 @@ function requestWithClientCert(url, options, profileObj) {
   });
 }
 
-function doFetch(url, options, profileObj) {
-  if (profileObj && profileObj.clientCertPfxPath) {
+// useClientCert lo decide el llamador (invokeHttpStep, cuando
+// flowObj.authOverride === 'None' — hoy, únicamente los flows de
+// Transferencia DEBIN contra Nova-Link), no simplemente si el perfil tiene
+// clientCertPfxPath cargado. Antes se intentaba usar el certificado para
+// CUALQUIER request de un perfil que lo tuviera configurado, incluida la
+// obtención del token OAuth2 ("Probar token"), que no tiene nada que ver con
+// Nova-Link/mTLS: si la contraseña del .pfx estaba mal o el archivo no era
+// el correcto, "mac verify failure" (falla al verificar el MAC del PKCS#12
+// con esa contraseña) rompía también pruebas y flows que ni siquiera
+// necesitaban el certificado.
+function doFetch(url, options, profileObj, useClientCert) {
+  if (useClientCert && profileObj && profileObj.clientCertPfxPath) {
     return requestWithClientCert(url, options, profileObj);
   }
   return fetch(url, options);
@@ -189,7 +199,9 @@ async function getOrRefreshAccessToken(profileObj) {
   const fetchOptions = { method: tokenMethod, headers };
   if (bodyAllowed) fetchOptions.body = body;
 
-  const response = await doFetch(profileObj.tokenUrl, fetchOptions, profileObj);
+  // useClientCert = false: la obtención del token OAuth2 nunca necesita el
+  // certificado cliente (es mTLS contra Nova-Link, un servidor distinto).
+  const response = await doFetch(profileObj.tokenUrl, fetchOptions, profileObj, false);
   const responseBody = await response.text();
 
   if (!response.ok) {
@@ -459,7 +471,11 @@ async function invokeHttpStep(step, flowObj, variables, profileObj, logsDir, run
   const fetchOptions = { method, headers };
   if (bodyText !== null) fetchOptions.body = bodyText;
 
-  const response = await doFetch(url, fetchOptions, profileObj);
+  // useClientCert: solo cuando el flow declaró authOverride "None" (hoy,
+  // únicamente los flows de Transferencia DEBIN contra Nova-Link) — así un
+  // perfil con clientCertPfxPath mal configurado no rompe otros flows que ni
+  // siquiera tocan Nova-Link (ej. Alta de Plazo Fijos - File).
+  const response = await doFetch(url, fetchOptions, profileObj, flowObj.authOverride === 'None');
   const responseBody = await response.text();
 
   const responseLogText = [

@@ -690,6 +690,20 @@ comportamiento de antes: mismo
 `fetch`/`HttpClient` de siempre. Un perfil **sin** certificado cliente nunca
 se ve afectado por este cambio.
 
+**El certificado solo se carga cuando el flow que se está corriendo
+realmente lo necesita** (`authOverride: "None"` — hoy, únicamente los flows
+de Transferencia DEBIN), no solo por tener `clientCertPfxPath` completo en
+el perfil. Antes se intentaba cargar para **cualquier** uso de ese perfil,
+incluida la obtención del token OAuth2 ("Probar token", o cualquier flow
+como "Alta de Plazo Fijos - File" que ni siquiera toca Nova-Link): si la
+ruta o la contraseña del `.pfx` estaban mal, el error (`mac verify
+failure` — falla al verificar el MAC del PKCS#12 con esa contraseña, en
+Node; una excepción de `X509Certificate2` en PowerShell) rompía también
+esas otras cosas que no tenían nada que ver con el certificado. Con un solo
+perfil sirviendo a los dos servidores (ver "Un perfil, más de un servidor"
+más abajo), esto importa: "Testing" tiene casi siempre los dos mecanismos
+de auth configurados a la vez.
+
 Implementación (mismo comportamiento en los dos backends): en Node,
 `node/lib/flowEngine.js` arma el request a mano con el módulo `https` nativo
 en vez de con `fetch` cuando el perfil tiene `clientCertPfxPath` (fetch no
