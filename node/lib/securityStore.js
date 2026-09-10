@@ -1,12 +1,23 @@
 'use strict';
 
 // Login contra Active Directory (la contraseña nunca se guarda, solo se usa un
-// instante para el bind LDAP), administración local de usuarios habilitados + su
-// rol, sesiones en memoria (tokens Bearer) y auditoría en logs/security.log. Port
-// de modules/SecurityStore.psm1 — lee/escribe el mismo security.local.json que el
-// backend PowerShell (nunca versionado, ver .gitignore).
+// instante para el bind LDAP), administración de usuarios habilitados + su rol
+// y auditoría en logs/security.log. A diferencia del resto de este archivo,
+// las sesiones (tokens Bearer) siguen en memoria (nunca se persisten, ni en
+// disco ni en la base — se pierden al reiniciar el proceso, a propósito).
 //
-// El bind LDAP usa el paquete "ldapjs" (LDAP puro, sin dependencias nativas) —
+// Usuarios/roles y la configuración de AD viven en MariaDB (tablas usuarios,
+// rol, rol_usuarios, configuracion_ad — ver deploy/mariadb-schema.sql y "Base
+// de datos (MariaDB)" en el README), no en security.local.json — ese archivo
+// se dejó de usar (ver node/scripts/migrate-json-to-mariadb.js para migrar
+// los datos que hubiera).
+//
+// rol_usuarios es una relación usuarios<->rol modelada con tabla intermedia,
+// pero usuario_id es su PRIMARY KEY: fuerza como máximo una fila por usuario,
+// o sea un solo rol por usuario — mismo comportamiento que antes (un rol
+// plano por usuario), solo que mejor normalizado en la base.
+//
+// El bind LDAP usa el paquete "ldapts" (LDAP puro, sin dependencias nativas) —
 // mismo enfoque conceptual que System.DirectoryServices.Protocols del lado
 // PowerShell: autentica directo contra el Domain Controller sin pasar por ADSI.
 
@@ -15,34 +26,26 @@ const path = require('path');
 const crypto = require('crypto');
 const { Client: LdapClient } = require('ldapts');
 const { formatLocal } = require('./dateUtil');
+const db = require('./mariadbClient');
 
 const VALID_ROLES = ['admin', 'operador', 'lectura'];
 
-function getDefaultSecurity() {
-  return { ad: { server: '', port: 389, useSsl: false, domain: '' }, users: [] };
+// --- Configuración de Active Directory ----------------------------------------
+
+async function getAdConfig(rootDir) {
+  const rows = await db.query(rootDir, 'SELECT server, port, use_ssl, domain FROM configuracion_ad WHERE id = 1');
+  if (rows.length === 0) return { server: '', port: 389, useSsl: false, domain: '' };
+  const row = rows[0];
+  return { server: row.server, port: row.port, useSsl: !!row.use_ssl, domain: row.domain };
 }
 
-function getSecurityFilePath(rootDir) {
-  return path.join(rootDir, 'security.local.json');
-}
-
-function getSecurity(rootDir) {
-  const filePath = getSecurityFilePath(rootDir);
-  if (!fs.existsSync(filePath)) return getDefaultSecurity();
-
-  const json = fs.readFileSync(filePath, 'utf8');
-  if (!json.trim()) return getDefaultSecurity();
-
-  const parsed = JSON.parse(json);
-  if (parsed === null || parsed === undefined) return getDefaultSecurity();
-  if (!parsed.ad) parsed.ad = getDefaultSecurity().ad;
-  if (!Array.isArray(parsed.users)) parsed.users = parsed.users ? [parsed.users] : [];
-  return parsed;
-}
-
-function saveSecurity(rootDir, security) {
-  const filePath = getSecurityFilePath(rootDir);
-  fs.writeFileSync(filePath, JSON.stringify(security, null, 2), 'utf8');
+async function saveAdConfig(rootDir, adConfig) {
+  await db.query(
+    rootDir,
+    `INSERT INTO configuracion_ad (id, server, port, use_ssl, domain) VALUES (1, ?, ?, ?, ?)
+     ON DUPLICATE KEY UPDATE server = VALUES(server), port = VALUES(port), use_ssl = VALUES(use_ssl), domain = VALUES(domain)`,
+    [String(adConfig.server || ''), adConfig.port ? Number(adConfig.port) : 389, adConfig.useSsl ? 1 : 0, String(adConfig.domain || '')]
+  );
 }
 
 // --- Autenticación contra Active Directory ----------------------------------
@@ -85,7 +88,11 @@ async function testAdCredentials(adConfig, username, password) {
   }
 }
 
-// --- Roles -------------------------------------------------------------------
+// --- Roles ---------------------------------------------------------------------
+// Estas 3 son funciones puras sobre un role string ya conocido (no tocan la
+// base) — siguen siendo síncronas a propósito, para no tener que acordarse de
+// poner "await" en cada chequeo de permisos (un "await" salteado en un chequeo
+// de rol sería un agujero de seguridad silencioso).
 
 function getValidRoles() {
   return [...VALID_ROLES];
@@ -110,53 +117,93 @@ function testRoleCanRunFlow(role) {
   return role === 'admin' || role === 'operador';
 }
 
-// --- Usuarios locales ----------------------------------------------------------
+// --- Usuarios --------------------------------------------------------------
 
-function getSecurityUsers(rootDir) {
-  return getSecurity(rootDir).users || [];
+function mapUserRow(row) {
+  return {
+    username: row.username,
+    role: row.role,
+    enabled: !!row.enabled,
+    displayName: row.display_name || '',
+  };
 }
 
-function findSecurityUser(rootDir, username) {
-  const target = username.toLowerCase();
-  return getSecurityUsers(rootDir).find((u) => String(u.username).toLowerCase() === target) || null;
+const USER_SELECT_SQL = `
+  SELECT u.username, u.display_name, u.enabled, r.nombre AS role
+  FROM usuarios u
+  LEFT JOIN rol_usuarios ru ON ru.usuario_id = u.id
+  LEFT JOIN rol r ON r.id = ru.rol_id
+`;
+
+async function getSecurityUsers(rootDir) {
+  const rows = await db.query(rootDir, `${USER_SELECT_SQL} ORDER BY u.username`);
+  return rows.map(mapUserRow);
 }
 
-function testIsLastEnabledAdmin(rootDir, username) {
-  const target = username.toLowerCase();
-  const users = getSecurityUsers(rootDir);
-  const otherEnabledAdmins = users.filter(
-    (u) => String(u.username).toLowerCase() !== target && u.role === 'admin' && u.enabled
+async function findSecurityUser(rootDir, username) {
+  const rows = await db.query(rootDir, `${USER_SELECT_SQL} WHERE LOWER(u.username) = LOWER(?)`, [username]);
+  return rows.length > 0 ? mapUserRow(rows[0]) : null;
+}
+
+async function testIsLastEnabledAdmin(rootDir, username) {
+  const targetUser = await findSecurityUser(rootDir, username);
+  if (!targetUser || targetUser.role !== 'admin' || !targetUser.enabled) return false;
+
+  const rows = await db.query(
+    rootDir,
+    `SELECT COUNT(*) AS total
+     FROM usuarios u
+     JOIN rol_usuarios ru ON ru.usuario_id = u.id
+     JOIN rol r ON r.id = ru.rol_id
+     WHERE r.nombre = 'admin' AND u.enabled = 1 AND LOWER(u.username) <> LOWER(?)`,
+    [username]
   );
-  const targetUser = users.find((u) => String(u.username).toLowerCase() === target);
-  return !!(targetUser && targetUser.role === 'admin' && targetUser.enabled && otherEnabledAdmins.length === 0);
+  return Number(rows[0].total) === 0;
 }
 
-function addOrUpdateSecurityUser(rootDir, username, role, enabled, displayName) {
+async function addOrUpdateSecurityUser(rootDir, username, role, enabled, displayName) {
   if (!VALID_ROLES.includes(role)) {
     throw new Error(`Rol inválido: '${role}'. Roles válidos: ${VALID_ROLES.join(', ')}.`);
   }
 
-  const security = getSecurity(rootDir);
-  const users = security.users || [];
-  const target = username.toLowerCase();
-  const existingIndex = users.findIndex((u) => String(u.username).toLowerCase() === target);
+  const pool = db.getPool(rootDir);
+  const connection = await pool.getConnection();
+  try {
+    await connection.beginTransaction();
 
-  const record = { username, role, enabled: !!enabled, displayName: displayName || '' };
-  if (existingIndex >= 0) {
-    users[existingIndex] = record;
-  } else {
-    users.push(record);
+    await connection.query(
+      `INSERT INTO usuarios (username, display_name, enabled) VALUES (?, ?, ?)
+       ON DUPLICATE KEY UPDATE display_name = VALUES(display_name), enabled = VALUES(enabled)`,
+      [username, displayName || '', enabled ? 1 : 0]
+    );
+    const [userRows] = await connection.query('SELECT id FROM usuarios WHERE LOWER(username) = LOWER(?)', [username]);
+    const userId = userRows[0].id;
+
+    const [roleRows] = await connection.query('SELECT id FROM rol WHERE nombre = ?', [role]);
+    const roleId = roleRows[0].id;
+
+    // usuario_id es la PRIMARY KEY de rol_usuarios: este INSERT ... ON
+    // DUPLICATE KEY pisa el rol existente en vez de agregar una segunda fila
+    // — así se mantiene "un solo rol por usuario" aunque la relación esté
+    // modelada como tabla intermedia.
+    await connection.query(
+      'INSERT INTO rol_usuarios (usuario_id, rol_id) VALUES (?, ?) ON DUPLICATE KEY UPDATE rol_id = VALUES(rol_id)',
+      [userId, roleId]
+    );
+
+    await connection.commit();
+  } catch (err) {
+    await connection.rollback();
+    throw err;
+  } finally {
+    connection.release();
   }
-
-  security.users = users;
-  saveSecurity(rootDir, security);
 }
 
-function removeSecurityUser(rootDir, username) {
-  const target = username.toLowerCase();
-  const security = getSecurity(rootDir);
-  security.users = (security.users || []).filter((u) => String(u.username).toLowerCase() !== target);
-  saveSecurity(rootDir, security);
+async function removeSecurityUser(rootDir, username) {
+  // ON DELETE CASCADE en rol_usuarios.usuario_id se encarga de borrar también
+  // la fila de rol_usuarios de este usuario.
+  await db.query(rootDir, 'DELETE FROM usuarios WHERE LOWER(username) = LOWER(?)', [username]);
 }
 
 // --- Sesiones (tokens Bearer en memoria, se pierden al reiniciar el proceso,
@@ -208,10 +255,8 @@ function writeSecurityLog(logsDir, message) {
 }
 
 module.exports = {
-  getDefaultSecurity,
-  getSecurityFilePath,
-  getSecurity,
-  saveSecurity,
+  getAdConfig,
+  saveAdConfig,
   testAdCredentials,
   getValidRoles,
   testRoleCanManageUsers,

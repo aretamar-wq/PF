@@ -148,11 +148,15 @@ Requisitos en el servidor:
 Pasos:
 
 1. Copiar el repo al servidor (por ejemplo `/opt/apicore`).
-2. Completar `profiles.local.json`, `parametria.local.json` y
-   `security.local.json` en la **raíz del repo** (no dentro de `node/`) —
-   son los mismos archivos que usa el backend PowerShell.
-3. `cd /opt/apicore/node && npm install --omit=dev` (instala
-   `ldapts`, la única dependencia externa).
+2. `cd /opt/apicore/node && npm install --omit=dev` (instala
+   `ldapts` y `mysql2`).
+3. Tener una base MariaDB 10 accesible (en el mismo server o en otro),
+   aplicar `deploy/mariadb-schema.sql` y completar `db.local.json` en la
+   **raíz del repo** con los datos de conexión — ver "Base de datos
+   (MariaDB)" más abajo para el paso a paso completo. Ahí es donde viven
+   usuarios/roles, config de AD, perfiles de conexión y parametría para
+   este backend (**no** en `profiles.local.json`/`parametria.local.json`/
+   `security.local.json` — esos son del backend PowerShell).
 4. Instalar el servicio con **`deploy/apicore-node.service`**
    (unidad systemd — corre `node server.js` como usuario sin privilegios,
    solo escucha en `127.0.0.1:8787`). El archivo trae los pasos de
@@ -245,25 +249,41 @@ usa el módulo `http` nativo, igual de "a mano" que el router de
 ```
 node/
   server.js              Entry point: mismas rutas /api/* + estáticos que server.ps1
-  package.json           Única dependencia externa: ldapts (bind LDAP)
+  package.json           Dependencias externas: ldapts (bind LDAP), mysql2 (MariaDB)
+  scripts/
+    migrate-json-to-mariadb.js  Migración única de *.local.json a MariaDB, ver "Base de datos (MariaDB)"
   lib/
     jsonPath.js               Port de modules/JsonPath.psm1
     variableSubstitution.js   Port de modules/VariableSubstitution.psm1
-    profileStore.js           Port de modules/ProfileStore.psm1
-    parametriaStore.js        Port de modules/ParametriaStore.psm1
     flowStore.js              Port de modules/FlowStore.psm1
     flowEngine.js             Port de modules/FlowEngine.psm1 (fetch en vez de HttpClient)
-    securityStore.js          Port de modules/SecurityStore.psm1 (ldapts en vez de LDAP .NET)
-    processedOperationsStore.js  Port de modules/ProcessedOperationsStore.psm1
     sybaseClient.js           Sin equivalente PowerShell — conecta a Sybase vía isql (subproceso), ver "Conexión a Sybase en el backend Node.js" arriba
+    mariadbClient.js          Pool de conexiones a MariaDB (mysql2/promise), ver "Base de datos (MariaDB)"
+    dbConfigStore.js          Lee db.local.json (conexión a MariaDB)
+    profileStore.js           Perfiles — en MariaDB, no en profiles.local.json (ver "Base de datos (MariaDB)")
+    parametriaStore.js        Parametría — en MariaDB, no en parametria.local.json (ídem)
+    securityStore.js          Usuarios/roles/config de AD — en MariaDB (ídem); login LDAP con ldapts, sesiones en memoria (sin cambios)
+    processedOperationsStore.js  Antiduplicado — en MariaDB, no en logs/processed-operations.json (ídem)
 ```
 
-Cada archivo de `node/lib/` es un port 1:1 del `.psm1` equivalente (mismo
+`jsonPath.js`, `variableSubstitution.js`, `flowStore.js`, `flowEngine.js` y
+`sybaseClient.js` son ports 1:1 de su `.psm1` equivalente (mismo
 comportamiento, mismos nombres de campo en las respuestas JSON) — se
 verificó ejecutando el mismo flow HTTP de punta a punta (login LDAP real,
-extractVariables, omitIfNull, OAuth2, prevención de duplicados, guardado de
-archivos) contra un servidor de prueba, y además con el `wwwroot/app.js`
-real corriendo en un navegador sin ningún cambio.
+extractVariables, omitIfNull, OAuth2, guardado de archivos) contra un
+servidor de prueba, y además con el `wwwroot/app.js` real corriendo en un
+navegador sin ningún cambio.
+
+> **Este backend Node.js ya NO comparte estado con `server.ps1` para
+> usuarios/roles, perfiles, parametría ni el registro antiduplicado** — ver
+> "Base de datos (MariaDB)" más abajo. Sigue compartiendo `Flows/` (los
+> flows en sí son los mismos archivos) y el contrato HTTP con
+> `wwwroot/app.js`, pero el backend PowerShell sigue usando
+> `security.local.json`/`profiles.local.json`/`parametria.local.json`/
+> `logs/processed-operations.json` tal cual siempre — los dos backends ya
+> no son intercambiables contra la misma instalación para estas 4 cosas. Si
+> hace falta que server.ps1 también use MariaDB, es trabajo aparte, no
+> hecho todavía.
 
 > **Login contra Active Directory en Linux:** tanto el bind LDAP de
 > PowerShell (`System.DirectoryServices.Protocols`) como el de Node.js
@@ -278,6 +298,101 @@ real corriendo en un navegador sin ningún cambio.
 > ninguno de los dos backends está pensado como servicio con muchos
 > usuarios concurrentes ejecutando flows largos al mismo tiempo. Si varias
 > personas van a usar este deployment Linux a la vez, tenerlo en cuenta.
+
+### Base de datos (MariaDB)
+
+El backend Node.js guarda usuarios/roles, la configuración de Active
+Directory, perfiles de conexión, parametría y el registro antiduplicado en
+**MariaDB 10** en vez de en archivos JSON locales — pensado para un
+deployment en RHEL 8 con MariaDB ya instalada en el mismo servidor. El
+backend PowerShell (`server.ps1`) no se tocó: sigue usando los
+`*.local.json` de siempre (ver la nota más arriba).
+
+**1. Crear la base y el usuario de MariaDB** (una sola vez, con las
+credenciales que decidas usar):
+
+```sql
+CREATE DATABASE apicore CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
+CREATE USER 'apicore'@'localhost' IDENTIFIED BY 'elegí-una-contraseña';
+GRANT ALL PRIVILEGES ON apicore.* TO 'apicore'@'localhost';
+FLUSH PRIVILEGES;
+```
+
+**2. Aplicar el schema** (`deploy/mariadb-schema.sql` — crea las tablas y
+precarga los 3 roles válidos):
+
+```sh
+mysql -u apicore -p apicore < deploy/mariadb-schema.sql
+```
+
+**3. Configurar la conexión**: copiá `db.sample.json` a `db.local.json`
+(en la raíz del repo, **nunca se versiona** — está en `.gitignore`, mismo
+criterio que `profiles.local.json`) y completá host/puerto/base/usuario/
+contraseña reales:
+
+```json
+{
+  "host": "127.0.0.1",
+  "port": 3306,
+  "database": "apicore",
+  "user": "apicore",
+  "password": "elegí-una-contraseña"
+}
+```
+
+**4. Instalar la dependencia nueva** (`mysql2`, driver puro JS — sin nada
+que compilar) y **migrar los datos que ya hubiera** en los `*.local.json`
+viejos (si es una instalación nueva sin esos archivos, este paso no hace
+nada y no rompe nada):
+
+```sh
+cd node
+npm install
+node scripts/migrate-json-to-mariadb.js
+```
+
+El script es seguro de correr más de una vez (usuarios/perfiles se
+upsertean por su clave, las operaciones procesadas tienen una `UNIQUE KEY`
+que evita duplicados) — no borra ni modifica los archivos `*.local.json`
+originales, así que quedan de respaldo hasta que confirmes que todo
+funciona bien contra MariaDB.
+
+**Tablas** (ver `deploy/mariadb-schema.sql` para el detalle completo de
+columnas):
+
+- **`usuarios`** — un registro por usuario habilitado en la app
+  (`username`, `display_name`, `enabled`). Nunca guarda contraseña: la app
+  autentica contra Active Directory (bind LDAP puntual, ver "Módulo de
+  seguridad" más abajo) — es un allowlist de qué cuentas de AD pueden
+  entrar y con qué rol, no un almacén de credenciales.
+- **`rol`** — los 3 roles válidos (`admin`/`operador`/`lectura`), fila fija
+  precargada por el schema.
+- **`rol_usuarios`** — relación usuarios↔rol con tabla intermedia, pero
+  `usuario_id` es su `PRIMARY KEY`: fuerza como máximo una fila por
+  usuario, o sea **un solo rol por usuario** — mismo comportamiento que
+  antes (un rol plano por usuario en el JSON), solo que normalizado.
+- **`configuracion_ad`** — server/port/useSsl/domain del Domain Controller
+  contra el que se autentica el login. Fila única (`id = 1`).
+- **`parametria`** — valores fijos por categoría de cuenta (Cuenta
+  Corriente/Caja de Ahorro/Plazo Fijo) + conexión Sybase. Fila única
+  (`id = 1`), mismo criterio que `configuracion_ad`.
+- **`perfiles`** — perfiles de conexión (`baseUrl`/`novaBaseUrl`/auth/
+  certificado cliente), `name` como clave única. Los campos OAuth2
+  avanzados que la UI no expone (`tokenParams`, `tokenHeaders`, etc. — ver
+  "Limitaciones conocidas") se guardan en una columna `token_extra_json`
+  (JSON) en vez de tener una columna sparse por cada uno; `profileStore.js`
+  los aplana de vuelta al nivel superior del objeto perfil al leer, así el
+  resto del código (`flowEngine.js`) no nota la diferencia.
+- **`operaciones_procesadas`** — registro antiduplicado (`cuit` +
+  `numero_comprobante` ya procesados). `UNIQUE KEY (cuit,
+  numero_comprobante)` — mismo criterio de deduplicación que antes usaba
+  una `Map` en memoria sobre el archivo completo, ahora resuelto con una
+  sola consulta SQL en vez de traer todo el archivo a memoria en cada
+  chequeo.
+
+`node/lib/mariadbClient.js` mantiene un solo pool de conexiones
+(`mysql2/promise`) para todo el proceso — se crea la primera vez que hace
+falta y se reusa después, no una conexión nueva por request.
 
 ## Qué resuelve
 

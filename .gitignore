@@ -11,6 +11,10 @@ logs/
 # habilitados en esta instancia, nunca se versiona (la contraseña de AD nunca se guarda acá)
 security.local.json
 
+# Conexión a MariaDB (backend Node.js, ver "Base de datos (MariaDB)" en el
+# README): host/usuario/contraseña reales, nunca se versiona
+db.local.json
+
 # Archivos de salida (pfout-.../pfouterror-...): contienen datos bancarios reales, nunca se versionan
 files/
 

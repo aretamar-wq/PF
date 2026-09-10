@@ -5,9 +5,10 @@
 // pensada para deployments Linux que prefieren no instalar pwsh). Sirve la
 // MISMA wwwroot/ y expone exactamente las mismas rutas /api/* con el mismo
 // contrato JSON que server.ps1 — el frontend (wwwroot/app.js) no sabe ni le
-// importa cuál de los dos backends tiene enfrente. Comparte también Flows/ y
-// los *.local.json de la raíz del repo: es un runtime alternativo, no una
-// copia con datos propios.
+// importa cuál de los dos backends tiene enfrente. Comparte Flows/ con
+// server.ps1, pero usuarios/roles, perfiles, parametría y el registro
+// antiduplicado viven en MariaDB (ver "Base de datos (MariaDB)" en el
+// README) — ya NO son los mismos *.local.json que lee/escribe server.ps1.
 //
 // Requiere Node.js 18+ (usa fetch global). Ver README.md > "Instalación en
 // Linux" para el paso a paso de deployment.
@@ -128,16 +129,16 @@ function getMaskedProfile(profileObj) {
   };
 }
 
-// A diferencia de solo mirar el token, esto vuelve a chequear contra
-// security.local.json en cada request (no confía en el rol cacheado al hacer
-// login): si un admin deshabilita o elimina a un usuario, o le cambia el rol,
-// eso tiene efecto inmediato en la próxima request de esa sesión.
-function getAuthenticatedSession(req) {
+// A diferencia de solo mirar el token, esto vuelve a chequear contra la
+// tabla usuarios en MariaDB en cada request (no confía en el rol cacheado al
+// hacer login): si un admin deshabilita o elimina a un usuario, o le cambia
+// el rol, eso tiene efecto inmediato en la próxima request de esa sesión.
+async function getAuthenticatedSession(req) {
   const token = getBearerToken(req);
   const session = securityStore.getSessionUser(token);
   if (!session) return null;
 
-  const currentUser = securityStore.findSecurityUser(rootDir, session.username);
+  const currentUser = await securityStore.findSecurityUser(rootDir, session.username);
   if (!currentUser || !currentUser.enabled) {
     securityStore.removeSession(token);
     return null;
@@ -161,8 +162,8 @@ async function handleLogin(req, res) {
     return;
   }
 
-  const security = securityStore.getSecurity(rootDir);
-  const users = security.users || [];
+  const adConfig = await securityStore.getAdConfig(rootDir);
+  const users = await securityStore.getSecurityUsers(rootDir);
   const localUser = users.find((u) => String(u.username).toLowerCase() === username.toLowerCase()) || null;
 
   // Bootstrap: si todavía no hay ningún usuario configurado localmente, el
@@ -175,7 +176,7 @@ async function handleLogin(req, res) {
     return;
   }
 
-  const adResult = await securityStore.testAdCredentials(security.ad, username, password);
+  const adResult = await securityStore.testAdCredentials(adConfig, username, password);
   if (!adResult.ok) {
     securityStore.writeSecurityLog(logsDir, `LOGIN FALLIDO usuario='${username}' desde ${clientAddress} (${adResult.message})`);
     writeJsonResponse(res, 401, { error: adResult.message });
@@ -184,8 +185,8 @@ async function handleLogin(req, res) {
 
   let effectiveUser = localUser;
   if (isBootstrap) {
-    securityStore.addOrUpdateSecurityUser(rootDir, username, 'admin', true, '');
-    effectiveUser = securityStore.findSecurityUser(rootDir, username);
+    await securityStore.addOrUpdateSecurityUser(rootDir, username, 'admin', true, '');
+    effectiveUser = await securityStore.findSecurityUser(rootDir, username);
     securityStore.writeSecurityLog(
       logsDir,
       `BOOTSTRAP: '${username}' se dio de alta como el primer administrador (login exitoso, sin usuarios configurados todavía)`
@@ -220,16 +221,16 @@ async function handleUsersPost(req, res, session) {
     writeJsonResponse(res, 400, { error: `Rol inválido. Roles válidos: ${securityStore.getValidRoles().join(', ')}.` });
     return;
   }
-  if (!targetEnabled && securityStore.testIsLastEnabledAdmin(rootDir, targetUsername)) {
+  if (!targetEnabled && (await securityStore.testIsLastEnabledAdmin(rootDir, targetUsername))) {
     writeJsonResponse(res, 400, { error: 'No se puede deshabilitar al último administrador habilitado.' });
     return;
   }
-  if (targetRole !== 'admin' && securityStore.testIsLastEnabledAdmin(rootDir, targetUsername)) {
+  if (targetRole !== 'admin' && (await securityStore.testIsLastEnabledAdmin(rootDir, targetUsername))) {
     writeJsonResponse(res, 400, { error: 'No se puede sacarle el rol de administrador al último administrador habilitado.' });
     return;
   }
 
-  securityStore.addOrUpdateSecurityUser(rootDir, targetUsername, targetRole, targetEnabled, String(incoming.displayName || ''));
+  await securityStore.addOrUpdateSecurityUser(rootDir, targetUsername, targetRole, targetEnabled, String(incoming.displayName || ''));
   securityStore.writeSecurityLog(
     logsDir,
     `USUARIO '${targetUsername}' (rol='${targetRole}', habilitado=${targetEnabled}) dado de alta/editado por '${session.username}'`
@@ -237,17 +238,17 @@ async function handleUsersPost(req, res, session) {
   writeJsonResponse(res, 200, { ok: true });
 }
 
-function handleUsersDelete(parsedUrl, res, session) {
+async function handleUsersDelete(parsedUrl, res, session) {
   if (!securityStore.testRoleCanManageUsers(session.role)) {
     writeJsonResponse(res, 403, { error: 'No tenés permiso para administrar usuarios.' });
     return;
   }
   const targetUsername = parsedUrl.searchParams.get('username') || '';
-  if (securityStore.testIsLastEnabledAdmin(rootDir, targetUsername)) {
+  if (await securityStore.testIsLastEnabledAdmin(rootDir, targetUsername)) {
     writeJsonResponse(res, 400, { error: 'No se puede eliminar al último administrador habilitado.' });
     return;
   }
-  securityStore.removeSecurityUser(rootDir, targetUsername);
+  await securityStore.removeSecurityUser(rootDir, targetUsername);
   securityStore.writeSecurityLog(logsDir, `USUARIO '${targetUsername}' eliminado por '${session.username}'`);
   writeJsonResponse(res, 200, { ok: true });
 }
@@ -258,24 +259,23 @@ async function handleSecurityConfigPost(req, res, session) {
     return;
   }
   const incoming = await readJsonBody(req);
-  const security = securityStore.getSecurity(rootDir);
-  security.ad = {
+  const adConfig = {
     server: String(incoming.server || ''),
     port: parseInt(incoming.port, 10) || 0,
     useSsl: !!incoming.useSsl,
     domain: String(incoming.domain || ''),
   };
-  securityStore.saveSecurity(rootDir, security);
+  await securityStore.saveAdConfig(rootDir, adConfig);
   securityStore.writeSecurityLog(
     logsDir,
-    `CONFIG AD actualizada por '${session.username}' (server='${security.ad.server}', domain='${security.ad.domain}')`
+    `CONFIG AD actualizada por '${session.username}' (server='${adConfig.server}', domain='${adConfig.domain}')`
   );
   writeJsonResponse(res, 200, { ok: true });
 }
 
 async function handleProfilesPost(req, res) {
   const incoming = await readJsonBody(req);
-  const profiles = profileStore.getProfiles(rootDir);
+  const profiles = await profileStore.getProfiles(rootDir);
   const existingIndex = profiles.findIndex((p) => p.name === incoming.name);
 
   const updated = {
@@ -302,14 +302,14 @@ async function handleProfilesPost(req, res) {
     profiles.push(updated);
   }
 
-  profileStore.saveProfiles(rootDir, profiles);
+  await profileStore.saveProfiles(rootDir, profiles);
   writeJsonResponse(res, 200, { ok: true });
 }
 
-function handleProfilesDelete(parsedUrl, res) {
+async function handleProfilesDelete(parsedUrl, res) {
   const name = parsedUrl.searchParams.get('name') || '';
-  const profiles = profileStore.getProfiles(rootDir).filter((p) => p.name !== name);
-  profileStore.saveProfiles(rootDir, profiles);
+  const profiles = (await profileStore.getProfiles(rootDir)).filter((p) => p.name !== name);
+  await profileStore.saveProfiles(rootDir, profiles);
   writeJsonResponse(res, 200, { ok: true });
 }
 
@@ -330,7 +330,7 @@ function handleFlowsGet(res) {
 async function handleRun(req, res, session) {
   const payload = await readJsonBody(req);
 
-  const profiles = profileStore.getProfiles(rootDir);
+  const profiles = await profileStore.getProfiles(rootDir);
   const selectedProfile = profiles.find((p) => p.name === payload.profileName) || null;
 
   const flows = flowStore.getFlows(flowsDir);
@@ -359,7 +359,7 @@ async function handleRun(req, res, session) {
     }
   }
 
-  const parametria = parametriaStore.getParametria(rootDir);
+  const parametria = await parametriaStore.getParametria(rootDir);
   const log = await flowEngine.invokeFlow(selectedProfile, selectedFlow, inputValues, logsDir, parametria);
 
   // Una entrada por cada corrida de /api/run (para un flow CSV, una por fila del
@@ -482,7 +482,7 @@ async function handleCheckOperations(req, res, session) {
     cuit: String(op.cuit),
     numeroComprobante: String(op.numeroComprobante),
   }));
-  const duplicates = processedOperationsStore.findDuplicateOperations(rootDir, operations);
+  const duplicates = await processedOperationsStore.findDuplicateOperations(rootDir, operations);
   if (duplicates.length > 0) {
     const detalle = duplicates.map((d) => `cuit='${d.cuit}' comprobante='${d.numeroComprobante}'`).join('; ');
     securityStore.writeSecurityLog(
@@ -501,18 +501,18 @@ async function handleRegisterOperations(req, res, session) {
     idMensaje: String(op.idMensaje),
   }));
   if (operations.length > 0) {
-    processedOperationsStore.addProcessedOperations(rootDir, operations, session.username);
+    await processedOperationsStore.addProcessedOperations(rootDir, operations, session.username);
     securityStore.writeSecurityLog(logsDir, `OPERACIONES REGISTRADAS: ${operations.length} por '${session.username}' (antiduplicado)`);
   }
   writeJsonResponse(res, 200, { ok: true, registered: operations.length });
 }
 
-function handleParametriaGet(res, session) {
+async function handleParametriaGet(res, session) {
   if (!securityStore.testRoleCanManageParametria(session.role)) {
     writeJsonResponse(res, 403, { error: 'No tenés permiso para ver la parametría.' });
     return;
   }
-  const parametria = parametriaStore.getParametria(rootDir);
+  const parametria = await parametriaStore.getParametria(rootDir);
   // La contraseña de Sybase nunca sale del servidor en texto plano, ni siquiera
   // hacia la propia UI: el formulario la deja en blanco y el POST conserva la
   // guardada si no se manda una nueva.
@@ -527,12 +527,12 @@ async function handleParametriaPost(req, res, session) {
   }
   const incoming = await readJsonBody(req);
   if (incoming.sybase && !incoming.sybase.password) {
-    const existing = parametriaStore.getParametria(rootDir);
+    const existing = await parametriaStore.getParametria(rootDir);
     if (existing.sybase) {
       incoming.sybase.password = existing.sybase.password;
     }
   }
-  parametriaStore.saveParametria(rootDir, incoming);
+  await parametriaStore.saveParametria(rootDir, incoming);
   writeJsonResponse(res, 200, { ok: true });
 }
 
@@ -544,7 +544,7 @@ async function handleTestSybase(req, res, session) {
   const payload = await readJsonBody(req);
   let password = String(payload.password || '');
   if (!password) {
-    const existing = parametriaStore.getParametria(rootDir);
+    const existing = await parametriaStore.getParametria(rootDir);
     if (existing.sybase) password = String(existing.sybase.password || '');
   }
   const result = await flowEngine.testSybaseConnection(String(payload.connectionString || ''), String(payload.usuario || ''), password);
@@ -553,7 +553,7 @@ async function handleTestSybase(req, res, session) {
 
 async function handleTestToken(req, res) {
   const payload = await readJsonBody(req);
-  const profiles = profileStore.getProfiles(rootDir);
+  const profiles = await profileStore.getProfiles(rootDir);
   const selectedProfile = profiles.find((p) => p.name === payload.profileName) || null;
 
   if (!selectedProfile) {
@@ -597,7 +597,7 @@ async function handleRequest(req, res) {
     const authRequired = pathname.startsWith('/api/') && pathname !== '/api/login';
     let session = null;
     if (authRequired) {
-      session = getAuthenticatedSession(req);
+      session = await getAuthenticatedSession(req);
     }
 
     if (authRequired && !session) {
@@ -625,27 +625,27 @@ async function handleRequest(req, res) {
       if (!securityStore.testRoleCanManageUsers(session.role)) {
         writeJsonResponse(res, 403, { error: 'No tenés permiso para administrar usuarios.' });
       } else {
-        writeJsonResponse(res, 200, securityStore.getSecurityUsers(rootDir));
+        writeJsonResponse(res, 200, await securityStore.getSecurityUsers(rootDir));
       }
       return;
     }
     if (method === 'POST' && pathname === '/api/users') return void (await handleUsersPost(req, res, session));
-    if (method === 'DELETE' && pathname === '/api/users') return void handleUsersDelete(parsedUrl, res, session);
+    if (method === 'DELETE' && pathname === '/api/users') return void (await handleUsersDelete(parsedUrl, res, session));
     if (method === 'GET' && pathname === '/api/security-config') {
       if (!securityStore.testRoleCanManageUsers(session.role)) {
         writeJsonResponse(res, 403, { error: 'No tenés permiso para administrar usuarios.' });
       } else {
-        writeJsonResponse(res, 200, { ad: securityStore.getSecurity(rootDir).ad });
+        writeJsonResponse(res, 200, { ad: await securityStore.getAdConfig(rootDir) });
       }
       return;
     }
     if (method === 'POST' && pathname === '/api/security-config') return void (await handleSecurityConfigPost(req, res, session));
     if (method === 'GET' && pathname === '/api/profiles') {
-      writeJsonResponse(res, 200, profileStore.getProfiles(rootDir).map(getMaskedProfile));
+      writeJsonResponse(res, 200, (await profileStore.getProfiles(rootDir)).map(getMaskedProfile));
       return;
     }
     if (method === 'POST' && pathname === '/api/profiles') return void (await handleProfilesPost(req, res));
-    if (method === 'DELETE' && pathname === '/api/profiles') return void handleProfilesDelete(parsedUrl, res);
+    if (method === 'DELETE' && pathname === '/api/profiles') return void (await handleProfilesDelete(parsedUrl, res));
     if (method === 'GET' && pathname === '/api/flows') return void handleFlowsGet(res);
     if (method === 'POST' && pathname === '/api/run') return void (await handleRun(req, res, session));
     if (method === 'POST' && pathname === '/api/save-output') return void (await handleSaveOutput(req, res, session));
@@ -654,7 +654,7 @@ async function handleRequest(req, res) {
     if (method === 'GET' && pathname === '/api/certs-browse') return void handleCertsBrowseGet(parsedUrl, res, session);
     if (method === 'POST' && pathname === '/api/check-operations') return void (await handleCheckOperations(req, res, session));
     if (method === 'POST' && pathname === '/api/register-operations') return void (await handleRegisterOperations(req, res, session));
-    if (method === 'GET' && pathname === '/api/parametria') return void handleParametriaGet(res, session);
+    if (method === 'GET' && pathname === '/api/parametria') return void (await handleParametriaGet(res, session));
     if (method === 'POST' && pathname === '/api/parametria') return void (await handleParametriaPost(req, res, session));
     if (method === 'POST' && pathname === '/api/test-sybase') return void (await handleTestSybase(req, res, session));
     if (method === 'POST' && pathname === '/api/test-token') return void (await handleTestToken(req, res));
