@@ -1001,13 +1001,21 @@ async function runFlowFromCsv() {
       // Fila fallada: columnas de más/menos, cuenta no encontrada (nunca
       // llegó a llamar a ningún endpoint), o algún paso terminó en error.
       // Se guarda la fila tal cual vino en el archivo (aunque esté mal
-      // formada) + el IdMensaje que se le generó, para el archivo
-      // pfouterror-.../dbnouterror-... (mismo formato para los dos flows,
-      // ver saveOutputFiles) — como cada corrida es de un solo flow, el
-      // mismo state.errorRows sirve para cualquiera de los dos sin mezclarse.
+      // formada) + el IdMensaje que se le generó + el motivo del error, para
+      // el archivo pfouterror-.../dbnouterror-... (mismo formato para los dos
+      // flows, ver saveOutputFiles) — como cada corrida es de un solo flow,
+      // el mismo state.errorRows sirve para cualquiera de los dos sin
+      // mezclarse. Un flow CSV no muestra la tabla de log en pantalla (ver
+      // selectFlow) — sin el motivo acá, para una fila que nunca llegó a
+      // llamar a ningún endpoint (validación de columnas, CBU inválido,
+      // cuenta no encontrada) no queda registrado en ningún lado por qué
+      // falló: no hay request/response que loguear en logs/http/, y la UI
+      // solo muestra el conteo ok/error por paso, no el mensaje de cada fila.
       const rowFailed = rowEntries.some((entry) => entry.status !== 'Success');
       if (rowFailed && (isPlazoFijoCocosFilesSqlFlow(flow) || isTransferenciaDebinFilesFlow(flow))) {
-        state.errorRows.push([...row, rowIdMensaje]);
+        const failedEntry = rowEntries.find((entry) => entry.status !== 'Success' && entry.errorMessage);
+        const rowErrorMessage = failedEntry ? failedEntry.errorMessage : '';
+        state.errorRows.push([...row, rowIdMensaje, rowErrorMessage]);
       }
 
       // El último paso de este flow es el alta del plazo fijo; si terminó

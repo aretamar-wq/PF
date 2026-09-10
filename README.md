@@ -956,9 +956,17 @@ y, como cada corrida es de un solo flow, nunca se mezclan entre sí:
   no encontrada en Sybase, operación bloqueada por duplicada — ver más
   abajo —, o cualquier paso del banco en error), con la fila **tal cual
   vino en el archivo de entrada** (mismas columnas, mismo orden) más el
-  `IdMensaje` generado para esa fila al final. **Sin encabezado**, igual
-  que el archivo de entrada — pensado para poder inspeccionar o volver a
-  subir las filas que fallaron.
+  `IdMensaje` generado para esa fila y, al final, el mensaje de error de
+  esa fila (el mismo texto que `errorMessage` del primer step que falló —
+  ej. "Se esperaba HTTP 200 y se recibió HTTP 400.", o el motivo de una
+  validación que nunca llegó a llamar a ningún endpoint, como una cuenta no
+  encontrada). Sin esta columna no quedaba registrado en ningún lado por
+  qué falló una fila así: un flow CSV no muestra la tabla de log en
+  pantalla (solo el conteo ok/error por paso), y si la fila nunca llegó a
+  mandar un request no hay tampoco nada que loguear en `logs/http/`.
+  **Sin encabezado**, igual que el archivo de entrada (salvo por las 2
+  columnas agregadas al final) — pensado para poder inspeccionar o volver a
+  subir las filas que fallaron (sacando esas 2 columnas antes de resubir).
 - **`dbnout-<timestamp>.csv`** (solo "Transferencia DEBIN - File") — mismo
   criterio que `pfout-...` pero con las columnas de la transferencia: los 9
   valores de la fila de entrada (`creditoCuit`/`creditoCbu`/
@@ -968,8 +976,8 @@ y, como cada corrida es de un solo flow, nunca se mezclan entre sí:
   la respuesta de Nova-Link), `idMensaje` y `realizado`. `realizado = "n"`
   deja esas 3 columnas de respuesta en blanco. **Con encabezado.**
 - **`dbnouterror-<timestamp>.csv`** (solo "Transferencia DEBIN - File") —
-  mismo formato que `pfouterror-...` (fila de entrada tal cual + IdMensaje,
-  sin encabezado), para las filas que fallaron.
+  mismo formato que `pfouterror-...` (fila de entrada tal cual + IdMensaje +
+  mensaje de error, sin encabezado), para las filas que fallaron.
 - **`dbnconsulta-<timestamp>.csv`** (solo "Transferencia DEBIN - File") —
   una fila por cada transferencia consultada (`realizado = "s"` en
   `dbnout-...`), con el resultado de `GET /api/debin/cuenta/consultar/{id}`
