@@ -331,6 +331,10 @@ function formatDurationShort(ms) {
   return minutes > 0 ? `${minutes}m ${seconds}s` : `${seconds}s`;
 }
 
+function sleep(ms) {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
 function hideCsvSummary() {
   const summaryEl = document.getElementById('csvSummary');
   summaryEl.style.display = 'none';
@@ -419,6 +423,11 @@ const PLAZO_FIJO_SOLO_ALTA_FLOW_NAME = 'Alta de Plazo Fijo (solo)';
 // intercalado fila por fila) porque así lo pidieron: primero todas las
 // transferencias, después todas las consultas.
 const DEBIN_CONSULTAR_FLOW_NAME = 'Consulta DEBIN (solo)';
+
+// Espera antes de arrancar las consultas (ver runFlowFromCsv) — le da tiempo
+// a Nova-Link a terminar de resolver el DEBIN antes de preguntar por su
+// estado.
+const DEBIN_CONSULTA_DELAY_SECONDS = 60;
 
 // Manda al servidor las (cuit, numeroComprobante) de TODAS las filas del
 // archivo en una sola consulta (evita duplicar una operación bancaria real
@@ -1057,6 +1066,19 @@ async function runFlowFromCsv() {
     // que la transferencia en sí ya se hizo y no depende de esto.
     if (isTransferenciaDebinFilesFlow(flow)) {
       const toQuery = state.debinDetailRows.filter((row) => row.realizado === 's' && row.idRespuesta);
+
+      // Espera DEBIN_CONSULTA_DELAY_SECONDS antes de la primera consulta:
+      // Nova-Link puede tardar en terminar de resolver el DEBIN, así que
+      // consultar de entrada podría traer un estado todavía no definitivo.
+      // Con contador visible en pantalla para que se note que la app sigue
+      // viva mientras espera (no es que se colgó).
+      if (toQuery.length > 0) {
+        for (let remaining = DEBIN_CONSULTA_DELAY_SECONDS; remaining > 0; remaining--) {
+          progressEl.textContent = `Esperando ${remaining}s antes de consultar el estado de las transferencias...`;
+          await sleep(1000);
+        }
+      }
+
       for (let i = 0; i < toQuery.length; i++) {
         const detailRow = toQuery[i];
         progressEl.textContent = `Consultando estado de transferencias (${i + 1} de ${toQuery.length})...`;

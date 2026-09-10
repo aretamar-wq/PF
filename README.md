@@ -1321,8 +1321,14 @@ detalle completo de cada request/response, en su propio archivo bajo
 de la transferencia en sí solo trae el resultado de la evaluación inicial
 del DEBIN, no necesariamente el estado final de acreditación — por eso,
 después de procesar **todas** las filas del archivo (no intercalado fila
-por fila), `runFlowFromCsv` corre una consulta más por cada transferencia
-que sí se hizo (`realizado = "s"`, con un `idRespuesta` disponible):
+por fila), `runFlowFromCsv` espera **60 segundos** (`DEBIN_CONSULTA_DELAY_SECONDS`
+en `wwwroot/app.js`, con un contador regresivo visible en pantalla —
+`"Esperando 60s antes de consultar..."` — para que se note que la app
+sigue viva y no que se colgó) antes de arrancar las consultas, dándole
+tiempo a Nova-Link a terminar de resolver el DEBIN. Solo espera si hay algo
+para consultar (ninguna fila con `realizado = "s"`, no espera nada). Recién
+después corre una consulta por cada transferencia que sí se hizo
+(`realizado = "s"`, con un `idRespuesta` disponible):
 `GET /api/debin/cuenta/consultar/{id}` (`Flows/transferencia-debin-consultar.json`,
 `"name": "Consulta DEBIN (solo)"`, oculto — mismo servidor/perfil/auth que
 el resto), donde `{id}` es el `idRespuesta` que ya había quedado guardado
