@@ -429,6 +429,119 @@ const DEBIN_CONSULTAR_FLOW_NAME = 'Consulta DEBIN (solo)';
 // estado.
 const DEBIN_CONSULTA_DELAY_SECONDS = 60;
 
+// Todas las columnas de dbnconsulta-...csv que salen de la respuesta de
+// "Consulta DEBIN (solo)" (todo lo que trae params.response, sin recortar
+// nada — se pidió explícitamente el detalle completo, no un resumen) más
+// las 3 de identificación (idMensaje/idComprobante/idOperacion, agregadas
+// aparte) y errorConsulta. Usado tanto para inicializar la fila en blanco
+// como para el encabezado del CSV (ver saveOutputFiles) — un solo lugar
+// donde agregar una columna si Nova-Link suma un campo nuevo al futuro.
+const DEBIN_CONSULTA_COLUMNS = [
+  'numError', 'titulo', 'mensaje', 'debugSrc', 'debugDesc', 'responseId',
+  'codigoRespuesta', 'descripcionRespuesta', 'evaluacionReglas', 'evaluacionPuntaje',
+  'operacionId',
+  'compradorCodigo', 'compradorTitular', 'compradorCuit',
+  'compradorCuentaBanco', 'compradorCuentaSucursal', 'compradorCuentaTerminal',
+  'compradorCuentaAlias', 'compradorCuentaCbu', 'compradorCuentaEsTitular',
+  'compradorCuentaMoneda', 'compradorCuentaTipo', 'compradorCuentaEndpointId',
+  'compradorEstadoDescripcion', 'compradorEstadoCodigo',
+  'detalleFecha', 'detalleConcepto', 'detalleIdUsuario', 'detalleIdComprobante',
+  'detalleMoneda', 'detalleImporte', 'detalleDevolucion', 'detalleImporteComision',
+  'detalleComision', 'detalleFechaExpiracion', 'detalleDescripcion',
+  'detalleIdOperacionOriginal', 'detallePaymentReference', 'detalleCodigoPostal',
+  'detalleMcc', 'detalleDevolucionParcial', 'detalleForzado',
+  'vendedorCodigo', 'vendedorTitular', 'vendedorCuit',
+  'vendedorCuentaBanco', 'vendedorCuentaSucursal', 'vendedorCuentaTerminal',
+  'vendedorCuentaAlias', 'vendedorCuentaCbu', 'vendedorCuentaEsTitular',
+  'vendedorCuentaMoneda', 'vendedorCuentaTipo', 'vendedorCuentaEndpointId',
+  'estadoCodigo', 'estadoDescripcion', 'garantiaOk', 'tipoOperacion', 'loteId', 'fechaNegocio',
+];
+
+function debinVal(x) {
+  return x != null ? x : '';
+}
+
+// Aplana la respuesta completa de "Consulta DEBIN (solo)" (ver
+// DEBIN_CONSULTA_COLUMNS) en un objeto plano para volcar en
+// dbnconsulta-...csv — una entrada por columna, '' si esa rama del JSON no
+// vino (nunca revienta si Nova-Link no manda algún campo opcional).
+function extractDebinConsultaFields(parsed) {
+  const response = (parsed && parsed.params && parsed.params.response) || {};
+  const respuesta = response.respuesta || {};
+  const evaluacion = respuesta.evaluacion || {};
+  const operacion = response.operacion || {};
+  const comprador = operacion.comprador || {};
+  const compradorCuenta = comprador.cuenta || {};
+  const estadoComprador = comprador.estadoComprador || {};
+  const detalle = operacion.detalle || {};
+  const vendedor = operacion.vendedor || {};
+  const vendedorCuenta = vendedor.cuenta || {};
+  const estado = operacion.estado || {};
+
+  return {
+    numError: debinVal(parsed && parsed.numError),
+    titulo: debinVal(parsed && parsed.titulo),
+    mensaje: debinVal(parsed && parsed.mensaje),
+    debugSrc: debinVal(parsed && parsed.debug_src),
+    debugDesc: debinVal(parsed && parsed.debug_desc),
+    responseId: debinVal(response.id),
+    codigoRespuesta: debinVal(respuesta.codigo),
+    descripcionRespuesta: debinVal(respuesta.descripcion),
+    evaluacionReglas: debinVal(evaluacion.reglas),
+    evaluacionPuntaje: debinVal(evaluacion.puntaje),
+    operacionId: debinVal(operacion.id),
+    compradorCodigo: debinVal(comprador.codigo),
+    compradorTitular: debinVal(comprador.titular),
+    compradorCuit: debinVal(comprador.cuit),
+    compradorCuentaBanco: debinVal(compradorCuenta.banco),
+    compradorCuentaSucursal: debinVal(compradorCuenta.sucursal),
+    compradorCuentaTerminal: debinVal(compradorCuenta.terminal),
+    compradorCuentaAlias: debinVal(compradorCuenta.alias),
+    compradorCuentaCbu: debinVal(compradorCuenta.cbu),
+    compradorCuentaEsTitular: debinVal(compradorCuenta.esTitular),
+    compradorCuentaMoneda: debinVal(compradorCuenta.moneda),
+    compradorCuentaTipo: debinVal(compradorCuenta.tipo),
+    compradorCuentaEndpointId: debinVal(compradorCuenta.endpointId),
+    compradorEstadoDescripcion: debinVal(estadoComprador.descripcion),
+    compradorEstadoCodigo: debinVal(estadoComprador.codigo),
+    detalleFecha: debinVal(detalle.fecha),
+    detalleConcepto: debinVal(detalle.concepto),
+    detalleIdUsuario: debinVal(detalle.idUsuario),
+    detalleIdComprobante: debinVal(detalle.idComprobante),
+    detalleMoneda: debinVal(detalle.moneda),
+    detalleImporte: debinVal(detalle.importe),
+    detalleDevolucion: debinVal(detalle.devolucion),
+    detalleImporteComision: debinVal(detalle.importeComision),
+    detalleComision: debinVal(detalle.comision),
+    detalleFechaExpiracion: debinVal(detalle.fechaExpiracion),
+    detalleDescripcion: debinVal(detalle.descripcion),
+    detalleIdOperacionOriginal: debinVal(detalle.idOperacionOriginal),
+    detallePaymentReference: debinVal(detalle.paymentReference),
+    detalleCodigoPostal: debinVal(detalle.codigoPostal),
+    detalleMcc: debinVal(detalle.mcc),
+    detalleDevolucionParcial: debinVal(detalle.devolucionParcial),
+    detalleForzado: debinVal(detalle.forzado),
+    vendedorCodigo: debinVal(vendedor.codigo),
+    vendedorTitular: debinVal(vendedor.titular),
+    vendedorCuit: debinVal(vendedor.cuit),
+    vendedorCuentaBanco: debinVal(vendedorCuenta.banco),
+    vendedorCuentaSucursal: debinVal(vendedorCuenta.sucursal),
+    vendedorCuentaTerminal: debinVal(vendedorCuenta.terminal),
+    vendedorCuentaAlias: debinVal(vendedorCuenta.alias),
+    vendedorCuentaCbu: debinVal(vendedorCuenta.cbu),
+    vendedorCuentaEsTitular: debinVal(vendedorCuenta.esTitular),
+    vendedorCuentaMoneda: debinVal(vendedorCuenta.moneda),
+    vendedorCuentaTipo: debinVal(vendedorCuenta.tipo),
+    vendedorCuentaEndpointId: debinVal(vendedorCuenta.endpointId),
+    estadoCodigo: debinVal(estado.codigo),
+    estadoDescripcion: debinVal(estado.descripcion),
+    garantiaOk: debinVal(operacion.garantiaOk),
+    tipoOperacion: debinVal(operacion.tipo),
+    loteId: debinVal(operacion.loteId),
+    fechaNegocio: debinVal(operacion.fechaNegocio),
+  };
+}
+
 // Manda al servidor las (cuit, numeroComprobante) de TODAS las filas del
 // archivo en una sola consulta (evita duplicar una operación bancaria real
 // por subir el mismo archivo dos veces, o por repetir un comprobante en
@@ -1087,48 +1200,16 @@ async function runFlowFromCsv() {
           idMensaje: detailRow.idMensaje,
           idComprobante: detailRow.idComprobante,
           idOperacion: detailRow.idRespuesta,
-          numError: '',
-          codigoRespuesta: '',
-          descripcionRespuesta: '',
-          evaluacionReglas: '',
-          evaluacionPuntaje: '',
-          estadoCodigo: '',
-          estadoDescripcion: '',
-          garantiaOk: '',
-          tipoOperacion: '',
-          loteId: '',
-          fechaNegocio: '',
-          fechaDetalle: '',
-          importeDetalle: '',
           errorConsulta: '',
         };
+        for (const col of DEBIN_CONSULTA_COLUMNS) consultaRow[col] = '';
 
         try {
           const consultaEntries = await runFlowByName(DEBIN_CONSULTAR_FLOW_NAME, { idOperacion: detailRow.idRespuesta });
           const lastEntry = consultaEntries[consultaEntries.length - 1];
           if (lastEntry && lastEntry.status === 'Success' && lastEntry.responseSummary) {
             const parsed = JSON.parse(lastEntry.responseSummary);
-            const response = (parsed && parsed.params && parsed.params.response) || {};
-            const respuesta = response.respuesta || {};
-            const evaluacion = respuesta.evaluacion || {};
-            const operacion = response.operacion || {};
-            const estado = operacion.estado || {};
-            const detalle = operacion.detalle || {};
-            Object.assign(consultaRow, {
-              numError: parsed.numError != null ? parsed.numError : '',
-              codigoRespuesta: respuesta.codigo != null ? respuesta.codigo : '',
-              descripcionRespuesta: respuesta.descripcion != null ? respuesta.descripcion : '',
-              evaluacionReglas: evaluacion.reglas != null ? evaluacion.reglas : '',
-              evaluacionPuntaje: evaluacion.puntaje != null ? evaluacion.puntaje : '',
-              estadoCodigo: estado.codigo != null ? estado.codigo : '',
-              estadoDescripcion: estado.descripcion != null ? estado.descripcion : '',
-              garantiaOk: operacion.garantiaOk != null ? operacion.garantiaOk : '',
-              tipoOperacion: operacion.tipo != null ? operacion.tipo : '',
-              loteId: operacion.loteId != null ? operacion.loteId : '',
-              fechaNegocio: operacion.fechaNegocio != null ? operacion.fechaNegocio : '',
-              fechaDetalle: detalle.fecha != null ? detalle.fecha : '',
-              importeDetalle: detalle.importe != null ? detalle.importe : '',
-            });
+            Object.assign(consultaRow, extractDebinConsultaFields(parsed));
           } else {
             consultaRow.errorConsulta = (lastEntry && lastEntry.errorMessage) || 'No se pudo consultar el estado de la transferencia.';
           }
@@ -1283,7 +1364,7 @@ async function saveOutputFiles(flow) {
   }
 
   if (state.debinConsultaRows.length > 0) {
-    const headers = ['idMensaje', 'idComprobante', 'idOperacion', 'numError', 'codigoRespuesta', 'descripcionRespuesta', 'evaluacionReglas', 'evaluacionPuntaje', 'estadoCodigo', 'estadoDescripcion', 'garantiaOk', 'tipoOperacion', 'loteId', 'fechaNegocio', 'fechaDetalle', 'importeDetalle', 'errorConsulta'];
+    const headers = ['idMensaje', 'idComprobante', 'idOperacion', ...DEBIN_CONSULTA_COLUMNS, 'errorConsulta'];
     const lines = [headers.join(',')];
     for (const row of state.debinConsultaRows) {
       lines.push(headers.map((h) => csvEscape(row[h])).join(','));

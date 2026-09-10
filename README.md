@@ -1334,17 +1334,46 @@ después corre una consulta por cada transferencia que sí se hizo
 el resto), donde `{id}` es el `idRespuesta` que ya había quedado guardado
 para esa fila (el campo `id` de `params.response.respuesta` en la
 respuesta de la transferencia). El resultado de cada consulta se acumula
-en `dbnconsulta-<timestamp>.csv`, con columnas `idMensaje`/`idComprobante`
-(para cruzar con `dbnout-...`), `idOperacion` (el `id` consultado),
-`numError`, `codigoRespuesta`/`descripcionRespuesta` (`params.response.respuesta.*`),
-`evaluacionReglas`/`evaluacionPuntaje` (`...respuesta.evaluacion.*`),
-`estadoCodigo`/`estadoDescripcion` (`params.response.operacion.estado.*` —
-ej. `"ACREDITADO"`/`"0600 - ACREDITADO"`), `garantiaOk`, `tipoOperacion`,
-`loteId`, `fechaNegocio` (`...operacion.*`), `fechaDetalle`/`importeDetalle`
-(`...operacion.detalle.fecha`/`.importe`) y `errorConsulta` (vacío salvo
-que esa consulta puntual haya fallado — un error acá no aborta el resto:
-la transferencia ya se hizo, la consulta es solo informativa). Si ninguna
-fila llegó a transferirse, no se genera este archivo.
+en `dbnconsulta-<timestamp>.csv` con el detalle **completo** de la
+respuesta (se pidió explícitamente todo el `params.response`, no un
+resumen) aplanado en columnas (`wwwroot/app.js`, `extractDebinConsultaFields`
++ `DEBIN_CONSULTA_COLUMNS` — un solo lugar donde agregar una columna si
+Nova-Link suma un campo nuevo al futuro), más `idMensaje`/`idComprobante`
+(para cruzar con `dbnout-...`) y `errorConsulta` (vacío salvo que esa
+consulta puntual haya fallado — un error acá no aborta el resto: la
+transferencia ya se hizo, la consulta es solo informativa). Columnas, en
+este orden:
+
+- Sobre + `respuesta`: `idOperacion` (el `id` consultado), `numError`,
+  `titulo`, `mensaje`, `debugSrc`, `debugDesc`, `responseId`
+  (`params.response.id`), `codigoRespuesta`/`descripcionRespuesta`
+  (`respuesta.codigo`/`.descripcion` — ej. `"00"`/`"DEBIN ENCONTRADO"`),
+  `evaluacionReglas`/`evaluacionPuntaje` (`respuesta.evaluacion.*`).
+- `operacion` (todo dentro de `params.response.operacion`): `operacionId`.
+- `comprador` (quien recibe): `compradorCodigo`/`compradorTitular`/
+  `compradorCuit`, `compradorCuenta*` (`Banco`/`Sucursal`/`Terminal`/
+  `Alias`/`Cbu`/`EsTitular`/`Moneda`/`Tipo`/`EndpointId`, de
+  `comprador.cuenta`), `compradorEstadoDescripcion`/`compradorEstadoCodigo`
+  (`comprador.estadoComprador.*` — ej. `"Adherido"`/`"00"`).
+- `detalle`: `detalleFecha`/`detalleConcepto`/`detalleIdUsuario`/
+  `detalleIdComprobante`/`detalleMoneda`/`detalleImporte`/
+  `detalleDevolucion`/`detalleImporteComision`/`detalleComision`/
+  `detalleFechaExpiracion`/`detalleDescripcion`/
+  `detalleIdOperacionOriginal`/`detallePaymentReference`/
+  `detalleCodigoPostal`/`detalleMcc`/`detalleDevolucionParcial`/
+  `detalleForzado` — mismos nombres de campo que trae `detalle`, con el
+  prefijo `detalle`.
+- `vendedor` (quien manda la plata): mismas columnas que `comprador`
+  (`vendedorCodigo`/`vendedorTitular`/`vendedorCuit`/`vendedorCuenta*`),
+  sin `estadoComprador` (`vendedor` no lo trae).
+- `estado`/resto de `operacion`: `estadoCodigo`/`estadoDescripcion`
+  (`operacion.estado.*` — ej. `"ACREDITADO"`/`"0600 - ACREDITADO"`),
+  `garantiaOk`, `tipoOperacion` (`operacion.tipo`), `loteId`,
+  `fechaNegocio`.
+
+Cualquier campo ausente en la respuesta (rama del JSON que no vino) queda
+en blanco, no rompe la fila. Si ninguna fila llegó a transferirse, no se
+genera este archivo.
 
 ### Flow "Consulta DEBIN"
 
