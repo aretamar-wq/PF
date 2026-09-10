@@ -1,60 +1,56 @@
-# Módulo de seguridad: login contra Active Directory (la contraseña nunca se guarda,
-# solo se usa un instante para el bind LDAP), administración local de usuarios
-# habilitados + su rol, sesiones en memoria (tokens Bearer) y auditoría en
-# logs/security.log. Lee/escribe security.local.json (nunca versionado, ver
-# .gitignore) — mismo patrón que ProfileStore.psm1/ParametriaStore.psm1.
+# Módulo de seguridad: login contra Active Directory (la contraseña nunca se
+# guarda, solo se usa un instante para el bind LDAP), administración de
+# usuarios habilitados + su rol, y auditoría en logs/security.log.
+#
+# Usuarios/roles y la configuración de AD viven en MariaDB (tablas usuarios,
+# rol, rol_usuarios, configuracion_ad — ver deploy/mariadb-schema.sql y "Base
+# de datos (MariaDB)" en el README), no en security.local.json — ese archivo
+# se dejó de usar (ver modules/scripts/Migrate-JsonToMariaDb.ps1 para migrar
+# los datos que hubiera). A diferencia del resto de este archivo, las
+# sesiones (tokens Bearer) siguen en memoria (nunca se persisten, ni en
+# disco ni en la base — se pierden al reiniciar el servidor, a propósito).
+#
+# rol_usuarios es una relación usuarios<->rol modelada con tabla intermedia,
+# pero usuario_id es su PRIMARY KEY: fuerza como máximo una fila por usuario,
+# o sea un solo rol por usuario — mismo comportamiento que antes (un rol
+# plano por usuario en el JSON), solo que normalizado en la base. Requiere
+# que MariaDbClient.psm1 ya esté importado (ver server.ps1).
 
-# Roles fijos: qué puede hacer cada uno se resuelve acá (Test-RoleCanManageUsers /
-# Test-RoleCanRunFlow), no hay UI para inventar roles nuevos.
 $script:ValidRoles = @('admin', 'operador', 'lectura')
 
-function Get-DefaultSecurity {
-    [pscustomobject]@{
-        ad = [pscustomobject]@{
-            server = ''
-            port   = 389
-            useSsl = $false
-            domain = ''
-        }
-        users = @()
-    }
-}
+# --- Configuración de Active Directory ----------------------------------------
 
-function Get-SecurityFilePath {
-    param([Parameter(Mandatory = $true)][string]$RootDir)
-    return Join-Path $RootDir 'security.local.json'
-}
-
-function Get-Security {
+function Get-AdConfig {
     param([Parameter(Mandatory = $true)][string]$RootDir)
 
-    $path = Get-SecurityFilePath -RootDir $RootDir
-    if (-not (Test-Path $path)) {
-        return Get-DefaultSecurity
+    $rows = @(Invoke-DbQuery -RootDir $RootDir -Sql 'SELECT server, port, use_ssl, domain FROM configuracion_ad WHERE id = 1')
+    if ($rows.Count -eq 0) {
+        return [pscustomobject]@{ server = ''; port = 389; useSsl = $false; domain = '' }
     }
-
-    $json = Get-Content -Path $path -Raw -Encoding UTF8
-    if ([string]::IsNullOrWhiteSpace($json)) {
-        return Get-DefaultSecurity
+    $row = $rows[0]
+    return [pscustomobject]@{
+        server = $row.server
+        port   = $row.port
+        useSsl = [bool]$row.use_ssl
+        domain = $row.domain
     }
-
-    $parsed = $json | ConvertFrom-Json
-    if ($null -eq $parsed) { return Get-DefaultSecurity }
-    if (-not $parsed.ad) { $parsed | Add-Member -NotePropertyName ad -NotePropertyValue (Get-DefaultSecurity).ad }
-    if ($null -eq $parsed.users) { $parsed | Add-Member -NotePropertyName users -NotePropertyValue @() -Force }
-    $parsed.users = @($parsed.users)
-    return $parsed
 }
 
-function Save-Security {
+function Save-AdConfig {
     param(
         [Parameter(Mandatory = $true)][string]$RootDir,
-        [Parameter(Mandatory = $true)] $Security
+        [Parameter(Mandatory = $true)] $AdConfig
     )
 
-    $path = Get-SecurityFilePath -RootDir $RootDir
-    $json = $Security | ConvertTo-Json -Depth 10
-    Set-Content -Path $path -Value $json -Encoding UTF8
+    Invoke-DbNonQuery -RootDir $RootDir -Sql @'
+INSERT INTO configuracion_ad (id, server, port, use_ssl, domain) VALUES (1, ?, ?, ?, ?)
+ON DUPLICATE KEY UPDATE server = VALUES(server), port = VALUES(port), use_ssl = VALUES(use_ssl), domain = VALUES(domain)
+'@ -Params @(
+        [string]$AdConfig.server,
+        $(if ($AdConfig.port) { [int]$AdConfig.port } else { 389 }),
+        $(if ($AdConfig.useSsl) { 1 } else { 0 }),
+        [string]$AdConfig.domain
+    ) | Out-Null
 }
 
 # --- Autenticación contra Active Directory --------------------------------
@@ -154,16 +150,36 @@ function Test-RoleCanRunFlow {
     return $Role -in @('admin', 'operador')
 }
 
-# --- Usuarios locales --------------------------------------------------------
+# --- Usuarios ----------------------------------------------------------------
+
+$script:UserSelectSql = @'
+SELECT u.username, u.display_name, u.enabled, r.nombre AS role
+FROM usuarios u
+LEFT JOIN rol_usuarios ru ON ru.usuario_id = u.id
+LEFT JOIN rol r ON r.id = ru.rol_id
+'@
+
+function ConvertTo-UserRecord {
+    param($Row)
+    return [pscustomobject]@{
+        username    = $Row.username
+        role        = $Row.role
+        enabled     = [bool]$Row.enabled
+        displayName = if ($Row.display_name) { $Row.display_name } else { '' }
+    }
+}
 
 function Get-SecurityUsers {
     param([Parameter(Mandatory = $true)][string]$RootDir)
-    return @((Get-Security -RootDir $RootDir).users)
+    $rows = @(Invoke-DbQuery -RootDir $RootDir -Sql "$script:UserSelectSql ORDER BY u.username")
+    return @($rows | ForEach-Object { ConvertTo-UserRecord -Row $_ })
 }
 
 function Find-SecurityUser {
     param([Parameter(Mandatory = $true)][string]$RootDir, [Parameter(Mandatory = $true)][string]$Username)
-    return @(Get-SecurityUsers -RootDir $RootDir) | Where-Object { $_.username -ieq $Username } | Select-Object -First 1
+    $rows = @(Invoke-DbQuery -RootDir $RootDir -Sql "$script:UserSelectSql WHERE LOWER(u.username) = LOWER(?)" -Params @($Username))
+    if ($rows.Count -eq 0) { return $null }
+    return ConvertTo-UserRecord -Row $rows[0]
 }
 
 function Test-IsLastEnabledAdmin {
@@ -171,10 +187,18 @@ function Test-IsLastEnabledAdmin {
     # gestionar usuarios). Se llama antes de borrar/deshabilitar/cambiarle el rol
     # a un admin.
     param([Parameter(Mandatory = $true)][string]$RootDir, [Parameter(Mandatory = $true)][string]$Username)
-    $users = @(Get-SecurityUsers -RootDir $RootDir)
-    $otherEnabledAdmins = @($users | Where-Object { $_.username -ine $Username -and $_.role -eq 'admin' -and $_.enabled })
-    $target = $users | Where-Object { $_.username -ieq $Username } | Select-Object -First 1
-    return ($target -and $target.role -eq 'admin' -and $target.enabled -and $otherEnabledAdmins.Count -eq 0)
+
+    $target = Find-SecurityUser -RootDir $RootDir -Username $Username
+    if (-not $target -or $target.role -ne 'admin' -or -not $target.enabled) { return $false }
+
+    $rows = @(Invoke-DbQuery -RootDir $RootDir -Sql @'
+SELECT COUNT(*) AS total
+FROM usuarios u
+JOIN rol_usuarios ru ON ru.usuario_id = u.id
+JOIN rol r ON r.id = ru.rol_id
+WHERE r.nombre = 'admin' AND u.enabled = 1 AND LOWER(u.username) <> LOWER(?)
+'@ -Params @($Username))
+    return ([int]$rows[0].total -eq 0)
 }
 
 function Add-OrUpdateSecurityUser {
@@ -190,28 +214,47 @@ function Add-OrUpdateSecurityUser {
         throw "Rol inválido: '$Role'. Roles válidos: $((Get-ValidRoles) -join ', ')."
     }
 
-    $security = Get-Security -RootDir $RootDir
-    $users = @($security.users)
-    $existingIndex = -1
-    for ($i = 0; $i -lt $users.Count; $i++) {
-        if ($users[$i].username -ieq $Username) { $existingIndex = $i; break }
-    }
+    $connection = New-DbConnection -RootDir $RootDir
+    $transaction = $connection.BeginTransaction()
+    try {
+        $cmd = $connection.CreateCommand()
+        $cmd.Transaction = $transaction
+        $cmd.CommandText = @'
+INSERT INTO usuarios (username, display_name, enabled) VALUES (?, ?, ?)
+ON DUPLICATE KEY UPDATE display_name = VALUES(display_name), enabled = VALUES(enabled)
+'@
+        Add-DbCommandParameters -Command $cmd -Params @($Username, $DisplayName, $(if ($Enabled) { 1 } else { 0 }))
+        [void]$cmd.ExecuteNonQuery()
 
-    $record = [pscustomobject][ordered]@{
-        username    = $Username
-        role        = $Role
-        enabled     = $Enabled
-        displayName = $DisplayName
-    }
+        $cmd2 = $connection.CreateCommand()
+        $cmd2.Transaction = $transaction
+        $cmd2.CommandText = 'SELECT id FROM usuarios WHERE LOWER(username) = LOWER(?)'
+        Add-DbCommandParameters -Command $cmd2 -Params @($Username)
+        $userId = $cmd2.ExecuteScalar()
 
-    if ($existingIndex -ge 0) {
-        $users[$existingIndex] = $record
-    } else {
-        $users += $record
-    }
+        $cmd3 = $connection.CreateCommand()
+        $cmd3.Transaction = $transaction
+        $cmd3.CommandText = 'SELECT id FROM rol WHERE nombre = ?'
+        Add-DbCommandParameters -Command $cmd3 -Params @($Role)
+        $roleId = $cmd3.ExecuteScalar()
 
-    $security.users = $users
-    Save-Security -RootDir $RootDir -Security $security
+        # usuario_id es la PRIMARY KEY de rol_usuarios: este INSERT ... ON
+        # DUPLICATE KEY pisa el rol existente en vez de agregar una segunda fila
+        # — así se mantiene "un solo rol por usuario" aunque la relación esté
+        # modelada como tabla intermedia.
+        $cmd4 = $connection.CreateCommand()
+        $cmd4.Transaction = $transaction
+        $cmd4.CommandText = 'INSERT INTO rol_usuarios (usuario_id, rol_id) VALUES (?, ?) ON DUPLICATE KEY UPDATE rol_id = VALUES(rol_id)'
+        Add-DbCommandParameters -Command $cmd4 -Params @($userId, $roleId)
+        [void]$cmd4.ExecuteNonQuery()
+
+        $transaction.Commit()
+    } catch {
+        $transaction.Rollback()
+        throw
+    } finally {
+        $connection.Close()
+    }
 }
 
 function Remove-SecurityUser {
@@ -220,9 +263,9 @@ function Remove-SecurityUser {
         [Parameter(Mandatory = $true)][string]$Username
     )
 
-    $security = Get-Security -RootDir $RootDir
-    $security.users = @(@($security.users) | Where-Object { $_.username -ine $Username })
-    Save-Security -RootDir $RootDir -Security $security
+    # ON DELETE CASCADE en rol_usuarios.usuario_id se encarga de borrar también
+    # la fila de rol_usuarios de este usuario.
+    Invoke-DbNonQuery -RootDir $RootDir -Sql 'DELETE FROM usuarios WHERE LOWER(username) = LOWER(?)' -Params @($Username) | Out-Null
 }
 
 # --- Sesiones (tokens Bearer en memoria, se pierden al reiniciar el servidor,
@@ -309,7 +352,7 @@ function Write-SecurityLog {
 }
 
 Export-ModuleMember -Function `
-    Get-Security, Save-Security, Get-DefaultSecurity, `
+    Get-AdConfig, Save-AdConfig, `
     Test-AdCredentials, `
     Get-ValidRoles, Test-RoleCanManageUsers, Test-RoleCanManageParametria, Test-RoleCanRunFlow, `
     Get-SecurityUsers, Find-SecurityUser, Test-IsLastEnabledAdmin, Add-OrUpdateSecurityUser, Remove-SecurityUser, `

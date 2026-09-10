@@ -19,12 +19,18 @@ Add-Type -AssemblyName System.Net.Http
 $modulesDir = Join-Path $scriptRoot 'modules'
 Import-Module (Join-Path $modulesDir 'JsonPath.psm1') -Force
 Import-Module (Join-Path $modulesDir 'VariableSubstitution.psm1') -Force
+# MariaDbClient/CryptoUtil primero: los stores de abajo dependen de sus
+# funciones (Invoke-DbQuery, Protect-CryptoValue, etc.) — ver "Base de datos
+# (MariaDB)" en el README.
+Import-Module (Join-Path $modulesDir 'MariaDbClient.psm1') -Force
+Import-Module (Join-Path $modulesDir 'CryptoUtil.psm1') -Force
 Import-Module (Join-Path $modulesDir 'ProfileStore.psm1') -Force
 Import-Module (Join-Path $modulesDir 'ParametriaStore.psm1') -Force
 Import-Module (Join-Path $modulesDir 'FlowStore.psm1') -Force
 Import-Module (Join-Path $modulesDir 'FlowEngine.psm1') -Force
 Import-Module (Join-Path $modulesDir 'SecurityStore.psm1') -Force
 Import-Module (Join-Path $modulesDir 'ProcessedOperationsStore.psm1') -Force
+Import-Module (Join-Path $modulesDir 'DebinOutputStore.psm1') -Force
 
 $Global:TokenCache = @{}
 $Global:SecuritySessions = @{}
@@ -134,9 +140,9 @@ function Get-ClientAddress {
 }
 
 function Get-AuthenticatedSession {
-    # A diferencia de solo mirar el token, esto vuelve a chequear contra
-    # security.local.json en cada request (no confía en el rol cacheado al hacer
-    # login): si un admin deshabilita o elimina a un usuario, o le cambia el rol,
+    # A diferencia de solo mirar el token, esto vuelve a consultar la base en
+    # cada request (no confía en el rol cacheado al hacer login): si un admin
+    # deshabilita o elimina a un usuario, o le cambia el rol,
     # eso tiene efecto inmediato en la próxima request de esa sesión, en vez de
     # recién cuando el token expire (hasta 8hs después).
     param($Request, [string]$RootDir)
@@ -205,8 +211,8 @@ try {
                 if ([string]::IsNullOrWhiteSpace($username) -or [string]::IsNullOrWhiteSpace($password)) {
                     Write-JsonResponse -Response $response -StatusCode 400 -Body ([pscustomobject]@{ error = 'Usuario y contraseña son obligatorios.' })
                 } else {
-                    $security = Get-Security -RootDir $scriptRoot
-                    $users = @($security.users)
+                    $adConfig = Get-AdConfig -RootDir $scriptRoot
+                    $users = @(Get-SecurityUsers -RootDir $scriptRoot)
                     $localUser = $users | Where-Object { $_.username -ieq $username } | Select-Object -First 1
 
                     # Bootstrap: si todavía no hay ningún usuario configurado localmente,
@@ -219,7 +225,7 @@ try {
                         Write-SecurityLog -LogsDir $logsDir -Message "LOGIN DENEGADO usuario='$username' (no habilitado en la app) desde $clientAddress"
                         Write-JsonResponse -Response $response -StatusCode 401 -Body ([pscustomobject]@{ error = 'Usuario no habilitado en esta aplicación. Pedile a un administrador que te dé de alta.' })
                     } else {
-                        $adResult = Test-AdCredentials -AdConfig $security.ad -Username $username -Password $password
+                        $adResult = Test-AdCredentials -AdConfig $adConfig -Username $username -Password $password
                         if (-not $adResult.ok) {
                             Write-SecurityLog -LogsDir $logsDir -Message "LOGIN FALLIDO usuario='$username' desde $clientAddress ($($adResult.message))"
                             Write-JsonResponse -Response $response -StatusCode 401 -Body ([pscustomobject]@{ error = $adResult.message })
@@ -304,8 +310,7 @@ try {
                 if (-not (Test-RoleCanManageUsers -Role $session.role)) {
                     Write-JsonResponse -Response $response -StatusCode 403 -Body ([pscustomobject]@{ error = 'No tenés permiso para administrar usuarios.' })
                 } else {
-                    $security = Get-Security -RootDir $scriptRoot
-                    Write-JsonResponse -Response $response -StatusCode 200 -Body ([pscustomobject]@{ ad = $security.ad })
+                    Write-JsonResponse -Response $response -StatusCode 200 -Body ([pscustomobject]@{ ad = (Get-AdConfig -RootDir $scriptRoot) })
                 }
             }
             elseif ($method -eq 'POST' -and $path -eq '/api/security-config') {
@@ -314,15 +319,14 @@ try {
                 } else {
                     $bodyText = Read-RequestBody -Request $request
                     $incoming = $bodyText | ConvertFrom-Json
-                    $security = Get-Security -RootDir $scriptRoot
-                    $security.ad = [pscustomobject]@{
+                    $adConfig = [pscustomobject]@{
                         server = [string]$incoming.server
                         port   = [int]$incoming.port
                         useSsl = [bool]$incoming.useSsl
                         domain = [string]$incoming.domain
                     }
-                    Save-Security -RootDir $scriptRoot -Security $security
-                    Write-SecurityLog -LogsDir $logsDir -Message "CONFIG AD actualizada por '$($session.username)' (server='$($security.ad.server)', domain='$($security.ad.domain)')"
+                    Save-AdConfig -RootDir $scriptRoot -AdConfig $adConfig
+                    Write-SecurityLog -LogsDir $logsDir -Message "CONFIG AD actualizada por '$($session.username)' (server='$($adConfig.server)', domain='$($adConfig.domain)')"
                     Write-JsonResponse -Response $response -StatusCode 200 -Body ([pscustomobject]@{ ok = $true })
                 }
             }
@@ -467,6 +471,26 @@ try {
                     $filePath = Join-Path $filesDir $fileName
                     Set-Content -Path $filePath -Value $content -Encoding UTF8
                     Write-SecurityLog -LogsDir $logsDir -Message "ARCHIVO DE SALIDA '$fileName' guardado por '$($session.username)'"
+
+                    # Además del .csv en files/ (arriba), el contenido de dbnout-/
+                    # dbnconsulta- queda registrado en MariaDB con quién lo generó y
+                    # cuándo (ver DebinOutputStore.psm1) — un registro que se puede
+                    # consultar sin tener que ir a buscar el archivo. Si esto falla (ej.
+                    # MariaDB no disponible en ese momento) no aborta la respuesta: el
+                    # .csv ya se guardó bien, que es lo principal de este endpoint;
+                    # solo queda constancia del error en el log de seguridad.
+                    if ($prefix -eq 'dbnout-' -or $prefix -eq 'dbnconsulta-') {
+                        try {
+                            if ($prefix -eq 'dbnout-') {
+                                Add-DbnOutRows -RootDir $scriptRoot -CsvContent $content -Username $session.username
+                            } else {
+                                Add-DbnConsultaRows -RootDir $scriptRoot -CsvContent $content -Username $session.username
+                            }
+                        } catch {
+                            Write-SecurityLog -LogsDir $logsDir -Message "ERROR registrando '$fileName' en MariaDB (dbn_out/dbn_consulta): $($_.Exception.Message)"
+                        }
+                    }
+
                     Write-JsonResponse -Response $response -StatusCode 200 -Body ([pscustomobject]@{ ok = $true; fileName = $fileName })
                 }
             }

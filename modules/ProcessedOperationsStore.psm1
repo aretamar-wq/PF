@@ -1,51 +1,29 @@
-# Lleva el registro de operaciones (cuit + numeroComprobante) que ya se
-# ejecutaron con éxito, para poder bloquear una fila que intente repetir la
-# misma operación (mismo archivo subido dos veces, el mismo comprobante
-# reaparece en dos archivos distintos, o se reprocesa un archivo que ya
-# había corrido bien) antes de llamar a ningún endpoint del banco — evita
-# duplicar un débito/crédito/alta de plazo fijo real por error.
-# logs/processed-operations.json (no se versiona, está en logs/ que ya
-# está en .gitignore entero).
+# Registro de operaciones (cuit + numeroComprobante) que ya se ejecutaron con
+# éxito, para poder bloquear una fila que intente repetir la misma operación
+# antes de llamar a ningún endpoint del banco. En MariaDB (tabla
+# "operaciones_procesadas") — reemplaza logs/processed-operations.json (ver
+# deploy/mariadb-schema.sql y "Base de datos (MariaDB)" en el README).
+# Requiere que MariaDbClient.psm1 ya esté importado (ver server.ps1).
+#
+# Find-DuplicateOperations arma un solo WHERE con el índice único (cuit,
+# numero_comprobante) en vez de traer toda la tabla — pensado también para
+# cuando la tabla crezca mucho.
 
-function Get-ProcessedOperationsFilePath {
-    param([Parameter(Mandatory = $true)][string]$RootDir)
-    return Join-Path (Join-Path $RootDir 'logs') 'processed-operations.json'
+function ConvertTo-OperationRecord {
+    param($Row)
+    return [pscustomobject]@{
+        cuit              = $Row.cuit
+        numeroComprobante = $Row.numero_comprobante
+        idMensaje         = $Row.id_mensaje
+        processedAt       = $Row.processed_at
+        processedBy       = $Row.processed_by
+    }
 }
 
 function Get-ProcessedOperations {
     param([Parameter(Mandatory = $true)][string]$RootDir)
-
-    $path = Get-ProcessedOperationsFilePath -RootDir $RootDir
-    if (-not (Test-Path $path)) { return @() }
-
-    $json = Get-Content -Path $path -Raw -Encoding UTF8
-    if ([string]::IsNullOrWhiteSpace($json)) { return @() }
-
-    $parsed = $json | ConvertFrom-Json
-    if ($null -eq $parsed) { return @() }
-    return @($parsed)
-}
-
-function Save-ProcessedOperations {
-    param(
-        [Parameter(Mandatory = $true)][string]$RootDir,
-        [Parameter(Mandatory = $true)] $Operations
-    )
-
-    $logsDir = Join-Path $RootDir 'logs'
-    if (-not (Test-Path $logsDir)) {
-        New-Item -ItemType Directory -Path $logsDir -Force | Out-Null
-    }
-
-    $path = Get-ProcessedOperationsFilePath -RootDir $RootDir
-    $array = @($Operations)
-    $json = if ($array.Count -eq 0) {
-        '[]'
-    } else {
-        $rendered = $array | ConvertTo-Json -Depth 10
-        if ($array.Count -eq 1) { "[$rendered]" } else { $rendered }
-    }
-    Set-Content -Path $path -Value $json -Encoding UTF8
+    $rows = @(Invoke-DbQuery -RootDir $RootDir -Sql 'SELECT * FROM operaciones_procesadas ORDER BY id')
+    return @($rows | ForEach-Object { ConvertTo-OperationRecord -Row $_ })
 }
 
 function Find-DuplicateOperations {
@@ -57,27 +35,30 @@ function Find-DuplicateOperations {
         [Parameter(Mandatory = $true)] $Operations
     )
 
-    $existing = @(Get-ProcessedOperations -RootDir $RootDir)
-    $index = @{}
-    foreach ($record in $existing) {
-        $key = "$($record.cuit)|$($record.numeroComprobante)"
-        if (-not $index.ContainsKey($key)) { $index[$key] = $record }
+    $ops = @($Operations)
+    if ($ops.Count -eq 0) { return @() }
+
+    $conditions = @($ops | ForEach-Object { '(cuit = ? AND numero_comprobante = ?)' }) -join ' OR '
+    $params = @()
+    foreach ($op in $ops) {
+        $params += [string]$op.cuit
+        $params += [string]$op.numeroComprobante
     }
 
-    $duplicates = @()
-    foreach ($op in @($Operations)) {
-        $key = "$($op.cuit)|$($op.numeroComprobante)"
-        if ($index.ContainsKey($key)) {
-            $match = $index[$key]
-            $duplicates += [pscustomobject]@{
-                cuit              = [string]$op.cuit
-                numeroComprobante = [string]$op.numeroComprobante
-                processedAt       = $match.processedAt
-                processedBy       = $match.processedBy
-            }
+    $rows = @(Invoke-DbQuery -RootDir $RootDir -Sql @"
+SELECT cuit, numero_comprobante, id_mensaje, processed_at, processed_by
+FROM operaciones_procesadas
+WHERE $conditions
+"@ -Params $params)
+
+    return @($rows | ForEach-Object {
+        [pscustomobject]@{
+            cuit              = $_.cuit
+            numeroComprobante = $_.numero_comprobante
+            processedAt       = $_.processed_at
+            processedBy       = $_.processed_by
         }
-    }
-    return $duplicates
+    })
 }
 
 function Add-ProcessedOperations {
@@ -89,18 +70,35 @@ function Add-ProcessedOperations {
         [Parameter(Mandatory = $true)][string]$Username
     )
 
-    $existing = @(Get-ProcessedOperations -RootDir $RootDir)
+    $ops = @($Operations)
+    if ($ops.Count -eq 0) { return }
+
     $now = (Get-Date).ToString('yyyy-MM-dd HH:mm:ss')
-    $new = @(@($Operations) | ForEach-Object {
-        [pscustomobject]@{
-            cuit              = [string]$_.cuit
-            numeroComprobante = [string]$_.numeroComprobante
-            idMensaje         = [string]$_.idMensaje
-            processedAt       = $now
-            processedBy       = $Username
+    $connection = New-DbConnection -RootDir $RootDir
+    $transaction = $connection.BeginTransaction()
+    try {
+        foreach ($op in $ops) {
+            $cmd = $connection.CreateCommand()
+            $cmd.Transaction = $transaction
+            # ON DUPLICATE KEY UPDATE como no-op (id = id): la UNIQUE KEY
+            # (cuit, numero_comprobante) evita una fila duplicada si esta misma
+            # operación ya se había registrado antes (ej. una carrera entre dos
+            # corridas), sin tirar un error de constraint.
+            $cmd.CommandText = @'
+INSERT INTO operaciones_procesadas (cuit, numero_comprobante, id_mensaje, processed_at, processed_by)
+VALUES (?, ?, ?, ?, ?)
+ON DUPLICATE KEY UPDATE id = id
+'@
+            Add-DbCommandParameters -Command $cmd -Params @([string]$op.cuit, [string]$op.numeroComprobante, [string]$op.idMensaje, $now, $Username)
+            [void]$cmd.ExecuteNonQuery()
         }
-    })
-    Save-ProcessedOperations -RootDir $RootDir -Operations (@($existing) + $new)
+        $transaction.Commit()
+    } catch {
+        $transaction.Rollback()
+        throw
+    } finally {
+        $connection.Close()
+    }
 }
 
 Export-ModuleMember -Function Get-ProcessedOperations, Find-DuplicateOperations, Add-ProcessedOperations
