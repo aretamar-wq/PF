@@ -14,8 +14,8 @@ guardan en **MariaDB** (ver "Base de datos (MariaDB)" más abajo), no en
 archivos JSON locales.
 
 > Esta es la distribución para Linux de ApiCore — sin `server.ps1` ni
-> `modules/*.psm1`. La distribución para Windows (backend PowerShell,
-> `*.local.json` como almacenamiento) vive en la branch `distribucion-windows`.
+> `modules/*.psm1`. La distribución para Windows (backend PowerShell) vive
+> en la branch `distribucion-windows` — las dos comparten la misma MariaDB.
 
 > **Importante:** hoy la app tiene 3 flows operativos —
 > `Flows/plazo-fijo-cocos-files-sql.json` ("Alta de Plazo Fijos - File"),
