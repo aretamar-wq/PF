@@ -265,6 +265,7 @@ node/
     parametriaStore.js        Parametría — en MariaDB, no en parametria.local.json (ídem)
     securityStore.js          Usuarios/roles/config de AD — en MariaDB (ídem); login LDAP con ldapts, sesiones en memoria (sin cambios)
     processedOperationsStore.js  Antiduplicado — en MariaDB, no en logs/processed-operations.json (ídem)
+    debinOutputStore.js       Registro en MariaDB (dbn_out/dbn_consulta) del contenido de dbnout-/dbnconsulta-...csv, ver "Archivos de salida (files/)"
 ```
 
 `jsonPath.js`, `variableSubstitution.js`, `flowStore.js`, `flowEngine.js` y
@@ -410,6 +411,20 @@ columnas):
   una `Map` en memoria sobre el archivo completo, ahora resuelto con una
   sola consulta SQL en vez de traer todo el archivo a memoria en cada
   chequeo.
+- **`dbn_out`** y **`dbn_consulta`** — registro en base (no de
+  deduplicación, puramente de auditoría) del contenido de
+  `dbnout-...csv`/`dbnconsulta-...csv` (ver "Archivos de salida (`files/`)"
+  más abajo), una fila por fila del `.csv` correspondiente, con quién
+  ejecutó la carga (`ejecutado_por`) y cuándo (`ejecutado_en`). En
+  `dbn_consulta`, las ~58 columnas que trae la respuesta de "Consulta DEBIN
+  (solo)" (ver `DEBIN_CONSULTA_COLUMNS` en `wwwroot/app.js`) se guardan
+  enteras en `respuesta_json`, no una por columna — mismo criterio que
+  `token_extra_json` en `perfiles`. Se llenan desde `POST
+  /api/save-output` (`node/lib/debinOutputStore.js`), en el mismo momento
+  en que se guarda el `.csv` en `files/`; si el `INSERT` falla (ej.
+  MariaDB no disponible en ese momento) no aborta la respuesta — el `.csv`
+  ya se guardó bien, que es lo principal de ese endpoint — solo queda
+  constancia del error en `logs/security.log`.
 
 `node/lib/mariadbClient.js` mantiene un solo pool de conexiones
 (`mysql2/promise`) para todo el proceso — se crea la primera vez que hace
@@ -1164,6 +1179,12 @@ y, como cada corrida es de un solo flow, nunca se mezclan entre sí:
   — ver "Flow 'Transferencia DEBIN - File'" más abajo para el detalle
   completo de columnas. **Con encabezado.** Si ninguna fila llegó a
   transferirse, no se genera.
+
+En el backend Node.js, el contenido de `dbnout-...`/`dbnconsulta-...` además
+queda registrado en MariaDB (tablas `dbn_out`/`dbn_consulta`, ver "Base de
+datos (MariaDB)") con quién ejecutó la carga y cuándo — el `.csv` en
+`files/` se sigue generando igual, esto es un registro adicional
+consultable sin tener que ir a buscar el archivo.
 
 Si no hubo ningún plazo fijo dado de alta, no se genera `pfout-...`; si no
 hubo ninguna fila fallada, no se genera `pfouterror-.../dbnouterror-...`.

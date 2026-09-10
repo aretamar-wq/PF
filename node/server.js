@@ -23,6 +23,7 @@ const flowStore = require('./lib/flowStore');
 const flowEngine = require('./lib/flowEngine');
 const securityStore = require('./lib/securityStore');
 const processedOperationsStore = require('./lib/processedOperationsStore');
+const debinOutputStore = require('./lib/debinOutputStore');
 
 function parsePort() {
   const args = process.argv.slice(2);
@@ -413,6 +414,29 @@ async function handleSaveOutput(req, res, session) {
   const filePath = path.join(filesDir, fileName);
   fs.writeFileSync(filePath, content, 'utf8');
   securityStore.writeSecurityLog(logsDir, `ARCHIVO DE SALIDA '${fileName}' guardado por '${session.username}'`);
+
+  // Además del .csv en files/ (arriba), el contenido de dbnout-/dbnconsulta-
+  // queda registrado en MariaDB con quién lo generó y cuándo (ver
+  // debinOutputStore.js) — un registro que se puede consultar sin tener que
+  // ir a buscar el archivo. Si esto falla (ej. MariaDB no disponible en ese
+  // momento) no aborta la respuesta: el .csv ya se guardó bien, que es lo
+  // principal de este endpoint; solo queda constancia del error en el log
+  // de seguridad.
+  if (prefix === 'dbnout-' || prefix === 'dbnconsulta-') {
+    try {
+      if (prefix === 'dbnout-') {
+        await debinOutputStore.addDbnOutRows(rootDir, content, session.username);
+      } else {
+        await debinOutputStore.addDbnConsultaRows(rootDir, content, session.username);
+      }
+    } catch (err) {
+      securityStore.writeSecurityLog(
+        logsDir,
+        `ERROR registrando '${fileName}' en MariaDB (dbn_out/dbn_consulta): ${err.message}`
+      );
+    }
+  }
+
   writeJsonResponse(res, 200, { ok: true, fileName });
 }
 

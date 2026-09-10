@@ -154,3 +154,52 @@ CREATE TABLE IF NOT EXISTS operaciones_procesadas (
   PRIMARY KEY (id),
   UNIQUE KEY uk_operaciones_cuit_comprobante (cuit, numero_comprobante)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- Registro en base del contenido de dbnout-...csv (detalle de cada
+-- Transferencia DEBIN de un archivo procesado) y dbnconsulta-...csv
+-- (resultado de consultar el estado de cada una) — además del .csv que ya
+-- se guarda en files/ (ver "Archivos de salida (files/)" en el README),
+-- estas tablas quedan como registro consultable de quién ejecutó la carga
+-- y cuándo. Una fila de la tabla por cada fila del .csv correspondiente;
+-- nunca se leen para deduplicar (eso lo sigue haciendo
+-- operaciones_procesadas), son puramente de registro/auditoría.
+CREATE TABLE IF NOT EXISTS dbn_out (
+  id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
+  credito_cuit VARCHAR(50) NOT NULL DEFAULT '',
+  credito_cbu VARCHAR(50) NOT NULL DEFAULT '',
+  credito_titular VARCHAR(255) NOT NULL DEFAULT '',
+  debito_cuit VARCHAR(50) NOT NULL DEFAULT '',
+  debito_cbu VARCHAR(50) NOT NULL DEFAULT '',
+  debito_titular VARCHAR(255) NOT NULL DEFAULT '',
+  id_comprobante VARCHAR(100) NOT NULL DEFAULT '',
+  moneda VARCHAR(20) NOT NULL DEFAULT '',
+  importe VARCHAR(50) NOT NULL DEFAULT '',
+  codigo_respuesta VARCHAR(100) NOT NULL DEFAULT '',
+  descripcion_respuesta VARCHAR(500) NOT NULL DEFAULT '',
+  id_respuesta VARCHAR(100) NOT NULL DEFAULT '',
+  id_mensaje VARCHAR(100) NOT NULL DEFAULT '',
+  realizado VARCHAR(1) NOT NULL DEFAULT '',
+  ejecutado_por VARCHAR(255) NOT NULL DEFAULT '',
+  ejecutado_en DATETIME NOT NULL,
+  PRIMARY KEY (id),
+  KEY idx_dbn_out_id_mensaje (id_mensaje)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- id_mensaje/id_comprobante/id_operacion quedan como columnas propias (se
+-- usan para buscar); el resto de las ~58 columnas que trae la respuesta de
+-- "Consulta DEBIN (solo)" (ver DEBIN_CONSULTA_COLUMNS en wwwroot/app.js) se
+-- guardan enteras en respuesta_json — mismo criterio que token_extra_json
+-- en "perfiles", para no tener que mantener sincronizada una columna por
+-- campo si Nova-Link agrega uno nuevo.
+CREATE TABLE IF NOT EXISTS dbn_consulta (
+  id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
+  id_mensaje VARCHAR(100) NOT NULL DEFAULT '',
+  id_comprobante VARCHAR(100) NOT NULL DEFAULT '',
+  id_operacion VARCHAR(100) NOT NULL DEFAULT '',
+  error_consulta VARCHAR(500) NOT NULL DEFAULT '',
+  respuesta_json JSON NULL,
+  ejecutado_por VARCHAR(255) NOT NULL DEFAULT '',
+  ejecutado_en DATETIME NOT NULL,
+  PRIMARY KEY (id),
+  KEY idx_dbn_consulta_id_mensaje (id_mensaje)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
