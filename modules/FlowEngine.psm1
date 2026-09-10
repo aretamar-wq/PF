@@ -113,6 +113,11 @@ function New-RunLogFileName {
     return "http/$timestamp-$counter-$slug.log"
 }
 
+# Formato exacto de New-RunLogFileName — valida un RunLogFileName que el
+# cliente manda para reusar en varias llamadas seguidas de /api/run (ver
+# Invoke-Flow) antes de confiarlo como nombre de archivo.
+$script:RunLogFileNamePattern = '^http/\d+-\d{4}-[a-z0-9-]+\.log$'
+
 function Get-LoggableHeaderLines {
     param(
         [Parameter(Mandatory = $true)] $Headers,
@@ -467,7 +472,8 @@ function Invoke-Flow {
         [Parameter(Mandatory = $true)] $Flow,
         [Parameter(Mandatory = $true)] [hashtable]$InputValues,
         [string]$LogsDir,
-        $Parametria
+        $Parametria,
+        [string]$RequestedLogFileName
     )
 
     # El certificado cliente (mTLS) solo se carga si este flow en particular lo
@@ -500,8 +506,16 @@ function Invoke-Flow {
     }
 
     # Un solo archivo de log para TODOS los steps de esta corrida (ver
-    # New-RunLogFileName) — se genera una sola vez acá, no por step.
-    $runLogFileName = New-RunLogFileName -FlowName $Flow.name
+    # New-RunLogFileName) — se genera una sola vez acá, no por step. Si el
+    # llamador manda un nombre de una corrida anterior de la misma carga
+    # masiva (CSV) y es válido, se reusa en vez de generar uno nuevo — así
+    # las N filas de un mismo archivo (ej. 5 plazos fijos en un solo archivo
+    # subido) terminan en un solo log, no en uno por fila.
+    $runLogFileName = if ($RequestedLogFileName -and ($RequestedLogFileName -cmatch $script:RunLogFileNamePattern)) {
+        $RequestedLogFileName
+    } else {
+        New-RunLogFileName -FlowName $Flow.name
+    }
 
     $log = @()
 
@@ -700,7 +714,7 @@ function Invoke-Flow {
         $handler.Dispose()
     }
 
-    return $log
+    return [pscustomobject]@{ log = $log; runLogFileName = $runLogFileName }
 }
 
 function Test-TokenAcquisition {

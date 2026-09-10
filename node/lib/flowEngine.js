@@ -52,6 +52,13 @@ function generateRunLogFileName(flowName) {
   return `http/${timestamp}-${counter}-${slug}.log`;
 }
 
+// Formato exacto de generateRunLogFileName — valida un runLogFileName que el
+// cliente manda para reusar en varias llamadas seguidas de /api/run (ver
+// invokeFlow) antes de confiarlo como nombre de archivo: sin esto, un valor
+// cualquiera llegado por JSON del cliente podría intentar escribir fuera de
+// logsDir/http/.
+const RUN_LOG_FILE_NAME_PATTERN = /^http\/\d+-\d{4}-[a-z0-9-]+\.log$/;
+
 function getLoggableHeaderLines(headers, apiKeyHeaderName) {
   const lines = [];
   const apiKeyHeaderLower = apiKeyHeaderName ? String(apiKeyHeaderName).toLowerCase() : null;
@@ -517,7 +524,7 @@ async function invokeHttpStep(step, flowObj, variables, profileObj, logsDir, run
   entry.status = 'Success';
 }
 
-async function invokeFlow(profileObj, flowObj, inputValues, logsDir, parametria) {
+async function invokeFlow(profileObj, flowObj, inputValues, logsDir, parametria, requestedLogFileName) {
   const now = new Date();
   // Variables de sistema disponibles en cualquier flow (ej. {{nowDate}} para una
   // FechaMovimiento/FechaNegocio que no debe pedirse al usuario), seguidas de los
@@ -533,8 +540,15 @@ async function invokeFlow(profileObj, flowObj, inputValues, logsDir, parametria)
   Object.assign(variables, inputValues);
 
   // Un solo archivo de log para TODOS los steps de esta corrida (ver
-  // generateRunLogFileName) — se genera una sola vez acá, no por step.
-  const runLogFileName = generateRunLogFileName(flowObj.name);
+  // generateRunLogFileName) — se genera una sola vez acá, no por step. Si
+  // el llamador manda un nombre de una corrida anterior de la misma carga
+  // masiva (CSV) y es válido, se reusa en vez de generar uno nuevo — así
+  // las N filas de un mismo archivo (ej. 5 plazos fijos en un solo archivo
+  // subido) terminan en un solo log, no en uno por fila.
+  const runLogFileName =
+    requestedLogFileName && RUN_LOG_FILE_NAME_PATTERN.test(requestedLogFileName)
+      ? requestedLogFileName
+      : generateRunLogFileName(flowObj.name);
 
   const log = [];
 
@@ -579,7 +593,7 @@ async function invokeFlow(profileObj, flowObj, inputValues, logsDir, parametria)
     if (entry.status === 'Error') break;
   }
 
-  return log;
+  return { log, runLogFileName };
 }
 
 async function testTokenAcquisition(profileObj) {

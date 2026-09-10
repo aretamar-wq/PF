@@ -360,7 +360,20 @@ async function handleRun(req, res, session) {
   }
 
   const parametria = await parametriaStore.getParametria(rootDir);
-  const log = await flowEngine.invokeFlow(selectedProfile, selectedFlow, inputValues, logsDir, parametria);
+  // payload.runLogFileName (opcional): el cliente lo manda para que varias
+  // filas de un mismo archivo CSV terminen todas en el mismo log de
+  // logs/http/ en vez de uno por fila (ver invokeFlow, que valida el
+  // formato antes de confiarlo). Se devuelve el nombre realmente usado en
+  // el header X-Run-Log-File para que el cliente lo reuse en la próxima
+  // fila del mismo archivo.
+  const { log, runLogFileName } = await flowEngine.invokeFlow(
+    selectedProfile,
+    selectedFlow,
+    inputValues,
+    logsDir,
+    parametria,
+    payload.runLogFileName ? String(payload.runLogFileName) : null
+  );
 
   // Una entrada por cada corrida de /api/run (para un flow CSV, una por fila del
   // archivo) — nunca incluye inputs ni la respuesta (pueden traer datos
@@ -373,6 +386,7 @@ async function handleRun(req, res, session) {
     `EJECUCIÓN flow='${selectedFlow.name}' perfil='${selectedProfile.name}' usuario='${session.username}' rol='${session.role}' pasos_ok=${okSteps} pasos_error=${errorSteps}`
   );
 
+  res.setHeader('X-Run-Log-File', runLogFileName);
   writeJsonResponse(res, 200, log);
 }
 

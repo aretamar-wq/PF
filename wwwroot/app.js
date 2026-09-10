@@ -700,15 +700,23 @@ function renderLog(entries) {
   }
 }
 
-async function runFlowByName(flowName, inputs) {
+async function runFlowByName(flowName, inputs, runLogFileName) {
+  const body = {
+    profileName: document.getElementById('profileSelect').value,
+    flowName,
+    inputs,
+  };
+  // runLogFileName (opcional): para que varias filas de un mismo archivo CSV
+  // terminen en un solo log de logs/http/ en vez de uno por fila (ver
+  // runFlowFromCsv) — el servidor valida el formato antes de reusarlo, y
+  // devuelve en el header X-Run-Log-File el nombre que efectivamente usó
+  // (puede no ser este mismo valor, si vino vacío o inválido).
+  if (runLogFileName) body.runLogFileName = runLogFileName;
+
   const res = await apiFetch('/api/run', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({
-      profileName: document.getElementById('profileSelect').value,
-      flowName,
-      inputs,
-    }),
+    body: JSON.stringify(body),
   });
 
   const data = await res.json();
@@ -717,11 +725,17 @@ async function runFlowByName(flowName, inputs) {
     throw new Error((data && data.error) || 'Error ejecutando el flow.');
   }
 
-  return Array.isArray(data) ? data : [data];
+  const entries = Array.isArray(data) ? data : [data];
+  // Propiedad extra sobre el array de entries (no interfiere con su uso
+  // normal como log de pasos) — nombre de archivo de log que usó el
+  // servidor para esta corrida, para que el llamador lo reuse en la
+  // siguiente fila del mismo archivo CSV.
+  entries.runLogFileName = res.headers.get('x-run-log-file') || null;
+  return entries;
 }
 
-async function runOnce(inputs) {
-  return runFlowByName(state.selectedFlow.name, inputs);
+async function runOnce(inputs, runLogFileName) {
+  return runFlowByName(state.selectedFlow.name, inputs, runLogFileName);
 }
 
 async function runFlow() {
@@ -831,6 +845,13 @@ async function runFlowFromCsv() {
     }
 
     const startedAt = Date.now();
+
+    // Nombre de log compartido por TODAS las filas de este archivo (ver
+    // runFlowByName/runOnce) — arranca vacío, se completa con el que
+    // devuelve el servidor en la primera fila y de ahí en más se reusa, así
+    // las N filas de un mismo archivo (ej. 5 plazos fijos) quedan en un
+    // solo log de logs/http/ en vez de uno por fila.
+    let batchLogFileName = null;
 
     for (let i = 0; i < rows.length; i++) {
       const rowNumber = i + 1;
@@ -967,9 +988,10 @@ async function runFlowFromCsv() {
         } else {
           try {
             rowEntries = runSoloAlta
-              ? await runFlowByName(PLAZO_FIJO_SOLO_ALTA_FLOW_NAME, inputs)
-              : await runOnce(inputs);
+              ? await runFlowByName(PLAZO_FIJO_SOLO_ALTA_FLOW_NAME, inputs, batchLogFileName)
+              : await runOnce(inputs, batchLogFileName);
             stepEntries = rowEntries;
+            batchLogFileName = rowEntries.runLogFileName || batchLogFileName;
           } catch (err) {
             rowEntries = [
               {
@@ -1205,6 +1227,13 @@ async function runFlowFromCsv() {
         }
       }
 
+      // Nombre de log compartido por TODAS las consultas de este archivo —
+      // "Consulta DEBIN (solo)" es un flow distinto del de arriba, así que
+      // usa su propio archivo (no el de batchLogFileName), pero también
+      // único para todo el archivo en vez de uno por transferencia
+      // consultada.
+      let consultaLogFileName = null;
+
       for (let i = 0; i < toQuery.length; i++) {
         const detailRow = toQuery[i];
         progressEl.textContent = `Consultando estado de transferencias (${i + 1} de ${toQuery.length})...`;
@@ -1218,7 +1247,12 @@ async function runFlowFromCsv() {
         for (const col of DEBIN_CONSULTA_COLUMNS) consultaRow[col] = '';
 
         try {
-          const consultaEntries = await runFlowByName(DEBIN_CONSULTAR_FLOW_NAME, { idOperacion: detailRow.idRespuesta });
+          const consultaEntries = await runFlowByName(
+            DEBIN_CONSULTAR_FLOW_NAME,
+            { idOperacion: detailRow.idRespuesta },
+            consultaLogFileName
+          );
+          consultaLogFileName = consultaEntries.runLogFileName || consultaLogFileName;
           const lastEntry = consultaEntries[consultaEntries.length - 1];
           if (lastEntry && lastEntry.status === 'Success' && lastEntry.responseSummary) {
             const parsed = JSON.parse(lastEntry.responseSummary);

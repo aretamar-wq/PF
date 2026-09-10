@@ -417,7 +417,14 @@ try {
                     }
 
                     $parametria = Get-Parametria -RootDir $scriptRoot
-                    $log = @(Invoke-Flow -Profile $selectedProfile -Flow $selectedFlow -InputValues $inputValues -LogsDir $logsDir -Parametria $parametria)
+                    # payload.runLogFileName (opcional): el cliente lo manda para que varias
+                    # filas de un mismo archivo CSV terminen todas en el mismo log de
+                    # logs/http/ en vez de uno por fila (ver Invoke-Flow, que valida el
+                    # formato antes de confiarlo). Se devuelve el nombre realmente usado en
+                    # el header X-Run-Log-File para que el cliente lo reuse en la próxima
+                    # fila del mismo archivo.
+                    $runResult = Invoke-Flow -Profile $selectedProfile -Flow $selectedFlow -InputValues $inputValues -LogsDir $logsDir -Parametria $parametria -RequestedLogFileName ([string]$payload.runLogFileName)
+                    $log = @($runResult.log)
 
                     # Una entrada por cada corrida de /api/run (para un flow CSV, una por fila
                     # del archivo — cada operación bancaria individual queda trazada a quién la
@@ -429,6 +436,7 @@ try {
                     $errorSteps = @($log | Where-Object { $_.status -ne 'Success' }).Count
                     Write-SecurityLog -LogsDir $logsDir -Message "EJECUCIÓN flow='$($selectedFlow.name)' perfil='$($selectedProfile.name)' usuario='$($session.username)' rol='$($session.role)' pasos_ok=$okSteps pasos_error=$errorSteps"
 
+                    $response.Headers.Add('X-Run-Log-File', $runResult.runLogFileName)
                     Write-JsonResponse -Response $response -StatusCode 200 -Body $log
                 }
             }

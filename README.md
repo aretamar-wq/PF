@@ -1067,8 +1067,9 @@ vez por cada fila (ej. `Flows/plazo-fijo-cocos-files-sql.json`). Para esto:
   tabla de log paso a paso** en pantalla (quedaría enorme con muchas filas) —
   solo el resumen ok/error por paso (ver más abajo). El detalle completo de
   cada request/response de cada fila sigue quedando, igual que siempre, en
-  su propio archivo bajo `logs/http/` (una fila = una corrida = un archivo,
-  ver "Logs en disco").
+  `logs/http/` — pero todas las filas de un mismo archivo CSV comparten un
+  solo archivo de log (un archivo subido = una corrida de flow = un
+  archivo de log, sin importar cuántas filas tenga; ver "Logs en disco").
 - Si `Importe` (u otro campo numérico) viene de un CSV separado por comas,
   los decimales tienen que ir con punto (`1500.50`), no con coma, porque la
   coma es el separador de columnas.
@@ -1512,8 +1513,8 @@ transfirió), `dbnouterror-<timestamp>.csv` (la fila de entrada + IdMensaje
 de cada fila que falló, mismo formato que `pfouterror-...csv`) y
 `dbnconsulta-<timestamp>.csv` (ver más abajo). El resultado de cada fila
 también queda en el resumen por step en pantalla (`#csvSummary`) y, con el
-detalle completo de cada request/response, en su propio archivo bajo
-`logs/http/` (ver "Logs en disco").
+detalle completo de cada request/response, en el log compartido de todo el
+archivo bajo `logs/http/` (ver "Logs en disco").
 
 **Consulta de estado, al terminar todas las transferencias.** La respuesta
 de la transferencia en sí solo trae el resultado de la evaluación inicial
@@ -1604,16 +1605,33 @@ sigue disponible en su archivo bajo `logs/http/` y en "Guardar log...".
 
 ## Logs en disco
 
-Cada **corrida** de un flow (una llamada real a `/api/run` — una ejecución
-manual, o **una fila** de un flow CSV, que en un archivo grande son cientos
-de llamadas seguidas) escribe su **propio archivo** bajo `logs/http/`, en
-vez de todas mezcladas en un único log compartido: así se puede encontrar
-el request/response de una operación puntual (una transferencia, un alta
-de Plazo Fijo) sin tener que buscar en un archivo que crece para siempre.
-El nombre de archivo se arma como
+Cada **ejecución de un flow** escribe su **propio archivo** bajo
+`logs/http/`, en vez de todas mezcladas en un único log compartido: así se
+puede encontrar el request/response de una operación puntual (una
+transferencia, un alta de Plazo Fijo) sin tener que buscar en un archivo
+que crece para siempre. El nombre de archivo se arma como
 `logs/http/<timestamp con milisegundos>-<contador>-<nombre del flow>.log`
 (ej. `logs/http/20260908192634860-0001-alta-de-plazo-fijos-file.log`) — el
 contador evita colisiones si dos corridas arrancan en el mismo milisegundo.
+
+Para un flow que se corre a mano (una sola vez) "una ejecución" es una
+sola llamada a `/api/run`, igual que siempre. Para un flow CSV, en cambio,
+**todas las filas del mismo archivo subido comparten un solo log**: subir
+un archivo de "Alta de Plazo Fijos - File" con 5 plazos fijos genera un
+único `logs/http/...-alta-de-plazo-fijos-file.log` con los pasos de las 5
+filas, no 5 archivos. Esto lo arma el cliente (`wwwroot/app.js`,
+`runFlowFromCsv`): la primera fila del archivo no manda ningún nombre de
+log, el servidor genera uno y lo devuelve en el header de respuesta
+`X-Run-Log-File`; el cliente lo guarda y lo reenvía en el campo
+`runLogFileName` del body de `/api/run` en cada fila siguiente del mismo
+archivo, así todas terminan en el mismo log (`invokeFlow` en
+`node/lib/flowEngine.js` / `Invoke-Flow` en `modules/FlowEngine.psm1`
+valida que el nombre recibido tenga exactamente el formato de arriba antes
+de confiarlo como ruta de archivo — cualquier otro valor se ignora y
+genera uno nuevo). Para "Transferencia DEBIN - File", la consulta de
+estado posterior (`Consulta DEBIN (solo)`, una llamada por transferencia)
+es un flow distinto, así que junta sus propias filas en **su propio**
+archivo compartido, aparte del de la transferencia.
 
 Todos los steps de una misma corrida (ej. los 3 steps de una fila de "Alta
 de Plazo Fijos - File": débito, crédito, alta de Plazo Fijo) van al mismo
