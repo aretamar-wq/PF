@@ -10,16 +10,17 @@ sencilla (HTML/CSS/JS, sin frameworks ni dependencias) para manejarla desde el
 navegador. No hay que compilar nada ni instalar .NET, Node, Python ni ningún
 runtime adicional.
 
-> **Importante:** hoy la app tiene 4 flows operativos —
+> **Importante:** hoy la app tiene 3 flows operativos —
 > `Flows/plazo-fijo-cocos-files-sql.json` ("Alta de Plazo Fijos - File"),
-> `Flows/transferencia-debin.json` ("Transferencia DEBIN", manual),
 > `Flows/transferencia-debin-files.json` ("Transferencia DEBIN - File", por
 > archivo `.csv`) y `Flows/debin-consultar.json` ("Consulta DEBIN",
-> manual) —, más tres dependencias internas que no aparecen en la lista
-> (`Flows/recupera-cuentas-sql.json`,
-> `Flows/plazo-fijo-cocos-files-solo-alta.json` y
-> `Flows/transferencia-debin-consultar.json`, ver "Módulo de flows
-> ocultos"). Los demás flows de versiones anteriores (ejemplos con
+> manual) —, más cuatro dependencias/flows ocultos que no aparecen en la
+> lista (`Flows/recupera-cuentas-sql.json`,
+> `Flows/plazo-fijo-cocos-files-solo-alta.json`,
+> `Flows/transferencia-debin-consultar.json` y
+> `Flows/transferencia-debin.json` — "Transferencia DEBIN" manual, oculto a
+> propósito, ver "Módulo de flows ocultos"). Los demás flows de versiones
+> anteriores (ejemplos con
 > endpoints ficticios, variantes manuales/CSV previas de Plazo Fijo Cocos,
 > consultas sueltas) se borraron del repo — el historial de git los tiene
 > si hace falta recuperar alguno como referencia.
@@ -1225,6 +1226,11 @@ de Parametría (ver "Módulo de parametría" más arriba: ese campo se sacó):
 servicio **distinto** del resto de los flows: Nova-Link
 (`POST /api/debin/cuenta/credin`), no el core bancario (IBS-Link). No es un
 flow CSV — un input por campo, una transferencia por corrida.
+
+Tiene `"hidden": true`: no aparece en la lista de flows de la UI (se usa
+"Transferencia DEBIN - File" en su lugar, incluso para una sola
+transferencia) — sigue siendo ejecutable por nombre vía `/api/run` si
+hiciera falta correrlo suelto.
 
 **Usa el mismo perfil que el resto de los flows** ("Testing", en
 `profiles.sample.json`) — no hace falta crear ni seleccionar un perfil
