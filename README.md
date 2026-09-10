@@ -10,12 +10,13 @@ sencilla (HTML/CSS/JS, sin frameworks ni dependencias) para manejarla desde el
 navegador. No hay que compilar nada ni instalar .NET, Node, Python ni ningún
 runtime adicional.
 
-> **Importante:** hoy la app tiene 3 flows operativos —
+> **Importante:** hoy la app tiene 4 flows operativos —
 > `Flows/plazo-fijo-cocos-files-sql.json` ("Alta de Plazo Fijos - File"),
-> `Flows/transferencia-debin.json` ("Transferencia DEBIN", manual) y
+> `Flows/transferencia-debin.json` ("Transferencia DEBIN", manual),
 > `Flows/transferencia-debin-files.json` ("Transferencia DEBIN - File", por
-> archivo `.csv`) —, más tres dependencias internas que no aparecen en la
-> lista (`Flows/recupera-cuentas-sql.json`,
+> archivo `.csv`) y `Flows/debin-consultar.json` ("Consulta DEBIN",
+> manual) —, más tres dependencias internas que no aparecen en la lista
+> (`Flows/recupera-cuentas-sql.json`,
 > `Flows/plazo-fijo-cocos-files-solo-alta.json` y
 > `Flows/transferencia-debin-consultar.json`, ver "Módulo de flows
 > ocultos"). Los demás flows de versiones anteriores (ejemplos con
@@ -1338,6 +1339,26 @@ ej. `"ACREDITADO"`/`"0600 - ACREDITADO"`), `garantiaOk`, `tipoOperacion`,
 que esa consulta puntual haya fallado — un error acá no aborta el resto:
 la transferencia ya se hizo, la consulta es solo informativa). Si ninguna
 fila llegó a transferirse, no se genera este archivo.
+
+### Flow "Consulta DEBIN"
+
+`Flows/debin-consultar.json` es la versión manual, visible en la lista de
+flows, del mismo `GET /api/debin/cuenta/consultar/{id}` que "Transferencia
+DEBIN - File" ya corre automáticamente al terminar un archivo (ver arriba)
+— para consultar una operación puntual sin tener que subir un CSV. Mismo
+servidor/perfil/auth que el resto de los flows DEBIN (`baseUrlField`:
+`novaBaseUrl`, `authOverride`: `"None"`). Un solo input, `idOperacion` — el
+`id` que trajo la respuesta de la transferencia original
+(`params.response.respuesta.id`, ver "Flow 'Transferencia DEBIN'"). Trae
+`extractVariables` (`codigoRespuesta`/`descripcionRespuesta`/
+`estadoCodigo`/`estadoDescripcion`) por si un flow futuro necesita
+encadenar algo con el resultado; para una corrida manual sola, el JSON
+completo de la respuesta ya se ve en la tabla de log.
+
+Es un flow **distinto** de `Flows/transferencia-debin-consultar.json`
+("Consulta DEBIN (solo)", oculto — ver "Flow 'Transferencia DEBIN - File'"
+más arriba): mismo request, pero ese queda oculto de la lista porque es
+uso interno del flow CSV, mientras que este es para correrlo a mano.
 
 ### Panel de resultado de un step SQL
 

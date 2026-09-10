@@ -1,0 +1,24 @@
+{
+  "name": "Consulta DEBIN",
+  "description": "GET /api/debin/cuenta/consultar/{id}, contra el mismo servicio Nova-Link (baseUrlField \"novaBaseUrl\", authOverride \"None\") que \"Transferencia DEBIN\" — mismo perfil, sin tener que cambiar de perfil. Trae el estado actual de una transferencia DEBIN ya hecha (evaluación, estado de acreditación, etc.) a partir del \"id\" que trajo la respuesta de esa transferencia (params.response.respuesta.id). Versión manual, para consultar una operación puntual desde la UI — \"Transferencia DEBIN - File\" ya hace esto automáticamente para todo el archivo, al terminar, usando el flow oculto \"Consulta DEBIN (solo)\" (ver Flows/transferencia-debin-consultar.json).",
+  "baseUrlField": "novaBaseUrl",
+  "authOverride": "None",
+  "inputs": [
+    { "variableName": "idOperacion", "label": "Id de la operación" }
+  ],
+  "steps": [
+    {
+      "name": "1. Consulta DEBIN",
+      "method": "GET",
+      "pathTemplate": "/api/debin/cuenta/consultar/{{idOperacion}}",
+      "headers": { "Accept": "application/json" },
+      "extractVariables": {
+        "codigoRespuesta": "params.response.respuesta.codigo",
+        "descripcionRespuesta": "params.response.respuesta.descripcion",
+        "estadoCodigo": "params.response.operacion.estado.codigo",
+        "estadoDescripcion": "params.response.operacion.estado.descripcion"
+      },
+      "expectedStatusCode": 200
+    }
+  ]
+}
