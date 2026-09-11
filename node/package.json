@@ -8,10 +8,10 @@
     "start": "node server.js"
   },
   "engines": {
-    "node": ">=18"
+    "node": ">=20"
   },
   "dependencies": {
-    "ldapts": "^9.0.0",
+    "ldapts": "^8.2.0",
     "mysql2": "^3.24.4"
   }
 }
