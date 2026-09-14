@@ -1,0 +1,37 @@
+{
+  "name": "Débito y Crédito entre Cuentas",
+  "description": "Debita un importe de una cuenta y lo acredita en otra, contra el core IBS-Link (mismo endpoint /api/CuentaDebitoCredito/EjecutarCuentaDebitoCredito que ya usa 'Alta de Plazo Fijos - File' para su débito y crédito internos, ver Flows/plazo-fijo-cocos-files-sql.json). \"hidden\": true: no aparece en la lista de flows de la UI, pensado para ser invocado por otro sistema vía POST /api/run (profileName + flowName='Débito y Crédito entre Cuentas' + inputs) — se puede seguir ejecutando por nombre igual que 'Recupera cuentas (SQL)'.",
+  "hidden": true,
+  "inputs": [
+    { "variableName": "codigoSistemaOrigen", "label": "Código de sistema - cuenta origen (a debitar)" },
+    { "variableName": "codigoCuentaOrigen", "label": "Código de cuenta origen (a debitar)" },
+    { "variableName": "transaccionOrigen", "label": "Código de transacción - cuenta origen" },
+    { "variableName": "codigoSistemaDestino", "label": "Código de sistema - cuenta destino (a acreditar)" },
+    { "variableName": "codigoCuentaDestino", "label": "Código de cuenta destino (a acreditar)" },
+    { "variableName": "transaccionDestino", "label": "Código de transacción - cuenta destino" },
+    { "variableName": "importe", "label": "Importe" },
+    { "variableName": "numeroComprobante", "label": "Nro. de comprobante" },
+    { "variableName": "glosaOrigen", "label": "Glosa cuenta origen (Renglon1 del débito)" },
+    { "variableName": "glosaDestino", "label": "Glosa cuenta destino (Renglon1 del crédito)" }
+  ],
+  "steps": [
+    {
+      "name": "1. Débito en cuenta origen",
+      "method": "POST",
+      "pathTemplate": "/api/CuentaDebitoCredito/EjecutarCuentaDebitoCredito",
+      "headers": { "Accept": "application/json" },
+      "bodyTemplate": "{\n  \"codigoSucursal\": \"1\",\n  \"codigoSistema\": \"{{codigoSistemaOrigen}}\",\n  \"codigoSubSistema\": \"0\",\n  \"codigoMoneda\": \"0\",\n  \"codigoCuenta\": \"{{codigoCuentaOrigen}}\",\n  \"NumeroOperacion\": \"1\",\n  \"Concepto\": \"17\",\n  \"SubConcepto\": \"3\",\n  \"Sistema\": \"{{codigoSistemaOrigen}}\",\n  \"Transaccion\": \"{{transaccionOrigen}}\",\n  \"FechaMovimiento\": \"{{nowDate}}\",\n  \"FechayHoraMensaje\": \"{{nowDateTime}}\",\n  \"FechaNegocio\": \"{{nowDate}}\",\n  \"Importe\": \"{{importe}}\",\n  \"NumeroComprobante\": \"{{numeroComprobante}}\",\n  \"CodigoContrasiento\": \" \",\n  \"Libre\": \" \",\n  \"Renglon1\": \"{{glosaOrigen}}\",\n  \"Renglon2\": \" \",\n  \"Renglon3\": \"Ref.: VAR\",\n  \"IdMensaje\": \"{{idMensajeGenerado}}\",\n  \"forzada\": \"0\"\n}",
+      "extractVariables": {},
+      "expectedStatusCode": 200
+    },
+    {
+      "name": "2. Crédito en cuenta destino",
+      "method": "POST",
+      "pathTemplate": "/api/CuentaDebitoCredito/EjecutarCuentaDebitoCredito",
+      "headers": { "Accept": "application/json" },
+      "bodyTemplate": "{\n  \"codigoSucursal\": \"1\",\n  \"codigoSistema\": \"{{codigoSistemaDestino}}\",\n  \"codigoSubSistema\": \"0\",\n  \"codigoMoneda\": \"0\",\n  \"codigoCuenta\": \"{{codigoCuentaDestino}}\",\n  \"NumeroOperacion\": \"1\",\n  \"Concepto\": \"17\",\n  \"SubConcepto\": \"3\",\n  \"Sistema\": \"{{codigoSistemaDestino}}\",\n  \"Transaccion\": \"{{transaccionDestino}}\",\n  \"FechaMovimiento\": \"{{nowDate}}\",\n  \"FechayHoraMensaje\": \"{{nowDateTime}}\",\n  \"FechaNegocio\": \"{{nowDate}}\",\n  \"Importe\": \"{{importe}}\",\n  \"NumeroComprobante\": \"{{numeroComprobante}}\",\n  \"CodigoContrasiento\": \" \",\n  \"Libre\": \" \",\n  \"Renglon1\": \"{{glosaDestino}}\",\n  \"Renglon2\": \" \",\n  \"Renglon3\": \"Ref.: VAR\",\n  \"IdMensaje\": \"{{idMensajeGenerado}}\",\n  \"forzada\": \"0\"\n}",
+      "extractVariables": {},
+      "expectedStatusCode": 200
+    }
+  ]
+}
