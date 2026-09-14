@@ -1,36 +1,57 @@
 {
   "name": "Débito y Crédito entre Cuentas",
-  "description": "Debita un importe de una cuenta y lo acredita en otra, contra el core IBS-Link (mismo endpoint /api/CuentaDebitoCredito/EjecutarCuentaDebitoCredito que ya usa 'Alta de Plazo Fijos - File' para su débito y crédito internos, ver Flows/plazo-fijo-cocos-files-sql.json). \"hidden\": true: no aparece en la lista de flows de la UI, pensado para ser invocado por otro sistema vía POST /api/run (profileName + flowName='Débito y Crédito entre Cuentas' + inputs) — se puede seguir ejecutando por nombre igual que 'Recupera cuentas (SQL)'.",
+  "description": "Débito y crédito entre cuentas contra el servicio Nova-Link (POST /api/debin/cuenta/credin) — mismo endpoint que usa 'Transferencia DEBIN' (Flows/transferencia-debin.json), pero SIN el campo \"internalcode\" en el body (a pedido). Corre contra el MISMO servidor que 'Alta de Plazo Fijos - File' pero usando el campo \"novaBaseUrl\" del perfil en vez de \"baseUrl\" (baseUrlField), y sin pedir token OAuth2 (authOverride \"None\") porque Nova-Link se autentica con el certificado cliente del perfil (TLS mutuo). \"hidden\": true: no aparece en la lista de flows de la UI, pensado para ser invocado por otro sistema vía POST /api/run (profileName + flowName='Débito y Crédito entre Cuentas' + inputs).",
   "hidden": true,
+  "baseUrlField": "novaBaseUrl",
+  "authOverride": "None",
   "inputs": [
-    { "variableName": "codigoSistemaOrigen", "label": "Código de sistema - cuenta origen (a debitar)" },
-    { "variableName": "codigoCuentaOrigen", "label": "Código de cuenta origen (a debitar)" },
-    { "variableName": "transaccionOrigen", "label": "Código de transacción - cuenta origen" },
-    { "variableName": "codigoSistemaDestino", "label": "Código de sistema - cuenta destino (a acreditar)" },
-    { "variableName": "codigoCuentaDestino", "label": "Código de cuenta destino (a acreditar)" },
-    { "variableName": "transaccionDestino", "label": "Código de transacción - cuenta destino" },
+    { "variableName": "creditoCuit", "label": "CUIT (crédito)" },
+    { "variableName": "creditoCbu", "label": "CBU (crédito)" },
+    { "variableName": "creditoBanco", "label": "Banco (crédito)" },
+    { "variableName": "creditoSucursal", "label": "Sucursal (crédito)" },
+    { "variableName": "creditoTitular", "label": "Titular (crédito)" },
+    { "variableName": "clienteId", "label": "ClienteId", "defaultValue": "0" },
+    { "variableName": "debitoCuit", "label": "CUIT (débito)" },
+    { "variableName": "debitoCbu", "label": "CBU (débito)" },
+    { "variableName": "debitoBanco", "label": "Banco (débito)" },
+    { "variableName": "debitoSucursal", "label": "Sucursal (débito)" },
+    { "variableName": "debitoTitular", "label": "Titular (débito)" },
+    { "variableName": "concepto", "label": "Concepto" },
+    { "variableName": "idUsuario", "label": "ID de usuario", "defaultValue": "16" },
+    { "variableName": "idComprobante", "label": "Número de comprobante" },
+    { "variableName": "moneda", "label": "Moneda", "defaultValue": "032" },
     { "variableName": "importe", "label": "Importe" },
-    { "variableName": "numeroComprobante", "label": "Nro. de comprobante" },
-    { "variableName": "glosaOrigen", "label": "Glosa cuenta origen (Renglon1 del débito)" },
-    { "variableName": "glosaDestino", "label": "Glosa cuenta destino (Renglon1 del crédito)" }
+    {
+      "variableName": "mismoTitular",
+      "label": "¿Mismo titular en origen y destino?",
+      "type": "select",
+      "options": [
+        { "value": "0", "label": "No" },
+        { "value": "1", "label": "Sí" }
+      ],
+      "defaultValue": "0"
+    },
+    { "variableName": "ipCliente", "label": "IP del cliente" },
+    { "variableName": "tipoDispositivo", "label": "Tipo de dispositivo", "defaultValue": "04" },
+    { "variableName": "plataforma", "label": "Plataforma" },
+    { "variableName": "imsi", "label": "IMSI" },
+    { "variableName": "imei", "label": "IMEI" },
+    { "variableName": "lat", "label": "Latitud" },
+    { "variableName": "lng", "label": "Longitud" },
+    { "variableName": "precision", "label": "Precisión" }
   ],
   "steps": [
     {
-      "name": "1. Débito en cuenta origen",
+      "name": "1. Débito y Crédito entre Cuentas",
       "method": "POST",
-      "pathTemplate": "/api/CuentaDebitoCredito/EjecutarCuentaDebitoCredito",
-      "headers": { "Accept": "application/json" },
-      "bodyTemplate": "{\n  \"codigoSucursal\": \"1\",\n  \"codigoSistema\": \"{{codigoSistemaOrigen}}\",\n  \"codigoSubSistema\": \"0\",\n  \"codigoMoneda\": \"0\",\n  \"codigoCuenta\": \"{{codigoCuentaOrigen}}\",\n  \"NumeroOperacion\": \"1\",\n  \"Concepto\": \"17\",\n  \"SubConcepto\": \"3\",\n  \"Sistema\": \"{{codigoSistemaOrigen}}\",\n  \"Transaccion\": \"{{transaccionOrigen}}\",\n  \"FechaMovimiento\": \"{{nowDate}}\",\n  \"FechayHoraMensaje\": \"{{nowDateTime}}\",\n  \"FechaNegocio\": \"{{nowDate}}\",\n  \"Importe\": \"{{importe}}\",\n  \"NumeroComprobante\": \"{{numeroComprobante}}\",\n  \"CodigoContrasiento\": \" \",\n  \"Libre\": \" \",\n  \"Renglon1\": \"{{glosaOrigen}}\",\n  \"Renglon2\": \" \",\n  \"Renglon3\": \"Ref.: VAR\",\n  \"IdMensaje\": \"{{idMensajeGenerado}}\",\n  \"forzada\": \"0\"\n}",
-      "extractVariables": {},
-      "expectedStatusCode": 200
-    },
-    {
-      "name": "2. Crédito en cuenta destino",
-      "method": "POST",
-      "pathTemplate": "/api/CuentaDebitoCredito/EjecutarCuentaDebitoCredito",
-      "headers": { "Accept": "application/json" },
-      "bodyTemplate": "{\n  \"codigoSucursal\": \"1\",\n  \"codigoSistema\": \"{{codigoSistemaDestino}}\",\n  \"codigoSubSistema\": \"0\",\n  \"codigoMoneda\": \"0\",\n  \"codigoCuenta\": \"{{codigoCuentaDestino}}\",\n  \"NumeroOperacion\": \"1\",\n  \"Concepto\": \"17\",\n  \"SubConcepto\": \"3\",\n  \"Sistema\": \"{{codigoSistemaDestino}}\",\n  \"Transaccion\": \"{{transaccionDestino}}\",\n  \"FechaMovimiento\": \"{{nowDate}}\",\n  \"FechayHoraMensaje\": \"{{nowDateTime}}\",\n  \"FechaNegocio\": \"{{nowDate}}\",\n  \"Importe\": \"{{importe}}\",\n  \"NumeroComprobante\": \"{{numeroComprobante}}\",\n  \"CodigoContrasiento\": \" \",\n  \"Libre\": \" \",\n  \"Renglon1\": \"{{glosaDestino}}\",\n  \"Renglon2\": \" \",\n  \"Renglon3\": \"Ref.: VAR\",\n  \"IdMensaje\": \"{{idMensajeGenerado}}\",\n  \"forzada\": \"0\"\n}",
-      "extractVariables": {},
+      "pathTemplate": "/api/debin/cuenta/credin",
+      "headers": { "Accept": "*/*", "Content-Type": "application/x-www-form-urlencoded" },
+      "bodyTemplate": "{\n  \"credito\": {\n    \"cuit\": \"{{creditoCuit}}\",\n    \"cbu\": \"{{creditoCbu}}\",\n    \"banco\": \"{{creditoBanco}}\",\n    \"sucursal\": \"{{creditoSucursal}}\",\n    \"titular\": \"{{creditoTitular}}\"\n  },\n  \"ClienteId\": \"{{clienteId}}\",\n  \"debito\": {\n    \"cuit\": \"{{debitoCuit}}\",\n    \"cbu\": \"{{debitoCbu}}\",\n    \"banco\": \"{{debitoBanco}}\",\n    \"sucursal\": \"{{debitoSucursal}}\",\n    \"titular\": \"{{debitoTitular}}\"\n  },\n  \"concepto\": \"{{concepto}}\",\n  \"idUsuario\": {{idUsuario}},\n  \"idComprobante\": {{idComprobante}},\n  \"moneda\": \"{{moneda}}\",\n  \"importe\": {{importe}},\n  \"mismoTitular\": \"{{mismoTitular}}\",\n  \"datosGenerador\": {\n    \"ipCliente\": \"{{ipCliente}}\",\n    \"tipoDispositivo\": \"{{tipoDispositivo}}\",\n    \"plataforma\": \"{{plataforma}}\",\n    \"imsi\": \"{{imsi}}\",\n    \"imei\": \"{{imei}}\",\n    \"lat\": \"{{lat}}\",\n    \"lng\": \"{{lng}}\",\n    \"precision\": \"{{precision}}\"\n  }\n}",
+      "extractVariables": {
+        "codigoRespuesta": "params.response.respuesta.codigo",
+        "descripcionRespuesta": "params.response.respuesta.descripcion",
+        "idRespuesta": "params.response.respuesta.id"
+      },
       "expectedStatusCode": 200
     }
   ]
