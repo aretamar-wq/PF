@@ -384,98 +384,6 @@ async function querySybaseRows(parametriaSybase, queryText) {
   return sybaseClient.querySybase(parametriaSybase, queryText);
 }
 
-// Un CBU (22 dígitos) codifica, en las posiciones 9-10, el tipo de cuenta:
-// "01" = cuenta corriente, "02" = caja de ahorro (ver Flows/debito-credito-cuenta.json).
-// El código de sistema/transacción de cada tipo NO se hardcodea acá — se toma
-// de Parametría (ctaCteCodigoSistema/ctaCteTransaccion, cajaAhorroCodigoSistema/
-// cajaAhorroTransaccion, ya presentes en "variables" vía getParametriaVariables),
-// así que si en otro ambiente esos códigos fueran distintos, este step sigue
-// funcionando sin tocar código.
-const CBU_TIPO_CUENTA_INFO = {
-  '01': { codigoSistemaVar: 'ctaCteCodigoSistema', transaccionVar: 'ctaCteTransaccion', label: 'cuenta corriente' },
-  '02': { codigoSistemaVar: 'cajaAhorroCodigoSistema', transaccionVar: 'cajaAhorroTransaccion', label: 'caja de ahorro' },
-};
-
-function parseCbu(cbu) {
-  const clean = String(cbu || '').trim();
-  if (!/^\d{22}$/.test(clean)) {
-    throw new Error(`CBU inválido: '${cbu}' — se esperan 22 dígitos numéricos.`);
-  }
-  return {
-    codigoBanco: clean.slice(0, 3),
-    codigoSucursal: clean.slice(3, 7),
-    tipoCuenta: clean.slice(8, 10),
-    numeroCuenta: clean.slice(10, 21),
-  };
-}
-
-// Step "type": "cbuparse" — deriva codigoSistema/codigoCuenta/transaccion (los
-// campos que pide el core IBS-Link para CuentaDebitoCredito) a partir de un CBU
-// recibido en la request (que solo trae cuit/cbu, no esos códigos internos). No
-// es un request HTTP ni SQL real, así que se loguea como su propio bloque para
-// que el archivo de log de la corrida muestre de dónde salió cada valor.
-// Config del step: { "cbuVariable": "<nombre var con el CBU>", "outputPrefix": "<prefijo>" }
-// → deja seteadas "<prefijo>CodigoSistema", "<prefijo>CodigoCuenta", "<prefijo>Transaccion".
-async function invokeCbuParseStep(step, flowObj, variables, logsDir, runLogFileName, entry, stepStartedAt) {
-  const cbuVariableName = String(step.cbuVariable || '').trim();
-  const outputPrefix = String(step.outputPrefix || '').trim();
-  if (!cbuVariableName) throw new Error(`El step '${step.name}' no tiene configurado 'cbuVariable'.`);
-  if (!outputPrefix) throw new Error(`El step '${step.name}' no tiene configurado 'outputPrefix'.`);
-
-  const cbuValue = variables[cbuVariableName];
-  if (cbuValue === undefined || cbuValue === null || String(cbuValue).trim() === '') {
-    throw new Error(`El step '${step.name}' no encontró un valor para la variable '${cbuVariableName}' (CBU a parsear).`);
-  }
-
-  entry.requestSummary = `Parseo de CBU (variable '${cbuVariableName}'): ${cbuValue}`;
-  writeHttpLog(logsDir, runLogFileName, [
-    `>>> CBU PARSE [${formatLocal(new Date(), true)}] Flow=${flowObj.name} | Step=${step.name}`,
-    `CBU (${cbuVariableName}): ${cbuValue}`,
-    '---',
-  ].join('\n'));
-
-  const parsed = parseCbu(cbuValue);
-  const tipoInfo = CBU_TIPO_CUENTA_INFO[parsed.tipoCuenta];
-  if (!tipoInfo) {
-    throw new Error(
-      `CBU '${cbuValue}': tipo de cuenta '${parsed.tipoCuenta}' no soportado (solo se reconocen 01=cuenta corriente y 02=caja de ahorro).`
-    );
-  }
-
-  const codigoSistema = variables[tipoInfo.codigoSistemaVar];
-  const transaccion = variables[tipoInfo.transaccionVar];
-  if (!codigoSistema || !transaccion) {
-    throw new Error(
-      `Falta configurar en Parametría el código de sistema/transacción de ${tipoInfo.label} ('${tipoInfo.codigoSistemaVar}'/'${tipoInfo.transaccionVar}').`
-    );
-  }
-
-  variables[`${outputPrefix}CodigoSistema`] = codigoSistema;
-  variables[`${outputPrefix}CodigoCuenta`] = String(parseInt(parsed.numeroCuenta, 10));
-  variables[`${outputPrefix}Transaccion`] = transaccion;
-
-  const responseSummary = JSON.stringify(
-    {
-      codigoBanco: parsed.codigoBanco,
-      codigoSucursal: parsed.codigoSucursal,
-      tipoCuenta: parsed.tipoCuenta,
-      codigoSistema,
-      codigoCuenta: variables[`${outputPrefix}CodigoCuenta`],
-      transaccion,
-    },
-    null,
-    2
-  );
-  entry.responseSummary = responseSummary;
-  writeHttpLog(logsDir, runLogFileName, [
-    `<<< CBU PARSE OK [${formatLocal(new Date(), true)}] Flow=${flowObj.name} | Step=${step.name} (${Date.now() - stepStartedAt} ms)`,
-    responseSummary,
-    '---',
-  ].join('\n'));
-
-  entry.status = 'Success';
-}
-
 async function invokeHttpStep(step, flowObj, variables, profileObj, logsDir, runLogFileName, entry, stepStartedAt) {
   const stepPath = expandTemplate(step.pathTemplate, variables);
   // Un flow puede pedir la URL base de otro campo del perfil en vez de
@@ -657,11 +565,8 @@ async function invokeFlow(profileObj, flowObj, inputValues, logsDir, parametria,
 
     const stepStartedAt = Date.now();
     try {
-      const stepType = String(step.type || '').trim().toLowerCase();
-      if (stepType === 'sql') {
+      if (String(step.type || '').trim().toLowerCase() === 'sql') {
         await invokeSqlStep(step, flowObj, variables, parametria, logsDir, runLogFileName, entry, stepStartedAt);
-      } else if (stepType === 'cbuparse') {
-        await invokeCbuParseStep(step, flowObj, variables, logsDir, runLogFileName, entry, stepStartedAt);
       } else {
         await invokeHttpStep(step, flowObj, variables, profileObj, logsDir, runLogFileName, entry, stepStartedAt);
       }
