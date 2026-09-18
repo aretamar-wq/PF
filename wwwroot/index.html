@@ -188,6 +188,14 @@
             <label>Código de movimiento <input name="plazoFijo.codigoMovimiento" /></label>
           </fieldset>
           <fieldset>
+            <legend>Token del perfil</legend>
+            <p class="muted">Prueba la obtención de token OAuth2 client_credentials del perfil elegido arriba a la izquierda (solo aplica si su tipo de autenticación es OAuth2ClientCredentials).</p>
+            <div class="dialog-actions">
+              <button type="button" id="testTokenBtn" disabled>Probar token</button>
+              <span id="tokenTestResult" class="muted"></span>
+            </div>
+          </fieldset>
+          <fieldset>
             <legend>Conexión Sybase</legend>
             <p class="muted">
               Requiere un driver ODBC de Sybase/SAP ASE ya instalado en esta máquina — la app

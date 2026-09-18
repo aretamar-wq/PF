@@ -1644,6 +1644,51 @@ csvDropZone.addEventListener('drop', (event) => {
 
 const parametriaForm = document.getElementById('parametriaForm');
 
+// El botón "Probar token" prueba el perfil elegido en el <select> del header
+// (profileSelect sigue visible con Parametría abierta, ya que el header queda
+// afuera de <main>), por eso su estado depende de ese perfil y no de nada
+// propio de este panel.
+function updateTestTokenButtonState() {
+  const profileName = document.getElementById('profileSelect').value;
+  const profile = state.profiles.find((p) => p.name === profileName);
+  const authType = (profile && profile.authType) || '';
+  document.getElementById('testTokenBtn').disabled = authType.trim().toLowerCase() !== 'oauth2clientcredentials';
+  document.getElementById('tokenTestResult').textContent = '';
+}
+
+async function testToken() {
+  const profileName = document.getElementById('profileSelect').value;
+  if (!profileName) return;
+
+  const btn = document.getElementById('testTokenBtn');
+  const resultSpan = document.getElementById('tokenTestResult');
+  btn.disabled = true;
+  resultSpan.className = 'muted';
+  resultSpan.textContent = 'Probando...';
+
+  try {
+    const res = await apiFetch('/api/test-token', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ profileName }),
+    });
+    const data = await res.json();
+
+    if (data.ok) {
+      resultSpan.className = 'status-Success';
+      resultSpan.textContent = `OK (${data.durationMs} ms) — token: ${data.tokenPreview}`;
+    } else {
+      resultSpan.className = 'status-Error';
+      resultSpan.textContent = `Error: ${data.message}`;
+    }
+  } catch (err) {
+    resultSpan.className = 'status-Error';
+    resultSpan.textContent = 'Error de red: ' + err.message;
+  } finally {
+    btn.disabled = false;
+  }
+}
+
 async function openParametriaSection() {
   parametriaForm.reset();
 
@@ -1657,12 +1702,15 @@ async function openParametriaSection() {
     }
   }
 
+  updateTestTokenButtonState();
   showMainSection('parametriaSection');
 }
 
 document.getElementById('parametriaBtn').addEventListener('click', openParametriaSection);
 document.getElementById('cancelParametriaBtn').addEventListener('click', () => showMainSection('flowDetail'));
 document.getElementById('closeParametriaSectionBtn').addEventListener('click', () => showMainSection('flowDetail'));
+document.getElementById('testTokenBtn').addEventListener('click', testToken);
+document.getElementById('profileSelect').addEventListener('change', updateTestTokenButtonState);
 
 async function testSybaseConnection() {
   const btn = document.getElementById('testSybaseBtn');
