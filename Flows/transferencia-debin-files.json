@@ -1,6 +1,6 @@
 {
   "name": "Transferencia DEBIN - File",
-  "description": "Versión por archivo CSV de \"Transferencia DEBIN\": corre una transferencia por cada fila contra el mismo servicio Nova-Link (POST /api/debin/cuenta/credin), con el mismo perfil (baseUrlField \"novaBaseUrl\", authOverride \"None\"). El CSV no lleva encabezado y tiene 9 columnas en este orden: CUIT destino, CBU destino, Nombre destino, CUIT origen, CBU origen, Nombre Origen, número de comprobante, Moneda, Monto. Banco y Sucursal (crédito y débito) se calculan automáticamente a partir del CBU de cada fila: los primeros 3 dígitos son el banco y los 4 siguientes la sucursal. \"mismoTitular\" también se calcula solo: \"1\" si CUIT destino y CUIT origen coinciden, \"0\" si no. El resto de los campos del body (concepto=\"VAR\", ClienteId=\"0\", idUsuario=16, internalcode, datosGenerador) van fijos para todo el archivo, no se piden por fila.",
+  "description": "Versión por archivo CSV de \"Transferencia DEBIN\": corre una transferencia por cada fila contra el mismo servicio Nova-Link (POST /api/debin/cuenta/credin), con el mismo perfil (baseUrlField \"novaBaseUrl\", authOverride \"None\"). El CSV no lleva encabezado y tiene 9 columnas en este orden: CUIT destino, CBU destino, Nombre destino, CUIT origen, CBU origen, Nombre Origen, número de comprobante, Moneda, Monto. Banco y Sucursal (crédito y débito) se calculan automáticamente a partir del CBU de cada fila: los primeros 3 dígitos son el banco y los 4 siguientes la sucursal. \"mismoTitular\" también se calcula solo: \"1\" si CUIT destino y CUIT origen coinciden, \"0\" si no. El resto de los campos del body (concepto=\"VAR\", ClienteId=\"0\", idUsuario=16, internalcode, datosGenerador) van fijos para todo el archivo, no se piden por fila. Antes de transferir, se valida el CBU destino contra la API de la billetera (ConsultaCBU): si el titular que devuelve no es el mismo CUIT destino de la fila, la fila queda en error y no se hace la transferencia.",
   "inputMode": "csv",
   "baseUrlField": "novaBaseUrl",
   "authOverride": "None",
@@ -17,7 +17,19 @@
   ],
   "steps": [
     {
-      "name": "1. Transferencia DEBIN",
+      "name": "1. Consultar CBU destino",
+      "method": "GET",
+      "pathTemplate": "http://api-billetera.voii.com.ar:54000/QNet24/Services/rest/Nova/ConsultaCBU/{{creditoCbu}}",
+      "headers": { "Accept": "application/json" },
+      "useClientCert": false,
+      "extractVariables": {
+        "consultaCbuTitularCuit": "titular[0].cuit"
+      },
+      "requireVariablesEqual": [["consultaCbuTitularCuit", "creditoCuit"]],
+      "expectedStatusCode": 200
+    },
+    {
+      "name": "2. Transferencia DEBIN",
       "method": "POST",
       "pathTemplate": "/api/debin/cuenta/credin",
       "headers": { "Accept": "*/*", "Content-Type": "application/x-www-form-urlencoded" },
