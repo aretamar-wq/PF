@@ -1847,7 +1847,14 @@ function outputFileTypeLabel(name) {
   return 'Detalle de Plazos Fijos';
 }
 
-function renderOutputFilesTable(files) {
+// Requiere Desde Y Hasta completos para buscar — sin rango de fechas no se
+// lista nada (ni se llama a la API), a propósito: son carpetas que pueden
+// acumular muchos archivos con el tiempo.
+function outputFilesDateRangeComplete() {
+  return !!(outputFilesFromDate.value && outputFilesToDate.value);
+}
+
+function renderOutputFilesTable(files, emptyMessage) {
   const tbody = document.getElementById('outputFilesTableBody');
   tbody.innerHTML = '';
   for (const file of files) {
@@ -1862,21 +1869,29 @@ function renderOutputFilesTable(files) {
     tr.querySelector('.downloadOutputFileBtn').addEventListener('click', () => downloadOutputFile(file.name));
     tbody.appendChild(tr);
   }
-  document.getElementById('outputFilesEmptyHint').style.display = files.length === 0 ? '' : 'none';
+  const hint = document.getElementById('outputFilesEmptyHint');
+  if (files.length === 0) {
+    hint.textContent = emptyMessage;
+    hint.style.display = '';
+  } else {
+    hint.style.display = 'none';
+  }
 }
 
 // Compara solo la parte de fecha (yyyy-mm-dd, hora local) de file.mtime contra
 // los <input type="date"> Desde/Hasta — ambos límites inclusive.
 function applyOutputFilesFilter() {
+  if (!outputFilesDateRangeComplete()) {
+    renderOutputFilesTable([], 'Elegí un rango de fechas (Desde y Hasta) para buscar.');
+    return;
+  }
   const from = outputFilesFromDate.value;
   const to = outputFilesToDate.value;
   const filtered = allOutputFiles.filter((file) => {
     const fileDate = formatDateOnlyLocal(new Date(file.mtime));
-    if (from && fileDate < from) return false;
-    if (to && fileDate > to) return false;
-    return true;
+    return fileDate >= from && fileDate <= to;
   });
-  renderOutputFilesTable(filtered);
+  renderOutputFilesTable(filtered, 'No hay ningún archivo guardado para el rango de fechas elegido.');
 }
 
 function formatDateOnlyLocal(date) {
@@ -1885,6 +1900,10 @@ function formatDateOnlyLocal(date) {
 }
 
 async function loadOutputFilesList() {
+  if (!outputFilesDateRangeComplete()) {
+    applyOutputFilesFilter();
+    return;
+  }
   const res = await apiFetch('/api/output-files');
   if (!res.ok) return;
   allOutputFiles = await res.json();
@@ -1904,7 +1923,8 @@ async function downloadOutputFile(name) {
 async function openOutputFilesDialog() {
   outputFilesFromDate.value = '';
   outputFilesToDate.value = '';
-  await loadOutputFilesList();
+  allOutputFiles = [];
+  applyOutputFilesFilter();
   outputFilesDialog.showModal();
 }
 
@@ -1914,10 +1934,133 @@ document.getElementById('refreshOutputFilesBtn').addEventListener('click', loadO
 document.getElementById('clearOutputFilesFilterBtn').addEventListener('click', () => {
   outputFilesFromDate.value = '';
   outputFilesToDate.value = '';
+  allOutputFiles = [];
   applyOutputFilesFilter();
 });
-outputFilesFromDate.addEventListener('change', applyOutputFilesFilter);
-outputFilesToDate.addEventListener('change', applyOutputFilesFilter);
+outputFilesFromDate.addEventListener('change', loadOutputFilesList);
+outputFilesToDate.addEventListener('change', loadOutputFilesList);
+
+// --- Logs de ejecución (logs/http/, un archivo por corrida de flow) --------
+// Mismo patrón que "Archivos de salida" arriba (fecha obligatoria para
+// buscar), pero además de descargar deja VER el contenido del log inline
+// (es texto plano legible, no un CSV pensado para abrir en otro programa).
+
+const httpLogsDialog = document.getElementById('httpLogsDialog');
+const httpLogsFromDate = document.getElementById('httpLogsFromDate');
+const httpLogsToDate = document.getElementById('httpLogsToDate');
+let allHttpLogs = [];
+
+function httpLogsDateRangeComplete() {
+  return !!(httpLogsFromDate.value && httpLogsToDate.value);
+}
+
+function renderHttpLogsTable(files, emptyMessage) {
+  const tbody = document.getElementById('httpLogsTableBody');
+  tbody.innerHTML = '';
+  for (const file of files) {
+    const tr = document.createElement('tr');
+    tr.innerHTML = `
+      <td>${escapeHtml(file.name)}</td>
+      <td>${new Date(file.mtime).toLocaleString()}</td>
+      <td>${formatFileSize(file.size)}</td>
+      <td>
+        <button type="button" class="viewHttpLogBtn">Ver</button>
+        <button type="button" class="downloadHttpLogBtn">Descargar</button>
+      </td>
+    `;
+    tr.querySelector('.viewHttpLogBtn').addEventListener('click', () => viewHttpLog(file.name));
+    tr.querySelector('.downloadHttpLogBtn').addEventListener('click', () => downloadHttpLog(file.name));
+    tbody.appendChild(tr);
+  }
+  const hint = document.getElementById('httpLogsEmptyHint');
+  if (files.length === 0) {
+    hint.textContent = emptyMessage;
+    hint.style.display = '';
+  } else {
+    hint.style.display = 'none';
+  }
+}
+
+function applyHttpLogsFilter() {
+  if (!httpLogsDateRangeComplete()) {
+    renderHttpLogsTable([], 'Elegí un rango de fechas (Desde y Hasta) para buscar.');
+    return;
+  }
+  const from = httpLogsFromDate.value;
+  const to = httpLogsToDate.value;
+  const filtered = allHttpLogs.filter((file) => {
+    const fileDate = formatDateOnlyLocal(new Date(file.mtime));
+    return fileDate >= from && fileDate <= to;
+  });
+  renderHttpLogsTable(filtered, 'No hay ningún log guardado para el rango de fechas elegido.');
+}
+
+async function loadHttpLogsList() {
+  if (!httpLogsDateRangeComplete()) {
+    applyHttpLogsFilter();
+    return;
+  }
+  const res = await apiFetch('/api/http-logs');
+  if (!res.ok) return;
+  allHttpLogs = await res.json();
+  applyHttpLogsFilter();
+}
+
+async function fetchHttpLogContent(name) {
+  const res = await apiFetch('/api/http-logs/content?name=' + encodeURIComponent(name));
+  const data = await res.json();
+  if (!res.ok) {
+    alert(data.error || 'No se pudo obtener el log.');
+    return null;
+  }
+  return data;
+}
+
+async function downloadHttpLog(name) {
+  const data = await fetchHttpLogContent(name);
+  if (!data) return;
+  downloadTextFile(data.name, data.content, 'text/plain');
+}
+
+async function viewHttpLog(name) {
+  const data = await fetchHttpLogContent(name);
+  if (!data) return;
+  document.getElementById('httpLogsContentFileName').textContent = data.name;
+  document.getElementById('httpLogsContentText').textContent = data.content;
+  document.getElementById('httpLogsListView').style.display = 'none';
+  document.getElementById('httpLogsContentView').style.display = '';
+}
+
+function backToHttpLogsList() {
+  document.getElementById('httpLogsContentView').style.display = 'none';
+  document.getElementById('httpLogsListView').style.display = '';
+}
+
+async function openHttpLogsDialog() {
+  httpLogsFromDate.value = '';
+  httpLogsToDate.value = '';
+  allHttpLogs = [];
+  backToHttpLogsList();
+  applyHttpLogsFilter();
+  httpLogsDialog.showModal();
+}
+
+document.getElementById('httpLogsBtn').addEventListener('click', openHttpLogsDialog);
+document.getElementById('closeHttpLogsDialogBtn').addEventListener('click', () => httpLogsDialog.close());
+document.getElementById('refreshHttpLogsBtn').addEventListener('click', loadHttpLogsList);
+document.getElementById('clearHttpLogsFilterBtn').addEventListener('click', () => {
+  httpLogsFromDate.value = '';
+  httpLogsToDate.value = '';
+  allHttpLogs = [];
+  applyHttpLogsFilter();
+});
+httpLogsFromDate.addEventListener('change', loadHttpLogsList);
+httpLogsToDate.addEventListener('change', loadHttpLogsList);
+document.getElementById('backToHttpLogsListBtn').addEventListener('click', backToHttpLogsList);
+document.getElementById('downloadHttpLogBtn').addEventListener('click', () => {
+  const name = document.getElementById('httpLogsContentFileName').textContent;
+  downloadHttpLog(name);
+});
 
 // --- Login / logout ---------------------------------------------------------
 
