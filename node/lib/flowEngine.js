@@ -725,6 +725,11 @@ async function invokeFlow(profileObj, flowObj, inputValues, logsDir, parametria,
       // corta ahí — igual que el resto del flow corta en el primer error.
       for (const failureStep of step.onFailureSteps || []) {
         const failureEntry = await runStep(failureStep);
+        // Marca esta entry como compensación (no un step "normal" del flow) —
+        // el cliente la necesita para no confundirla con el step que hubiera
+        // seguido en el camino feliz (mismo índice de array si un step del
+        // medio falla, ver runFlowFromCsv en wwwroot/app.js).
+        failureEntry.isCompensationStep = true;
         log.push(failureEntry);
         if (failureEntry.status === 'Error') break;
       }

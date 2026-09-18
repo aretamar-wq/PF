@@ -1007,25 +1007,32 @@ async function runFlowFromCsv() {
         }
       }
 
+      // flowEngine marca con isCompensationStep las entries de onFailureSteps
+      // (contra-asientos u otra compensación) — separarlas de las entries de
+      // steps "normales" del flow ANTES de indexar por expectedStepIndices,
+      // porque un contra-asiento puede haber ocupado la misma posición de
+      // array que hubiera tenido el step siguiente que nunca llegó a
+      // correrse (ej. si falla "2. Crédito en Caja de Ahorro", el contra-
+      // asiento de Cuenta Corriente queda en la posición 2, la misma que
+      // tendría "3. Alta de Plazo Fijo" en el camino feliz).
+      const realStepEntries = stepEntries ? stepEntries.filter((entry) => !entry.isCompensationStep) : null;
+      const compensationEntries = stepEntries ? stepEntries.filter((entry) => entry.isCompensationStep) : [];
+
       for (let s = 0; s < flow.steps.length; s++) {
         if (!expectedStepIndices.includes(s)) {
           stepCounts[s].skipped++;
           continue;
         }
-        const entry = stepEntries ? stepEntries[expectedStepIndices.indexOf(s)] : null;
+        const entry = realStepEntries ? realStepEntries[expectedStepIndices.indexOf(s)] : null;
         const ok = !!entry && entry.status === 'Success';
         if (ok) stepCounts[s].ok++;
         else stepCounts[s].error++;
       }
 
-      // Entries que sobran más allá de los steps esperados (expectedStepIndices,
-      // no flow.steps.length: con Circuito = 1 solo se espera 1 entry) son los
-      // onFailureSteps que se dispararon porque el último step falló — ver
-      // flowEngine.js. Todos tienen que haber terminado en 'Success' para que la
-      // fila cuente como corregida.
-      if (stepEntries && stepEntries.length > expectedStepIndices.length) {
-        const contraasientoEntries = stepEntries.slice(expectedStepIndices.length);
-        const allOk = contraasientoEntries.every((entry) => entry && entry.status === 'Success');
+      // Todos los contra-asientos de esta fila (si los hubo) tienen que haber
+      // terminado en 'Success' para que la fila cuente como corregida.
+      if (compensationEntries.length > 0) {
+        const allOk = compensationEntries.every((entry) => entry && entry.status === 'Success');
         if (allOk) contraasientoCounts.ok++;
         else contraasientoCounts.error++;
       }
@@ -1063,8 +1070,13 @@ async function runFlowFromCsv() {
       // sigue en logs/http.log. Este bloque (y pfout-...csv en general) es
       // específico de "Alta de Plazo Fijos - File": otros flows CSV (como
       // "Transferencia DEBIN - File") no generan ese archivo de salida.
-      if (stepEntries && isPlazoFijoCocosFilesSqlFlow(flow)) {
-        const lastEntry = stepEntries[stepEntries.length - 1];
+      if (realStepEntries && isPlazoFijoCocosFilesSqlFlow(flow)) {
+        // realStepEntries (no stepEntries): si "2. Crédito en Caja de
+        // Ahorro" o "3. Alta de Plazo Fijo" fallaron, el último elemento de
+        // stepEntries sería el contra-asiento, no la respuesta de la alta —
+        // acá interesa específicamente la respuesta del último step REAL que
+        // se haya llegado a correr.
+        const lastEntry = realStepEntries[realStepEntries.length - 1];
         if (lastEntry && lastEntry.status === 'Success' && lastEntry.responseSummary) {
           try {
             const parsed = JSON.parse(lastEntry.responseSummary);
@@ -1120,8 +1132,8 @@ async function runFlowFromCsv() {
       // en dbnout-...csv (ver saveOutputFiles) junto con los 9 valores de la
       // fila de entrada, para no tener que cruzar ese archivo con el CSV
       // original.
-      if (stepEntries && isTransferenciaDebinFilesFlow(flow)) {
-        const lastEntry = stepEntries[stepEntries.length - 1];
+      if (realStepEntries && isTransferenciaDebinFilesFlow(flow)) {
+        const lastEntry = realStepEntries[realStepEntries.length - 1];
         if (lastEntry && lastEntry.status === 'Success' && lastEntry.responseSummary) {
           try {
             const parsed = JSON.parse(lastEntry.responseSummary);
