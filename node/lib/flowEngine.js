@@ -350,6 +350,12 @@ function getParametriaVariables(parametria) {
     variables.plazoFijoCodigoProducto = String(parametria.plazoFijo.codigoProducto || '');
     variables.plazoFijoCodigoMovimiento = String(parametria.plazoFijo.codigoMovimiento || '');
   }
+  if (parametria.consultaCbu) {
+    // Sin barra final a propósito — el step "Consultar CBU destino" (ver
+    // Flows/transferencia-debin-files.json) arma la URL como
+    // "{{consultaCbuBaseUrl}}/ConsultaCBU/{{creditoCbu}}".
+    variables.consultaCbuBaseUrl = String(parametria.consultaCbu.baseUrl || '').replace(/\/+$/, '');
+  }
   return variables;
 }
 
