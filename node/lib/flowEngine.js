@@ -685,13 +685,15 @@ async function invokeFlow(profileObj, flowObj, inputValues, logsDir, parametria,
       // onFailureSteps (opcional, en el JSON del flow): contra-asientos u
       // otra compensación a ejecutar SOLO cuando este step específico falla
       // (ej. si no se puede dar de alta el Plazo Fijo, hay que revertir el
-      // débito en Cuenta Corriente y el crédito en Caja de Ahorro ya
-      // ejecutados en los steps anteriores). Se corren siempre los
-      // declarados, en el orden en que aparecen, sin volver a disparar
-      // onFailureSteps entre ellos — no hace falta una cadena de
-      // compensaciones para este caso.
+      // crédito en Caja de Ahorro y el débito en Cuenta Corriente ya
+      // ejecutados en los steps anteriores). Se corren en el orden en que
+      // aparecen, pero uno a la vez: si un contra-asiento falla, no tiene
+      // sentido seguir con el siguiente (quedaría descalzado), así que se
+      // corta ahí — igual que el resto del flow corta en el primer error.
       for (const failureStep of step.onFailureSteps || []) {
-        log.push(await runStep(failureStep));
+        const failureEntry = await runStep(failureStep);
+        log.push(failureEntry);
+        if (failureEntry.status === 'Error') break;
       }
       break;
     }
