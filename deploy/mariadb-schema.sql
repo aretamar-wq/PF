@@ -86,10 +86,19 @@ CREATE TABLE IF NOT EXISTS parametria (
   -- "iv:authTag:ciphertext" en hexadecimal (~56 bytes de overhead antes de
   -- contar la contraseña en sí).
   sybase_password VARCHAR(500) NOT NULL DEFAULT '',
+  -- URL base de QNet (billetera) hasta ".../rest/Nova" — el step "Consultar
+  -- CBU destino" de "Transferencia DEBIN - File" le agrega
+  -- "/ConsultaCBU/{{creditoCbu}}" (ver Flows/transferencia-debin-files.json).
+  consulta_cbu_base_url VARCHAR(500) NOT NULL DEFAULT '',
   updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
   PRIMARY KEY (id),
   CONSTRAINT chk_parametria_singleton CHECK (id = 1)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- Si la tabla ya existía de una instalación anterior a este campo (correr
+-- este archivo es idempotente: CREATE TABLE IF NOT EXISTS no la toca si ya
+-- existe), esto la pone al día sin perder los datos que ya tenía.
+ALTER TABLE parametria ADD COLUMN IF NOT EXISTS consulta_cbu_base_url VARCHAR(500) NOT NULL DEFAULT '';
 
 INSERT INTO parametria (
     id, cc_codigo_cuenta, cc_codigo_sistema, cc_transaccion,

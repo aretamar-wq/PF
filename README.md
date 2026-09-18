@@ -732,6 +732,11 @@ cambian de una ejecución a otra, agrupados por tipo de cuenta:
   las demás categorías, esto no es un conjunto de variables `{{...}}` para
   usar en cualquier flow: solo lo usan internamente los steps de tipo
   `"type": "sql"`.
+- **Consulta CBU (Transferencia DEBIN - File)**: URL base de QNet (la
+  billetera) que usa el step "Consultar CBU destino" para validar, antes de
+  transferir, que el titular real del CBU destino coincida con el CUIT
+  destino de la fila. Si queda vacía, se usa un default fijo (la URL que
+  tenía hardcodeada antes de que esto fuera configurable).
 
 Se guardan en la tabla `parametria` de MariaDB (fila singleton, ver "Base de
 datos (MariaDB)") — la contraseña de Sybase se guarda cifrada (ver "Campos
@@ -743,6 +748,7 @@ con nombre fijo (no hace falta declararlos como inputs):
 - `{{ctaCteCodigoCuenta}}`, `{{ctaCteCodigoSistema}}`, `{{ctaCteTransaccion}}`
 - `{{cajaAhorroCodigoSistema}}`, `{{cajaAhorroTransaccion}}`
 - `{{plazoFijoCodigoProducto}}`, `{{plazoFijoCodigoMovimiento}}`
+- `{{consultaCbuBaseUrl}}` (sin barra final, aunque se haya guardado con una)
 
 "Transferencia DEBIN" (ver más abajo) no tiene ninguna categoría acá: todos
 sus campos, incluida la cuenta de débito (origen), son inputs del

@@ -188,6 +188,17 @@
             <label>Código de movimiento <input name="plazoFijo.codigoMovimiento" /></label>
           </fieldset>
           <fieldset>
+            <legend>Consulta CBU (Transferencia DEBIN - File)</legend>
+            <p class="muted">
+              URL base de QNet (billetera) que usa el step "Consultar CBU destino"
+              para validar el titular del CBU destino antes de transferir — sin la
+              barra final ni "/ConsultaCBU/...", eso lo agrega el flow.
+            </p>
+            <label>URL base
+              <input name="consultaCbu.baseUrl" placeholder="http://api-billetera.voii.com.ar:54000/QNet24/Services/rest/Nova" />
+            </label>
+          </fieldset>
+          <fieldset>
             <legend>Token del perfil</legend>
             <p class="muted">Prueba la obtención de token OAuth2 client_credentials del perfil elegido arriba a la izquierda (solo aplica si su tipo de autenticación es OAuth2ClientCredentials).</p>
             <div class="dialog-actions">
