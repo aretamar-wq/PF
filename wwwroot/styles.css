@@ -179,7 +179,7 @@ button:hover { background: var(--accent-tint); border-color: var(--accent); }
   font-size: 0.85rem;
 }
 #runBtn:hover, #loginSubmitBtn:hover { background: var(--accent-hover); border-color: var(--accent-hover); }
-#runBtn:disabled, #saveLogBtn:disabled { opacity: 0.5; cursor: default; }
+#runBtn:disabled, #saveLogBtn:disabled, #testTokenBtn:disabled { opacity: 0.5; cursor: default; }
 #runBtn:disabled:hover { background: var(--accent); }
 
 table {
