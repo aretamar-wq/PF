@@ -10,7 +10,7 @@ const path = require('path');
 const https = require('https');
 const { getJsonPathValue } = require('./jsonPath');
 const { expandTemplate } = require('./variableSubstitution');
-const { formatLocal, formatDateOnly, formatTimeOnly, formatCompact, formatCompactMillis } = require('./dateUtil');
+const { formatLocal, formatDateOnly, formatTimeOnly, formatCompact, formatCompactMillis, formatCompactDMY } = require('./dateUtil');
 const sybaseClient = require('./sybaseClient');
 
 // Cache de tokens OAuth2 en memoria, vive mientras viva el proceso — mismo
@@ -41,15 +41,48 @@ function writeHttpLog(logsDir, fileName, content) {
 // el mismo milisegundo (backend Node.js: I/O asíncrono, puede haber más de
 // una corriendo a la vez).
 let runLogCounter = 0;
-function generateRunLogFileName(flowName) {
+
+// Mismo algoritmo de slug en todos lados (acá y en wwwroot/app.js, para el
+// nombre de los archivos de salida) — si difieren, un log y sus archivos de
+// salida terminan con nombres que no matchean.
+function flowNameSlug(flowName) {
+  return (
+    String(flowName || 'flow')
+      .toLowerCase()
+      .replace(/[^a-z0-9]+/g, '-')
+      .replace(/^-+|-+$/g, '') || 'flow'
+  );
+}
+
+// logAlias (opcional, en el JSON del flow): nombre corto para el log/archivos
+// de salida en vez del slug automático del name completo — ver "Alta-PF" en
+// Flows/plazo-fijo-cocos-files-sql.json. A diferencia de flowNameSlug, NO se
+// fuerza a minúscula (se muestra tal cual se escribió en el flow), solo se
+// sanean los caracteres que no serían válidos en un nombre de archivo.
+function flowLogName(flowObj) {
+  const alias = flowObj && flowObj.logAlias ? String(flowObj.logAlias).trim() : '';
+  if (!alias) return flowNameSlug(flowObj && flowObj.name);
+  const sanitized = alias.replace(/[^A-Za-z0-9-]+/g, '-').replace(/^-+|-+$/g, '');
+  return sanitized || flowNameSlug(flowObj && flowObj.name);
+}
+
+// runId: ddMMyyyyHHmmss + contador de módulo (evita colisiones si dos
+// corridas arrancan en el mismo segundo) + nombre del flow (logAlias si lo
+// tiene, si no el slug automático del name) — es el mismo identificador que
+// se usa para nombrar tanto el log (logs/http/<runId>.log) como los
+// archivos de salida (files/<runId>.csv / <runId>-error.csv, ver
+// handleSaveOutput en server.js): comparten nombre a propósito, así se
+// encuentran entre sí sin tener que parsear contenido de ningún archivo.
+function generateRunId(flowObj) {
   runLogCounter = (runLogCounter + 1) % 10000;
-  const slug = String(flowName || 'flow')
-    .toLowerCase()
-    .replace(/[^a-z0-9]+/g, '-')
-    .replace(/^-+|-+$/g, '') || 'flow';
-  const timestamp = formatCompactMillis(new Date());
+  const name = flowLogName(flowObj);
+  const timestamp = formatCompactDMY(new Date());
   const counter = String(runLogCounter).padStart(4, '0');
-  return `http/${timestamp}-${counter}-${slug}.log`;
+  return `${timestamp}${counter}-${name}`;
+}
+
+function generateRunLogFileName(flowObj) {
+  return `http/${generateRunId(flowObj)}.log`;
 }
 
 // Formato exacto de generateRunLogFileName — valida un runLogFileName que el
@@ -57,7 +90,56 @@ function generateRunLogFileName(flowName) {
 // invokeFlow) antes de confiarlo como nombre de archivo: sin esto, un valor
 // cualquiera llegado por JSON del cliente podría intentar escribir fuera de
 // logsDir/http/.
-const RUN_LOG_FILE_NAME_PATTERN = /^http\/\d+-\d{4}-[a-z0-9-]+\.log$/;
+// Solo la parte "runId" (sin el prefijo http/ ni la extensión .log) —
+// reusado por server.js para validar el mismo runId cuando llega en el
+// nombre de un archivo de salida (ver handleSaveOutput/OUTPUT_FILE_NAME_PATTERN).
+const RUN_ID_PATTERN = /^\d{18}-[A-Za-z0-9-]+$/;
+const RUN_LOG_FILE_NAME_PATTERN = new RegExp(`^http/${RUN_ID_PATTERN.source.slice(1, -1)}\\.log$`);
+
+// Línea de resumen que el cliente pide anexar al final de un log de corrida
+// (POST /api/run-summary), una sola vez, cuando termina de procesar un CSV
+// completo y ya sabe qué archivos quedaron guardados en files/ (ver
+// saveOutputFiles en wwwroot/app.js) — así "Archivos de salida" puede armar
+// una fila por corrida (hora + usuario + flow + qué descargar) leyendo un
+// solo log, sin necesitar una tabla nueva en MariaDB. Una sola línea
+// pipe-separated en vez de un bloque de varias líneas: más fácil de
+// parsear de vuelta con una sola regex (ver parseRunSummary).
+function appendRunSummary(logsDir, runLogFileName, summary) {
+  if (!RUN_LOG_FILE_NAME_PATTERN.test(runLogFileName)) {
+    throw new Error(`Nombre de log inválido: '${runLogFileName}'.`);
+  }
+  const line = [
+    `>>> RESUMEN [${formatLocal(new Date(), true)}]`,
+    `Flow=${summary.flowName || '?'}`,
+    `Usuario=${summary.username || '?'}`,
+    `ArchivoOK=${summary.okFileName || '(ninguno)'}`,
+    `ArchivoError=${summary.errorFileName || '(ninguno)'}`,
+    `PasosOk=${summary.pasosOk != null ? summary.pasosOk : '?'}`,
+    `PasosError=${summary.pasosError != null ? summary.pasosError : '?'}`,
+  ].join(' | ');
+  writeHttpLog(logsDir, runLogFileName, `${line}\n---`);
+}
+
+// Contraparte de appendRunSummary: busca la ÚLTIMA línea ">>> RESUMEN" del
+// contenido de un log (por si en algún momento se anexara más de una) y la
+// devuelve como objeto — null si el log no tiene resumen (corridas de antes
+// de este feature, o un log al que todavía no se le anexó porque el CSV
+// sigue corriendo).
+function parseRunSummary(logContent) {
+  const matches = [...String(logContent || '').matchAll(
+    /^>>> RESUMEN .*?\| Flow=(.*?) \| Usuario=(.*?) \| ArchivoOK=(.*?) \| ArchivoError=(.*?) \| PasosOk=(.*?) \| PasosError=(.*?)$/gm
+  )];
+  if (matches.length === 0) return null;
+  const [, flowName, username, okFileName, errorFileName, pasosOk, pasosError] = matches[matches.length - 1];
+  return {
+    flowName,
+    username,
+    okFileName: okFileName === '(ninguno)' ? null : okFileName,
+    errorFileName: errorFileName === '(ninguno)' ? null : errorFileName,
+    pasosOk: pasosOk === '?' ? null : Number(pasosOk),
+    pasosError: pasosError === '?' ? null : Number(pasosError),
+  };
+}
 
 function getLoggableHeaderLines(headers, apiKeyHeaderName) {
   const lines = [];
@@ -312,7 +394,7 @@ async function testSybaseConnection(connectionStringTemplate, usuario, password)
 // extractVariables (getJsonPathValue, ej. "rows[0].saldo"), mismo límite de
 // 200.000 caracteres para lo que se manda al navegador, mismo archivo de
 // log por corrida (ver generateRunLogFileName).
-async function invokeSqlStep(step, flowObj, variables, parametria, logsDir, runLogFileName, entry, stepStartedAt) {
+async function invokeSqlStep(step, flowObj, variables, parametria, logsDir, runLogFileName, entry, stepStartedAt, username) {
   if (!parametria || !parametria.sybase) {
     throw new Error("No hay una conexión Sybase configurada en la Parametría (botón 'Parametría...' > Conexión Sybase).");
   }
@@ -328,7 +410,7 @@ async function invokeSqlStep(step, flowObj, variables, parametria, logsDir, runL
   entry.requestSummary = `SQL (Sybase): ${queryText}`;
 
   const requestLogText = [
-    `>>> REQUEST [${formatLocal(new Date(), true)}] Flow=${flowObj.name} | Step=${step.name} (SQL)`,
+    `>>> REQUEST [${formatLocal(new Date(), true)}] Flow=${flowObj.name} | Step=${step.name} (SQL) | Usuario=${username || '?'}`,
     `ConnectionString: ${redactedConnectionString}`,
     'Query:',
     queryText,
@@ -384,7 +466,7 @@ async function querySybaseRows(parametriaSybase, queryText) {
   return sybaseClient.querySybase(parametriaSybase, queryText);
 }
 
-async function invokeHttpStep(step, flowObj, variables, profileObj, logsDir, runLogFileName, entry, stepStartedAt) {
+async function invokeHttpStep(step, flowObj, variables, profileObj, logsDir, runLogFileName, entry, stepStartedAt, username) {
   const stepPath = expandTemplate(step.pathTemplate, variables);
   // Un flow puede pedir la URL base de otro campo del perfil en vez de
   // "baseUrl" (ej. "Transferencia DEBIN" usa "novaBaseUrl" — un mismo
@@ -464,7 +546,7 @@ async function invokeHttpStep(step, flowObj, variables, profileObj, logsDir, run
 
   const requestHeaderLines = getLoggableHeaderLines(headers, profileObj.apiKeyHeaderName);
   const requestLogText = [
-    `>>> REQUEST [${formatLocal(new Date(), true)}] Flow=${flowObj.name} | Step=${step.name}`,
+    `>>> REQUEST [${formatLocal(new Date(), true)}] Flow=${flowObj.name} | Step=${step.name} | Usuario=${username || '?'}`,
     `${step.method} ${url}`,
     requestHeaderLines,
     'Body:',
@@ -524,7 +606,7 @@ async function invokeHttpStep(step, flowObj, variables, profileObj, logsDir, run
   entry.status = 'Success';
 }
 
-async function invokeFlow(profileObj, flowObj, inputValues, logsDir, parametria, requestedLogFileName) {
+async function invokeFlow(profileObj, flowObj, inputValues, logsDir, parametria, requestedLogFileName, username) {
   const now = new Date();
   // Variables de sistema disponibles en cualquier flow (ej. {{nowDate}} para una
   // FechaMovimiento/FechaNegocio que no debe pedirse al usuario), seguidas de los
@@ -548,7 +630,7 @@ async function invokeFlow(profileObj, flowObj, inputValues, logsDir, parametria,
   const runLogFileName =
     requestedLogFileName && RUN_LOG_FILE_NAME_PATTERN.test(requestedLogFileName)
       ? requestedLogFileName
-      : generateRunLogFileName(flowObj.name);
+      : generateRunLogFileName(flowObj);
 
   const log = [];
 
@@ -566,9 +648,9 @@ async function invokeFlow(profileObj, flowObj, inputValues, logsDir, parametria,
     const stepStartedAt = Date.now();
     try {
       if (String(step.type || '').trim().toLowerCase() === 'sql') {
-        await invokeSqlStep(step, flowObj, variables, parametria, logsDir, runLogFileName, entry, stepStartedAt);
+        await invokeSqlStep(step, flowObj, variables, parametria, logsDir, runLogFileName, entry, stepStartedAt, username);
       } else {
-        await invokeHttpStep(step, flowObj, variables, profileObj, logsDir, runLogFileName, entry, stepStartedAt);
+        await invokeHttpStep(step, flowObj, variables, profileObj, logsDir, runLogFileName, entry, stepStartedAt, username);
       }
     } catch (err) {
       entry.status = 'Error';
@@ -627,4 +709,12 @@ async function testTokenAcquisition(profileObj) {
   }
 }
 
-module.exports = { invokeFlow, testTokenAcquisition, testSybaseConnection };
+module.exports = {
+  invokeFlow,
+  testTokenAcquisition,
+  testSybaseConnection,
+  appendRunSummary,
+  parseRunSummary,
+  RUN_LOG_FILE_NAME_PATTERN,
+  RUN_ID_PATTERN,
+};

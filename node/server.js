@@ -323,6 +323,11 @@ function handleFlowsGet(res) {
     description: f.description,
     inputMode: f.inputMode,
     inputs: f.inputs,
+    // Nombre corto opcional para el log/archivos de salida de esta corrida
+    // (ver flowLogName en flowEngine.js) — el frontend lo necesita para
+    // generar el mismo nombre de log ANTES de la primera llamada a
+    // /api/run (ver batchLogFileName en runFlowFromCsv, wwwroot/app.js).
+    logAlias: f.logAlias || null,
     steps: (f.steps || []).map((s) => ({ name: s.name, type: s.type || null })),
   }));
   writeJsonResponse(res, 200, summary);
@@ -373,7 +378,8 @@ async function handleRun(req, res, session) {
     inputValues,
     logsDir,
     parametria,
-    payload.runLogFileName ? String(payload.runLogFileName) : null
+    payload.runLogFileName ? String(payload.runLogFileName) : null,
+    session.username
   );
 
   // Una entrada por cada corrida de /api/run (para un flow CSV, una por fila del
@@ -391,26 +397,30 @@ async function handleRun(req, res, session) {
   writeJsonResponse(res, 200, log);
 }
 
+// runId es el MISMO identificador que ya generó el log de esta corrida (ver
+// flowEngine.js, generateRunId — el cliente lo saca del nombre de log que le
+// devolvió /api/run) — se valida acá con el mismo patrón (RUN_ID_PATTERN),
+// única defensa contra path traversal en un endpoint que escribe archivos a
+// partir de input del cliente. Compartir el runId entre log y archivo de
+// salida es a propósito: "Archivos de salida" los encuentra por nombre, sin
+// tener que parsear contenido de ningún archivo (ver handleOutputFilesGet).
+// "kind" (pfout/dbnout/dbnconsulta) es solo para decidir si hay que además
+// registrar el contenido en MariaDB (dbn_out/dbn_consulta) — no forma parte
+// del nombre del archivo.
 async function handleSaveOutput(req, res, session) {
-  // $prefix/$timestamp los arma el cliente, pero se validan acá con formato
-  // estricto: es la única defensa contra path traversal en un endpoint que
-  // escribe archivos a partir de input del cliente.
   const payload = await readJsonBody(req);
-  const prefix = String(payload.prefix || '');
-  const timestamp = String(payload.timestamp || '');
+  const runId = String(payload.runId || '');
+  const variant = payload.variant === 'error' ? 'error' : 'ok';
+  const kind = String(payload.kind || '');
   const content = String(payload.content || '');
 
-  if (!/^[a-zA-Z0-9-]{1,40}$/.test(prefix)) {
-    writeJsonResponse(res, 400, { error: 'Prefijo de archivo inválido.' });
-    return;
-  }
-  if (!/^\d{14}$/.test(timestamp)) {
-    writeJsonResponse(res, 400, { error: 'Timestamp inválido (se espera yyyyMMddHHmmss).' });
+  if (!flowEngine.RUN_ID_PATTERN.test(runId)) {
+    writeJsonResponse(res, 400, { error: 'Identificador de corrida inválido.' });
     return;
   }
 
   if (!fs.existsSync(filesDir)) fs.mkdirSync(filesDir, { recursive: true });
-  const fileName = `${prefix}${timestamp}.csv`;
+  const fileName = variant === 'error' ? `${runId}-error.csv` : `${runId}.csv`;
   const filePath = path.join(filesDir, fileName);
   fs.writeFileSync(filePath, content, 'utf8');
   securityStore.writeSecurityLog(logsDir, `ARCHIVO DE SALIDA '${fileName}' guardado por '${session.username}'`);
@@ -422,9 +432,9 @@ async function handleSaveOutput(req, res, session) {
   // momento) no aborta la respuesta: el .csv ya se guardó bien, que es lo
   // principal de este endpoint; solo queda constancia del error en el log
   // de seguridad.
-  if (prefix === 'dbnout-' || prefix === 'dbnconsulta-') {
+  if (kind === 'dbnout' || kind === 'dbnconsulta') {
     try {
-      if (prefix === 'dbnout-') {
+      if (kind === 'dbnout') {
         await debinOutputStore.addDbnOutRows(rootDir, content, session.username);
       } else {
         await debinOutputStore.addDbnConsultaRows(rootDir, content, session.username);
@@ -440,26 +450,86 @@ async function handleSaveOutput(req, res, session) {
   writeJsonResponse(res, 200, { ok: true, fileName });
 }
 
-// Mismo patrón de nombre que genera handleSaveOutput (pfout-/pfouterror-/
-// dbnout-/dbnouterror-/dbnconsulta- + 14 dígitos + .csv) — única defensa
-// contra path traversal al leer un nombre de archivo que llega por
-// querystring.
-const OUTPUT_FILE_NAME_PATTERN = /^(pfout|pfouterror|dbnout|dbnouterror|dbnconsulta)-\d{14}\.csv$/;
+// El cliente llama a esto una sola vez, al terminar de procesar un CSV
+// completo (después de guardar los archivos ok/error con /api/save-output),
+// para anexarle al log de esa corrida (logs/http/) un resumen: qué flow fue,
+// quién lo corrió, y los nombres de los archivos que quedaron guardados —
+// así "Archivos de salida" puede armar una fila por corrida sin necesitar
+// una tabla nueva en la base (ver appendRunSummary en flowEngine.js). El
+// usuario SIEMPRE es el de la sesión (session.username), nunca el que
+// mande el cliente en el body — evita que alguien falsifique quién corrió qué.
+async function handleRunSummaryPost(req, res, session) {
+  const payload = await readJsonBody(req);
+  const logFileName = String(payload.logFileName || '');
 
+  try {
+    flowEngine.appendRunSummary(logsDir, logFileName, {
+      flowName: payload.flowName ? String(payload.flowName) : null,
+      username: session.username,
+      okFileName: payload.okFileName ? String(payload.okFileName) : null,
+      errorFileName: payload.errorFileName ? String(payload.errorFileName) : null,
+      pasosOk: payload.pasosOk != null ? Number(payload.pasosOk) : null,
+      pasosError: payload.pasosError != null ? Number(payload.pasosError) : null,
+    });
+  } catch (err) {
+    writeJsonResponse(res, 400, { error: err.message });
+    return;
+  }
+  writeJsonResponse(res, 200, { ok: true });
+}
+
+// El archivo ok comparte el runId tal cual (mismo nombre que el log, sin
+// "http/" ni ".log"); el de error es el mismo runId + "-error" al final —
+// ver handleSaveOutput. Única defensa anti path-traversal al leer un nombre
+// de archivo que llega por querystring.
+const OUTPUT_FILE_NAME_PATTERN = new RegExp(`^${flowEngine.RUN_ID_PATTERN.source.slice(1, -1)}(-error)?\\.csv$`);
+
+// Una fila por CORRIDA (no por archivo suelto): el nombre del log YA ES el
+// runId (ver generateRunId en flowEngine.js), así que alcanza con mirar si
+// existen files/<runId>.csv y files/<runId>-error.csv — sin necesitar
+// parsear nada. El resumen que /api/run-summary anexa al log (ver
+// appendRunSummary/parseRunSummary) solo se usa para enriquecer la fila con
+// quién la corrió, qué flow fue y los pasos ok/error — si un log no tiene
+// resumen (corrida de antes de este feature, o un CSV que se cortó antes de
+// terminar), la fila sale igual, con esos campos en null pero los archivos
+// (si existen) siguen siendo descargables.
 function handleOutputFilesGet(res) {
-  if (!fs.existsSync(filesDir)) {
+  const httpLogsDir = path.join(logsDir, HTTP_LOG_SUBDIR);
+  if (!fs.existsSync(httpLogsDir)) {
     writeJsonResponse(res, 200, []);
     return;
   }
-  const files = fs
-    .readdirSync(filesDir)
-    .filter((name) => OUTPUT_FILE_NAME_PATTERN.test(name))
+  const runs = fs
+    .readdirSync(httpLogsDir)
+    .filter((name) => HTTP_LOG_FILE_NAME_PATTERN.test(name))
     .map((name) => {
-      const stat = fs.statSync(path.join(filesDir, name));
-      return { name, size: stat.size, mtime: stat.mtime.toISOString() };
+      const filePath = path.join(httpLogsDir, name);
+      const stat = fs.statSync(filePath);
+      const runId = name.replace(/\.log$/, '');
+
+      let summary = null;
+      try {
+        summary = flowEngine.parseRunSummary(fs.readFileSync(filePath, 'utf8'));
+      } catch (err) {
+        // Log corrupto o ilegible: la corrida sale igual en la lista, solo sin resumen.
+      }
+
+      const okFileName = `${runId}.csv`;
+      const errorFileName = `${runId}-error.csv`;
+
+      return {
+        logFileName: name,
+        mtime: stat.mtime.toISOString(),
+        flowName: summary ? summary.flowName : null,
+        username: summary ? summary.username : null,
+        okFileName: fs.existsSync(path.join(filesDir, okFileName)) ? okFileName : null,
+        errorFileName: fs.existsSync(path.join(filesDir, errorFileName)) ? errorFileName : null,
+        pasosOk: summary ? summary.pasosOk : null,
+        pasosError: summary ? summary.pasosError : null,
+      };
     })
     .sort((a, b) => b.mtime.localeCompare(a.mtime));
-  writeJsonResponse(res, 200, files);
+  writeJsonResponse(res, 200, runs);
 }
 
 function handleOutputFileContentGet(parsedUrl, res, session) {
@@ -488,7 +558,7 @@ function handleOutputFileContentGet(parsedUrl, res, session) {
 // ver flows/perfiles/logs pero no ejecutar nada" — ver logs es para
 // cualquier rol autenticado).
 const HTTP_LOG_SUBDIR = 'http';
-const HTTP_LOG_FILE_NAME_PATTERN = /^\d+-\d{4}-[a-z0-9-]+\.log$/;
+const HTTP_LOG_FILE_NAME_PATTERN = new RegExp(`^${flowEngine.RUN_ID_PATTERN.source.slice(1, -1)}\\.log$`);
 
 function handleHttpLogsGet(res) {
   const httpLogsDir = path.join(logsDir, HTTP_LOG_SUBDIR);
@@ -732,6 +802,7 @@ async function handleRequest(req, res) {
     if (method === 'GET' && pathname === '/api/flows') return void handleFlowsGet(res);
     if (method === 'POST' && pathname === '/api/run') return void (await handleRun(req, res, session));
     if (method === 'POST' && pathname === '/api/save-output') return void (await handleSaveOutput(req, res, session));
+    if (method === 'POST' && pathname === '/api/run-summary') return void (await handleRunSummaryPost(req, res, session));
     if (method === 'GET' && pathname === '/api/output-files') return void handleOutputFilesGet(res);
     if (method === 'GET' && pathname === '/api/output-files/content') return void handleOutputFileContentGet(parsedUrl, res, session);
     if (method === 'GET' && pathname === '/api/http-logs') return void handleHttpLogsGet(res);

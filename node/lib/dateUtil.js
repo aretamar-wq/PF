@@ -32,4 +32,12 @@ function formatCompactMillis(date = new Date()) {
   return `${date.getFullYear()}${pad(date.getMonth() + 1)}${pad(date.getDate())}${pad(date.getHours())}${pad(date.getMinutes())}${pad(date.getSeconds())}${pad(date.getMilliseconds(), 3)}`;
 }
 
-module.exports = { formatLocal, formatDateOnly, formatTimeOnly, formatCompact, formatCompactMillis };
+// ddMMyyyyHHmmss — usado como identificador compartido entre el log de una
+// corrida (logs/http/) y sus archivos de salida (files/), para que ambos
+// lados se puedan encontrar por nombre sin necesitar parsear nada (ver
+// generateRunLogFileName en flowEngine.js).
+function formatCompactDMY(date = new Date()) {
+  return `${pad(date.getDate())}${pad(date.getMonth() + 1)}${date.getFullYear()}${pad(date.getHours())}${pad(date.getMinutes())}${pad(date.getSeconds())}`;
+}
+
+module.exports = { formatLocal, formatDateOnly, formatTimeOnly, formatCompact, formatCompactMillis, formatCompactDMY };
