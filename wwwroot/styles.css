@@ -77,7 +77,6 @@ header h1 { margin: 0 0 10px; font-size: 1.25rem; }
   border-radius: 6px;
 }
 #mainMenuList > li > button:hover, #mainMenuList ul > li > button:hover { background: var(--accent-tint); }
-#mainMenuList li:has(#tokenTestResult) { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
 .main-menu-group { padding: 0; }
 .main-menu-group-label {
   display: block;
@@ -180,7 +179,7 @@ button:hover { background: var(--accent-tint); border-color: var(--accent); }
   font-size: 0.85rem;
 }
 #runBtn:hover, #loginSubmitBtn:hover { background: var(--accent-hover); border-color: var(--accent-hover); }
-#runBtn:disabled, #saveLogBtn:disabled, #testTokenBtn:disabled { opacity: 0.5; cursor: default; }
+#runBtn:disabled, #saveLogBtn:disabled { opacity: 0.5; cursor: default; }
 #runBtn:disabled:hover { background: var(--accent); }
 
 table {
