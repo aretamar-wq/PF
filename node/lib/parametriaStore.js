@@ -16,6 +16,13 @@ const db = require('./mariadbClient');
 const { encrypt, decrypt } = require('./cryptoUtil');
 const { getEncryptionKey } = require('./dbConfigStore');
 
+// URL fija que tenía hardcodeada "Consultar CBU destino" antes de que fuera
+// configurable por Parametría — se usa como default tanto para una
+// instalación nueva (getDefaultParametria) como para una ya existente cuyo
+// campo consulta_cbu_base_url quedó vacío después de agregar la columna
+// (ver mapParametriaRow), para que ninguna de las dos deje de funcionar.
+const DEFAULT_CONSULTA_CBU_BASE_URL = 'http://api-billetera.voii.com.ar:54000/QNet24/Services/rest/Nova';
+
 function getDefaultParametria() {
   return {
     cuentaCorriente: { codigoCuenta: '', codigoSistema: '', transaccion: '' },
@@ -27,6 +34,7 @@ function getDefaultParametria() {
       usuario: '',
       password: '',
     },
+    consultaCbu: { baseUrl: DEFAULT_CONSULTA_CBU_BASE_URL },
   };
 }
 
@@ -50,6 +58,9 @@ function mapParametriaRow(row) {
       usuario: row.sybase_usuario,
       password: row.sybase_password,
     },
+    consultaCbu: {
+      baseUrl: row.consulta_cbu_base_url || DEFAULT_CONSULTA_CBU_BASE_URL,
+    },
   };
 }
 
@@ -70,6 +81,7 @@ async function saveParametria(rootDir, parametria) {
   const ca = p.cajaDeAhorro || {};
   const pf = p.plazoFijo || {};
   const sybase = p.sybase || {};
+  const consultaCbu = p.consultaCbu || {};
 
   const encryptedPassword = sybase.password ? encrypt(sybase.password, getEncryptionKey(rootDir)) : '';
 
@@ -79,8 +91,9 @@ async function saveParametria(rootDir, parametria) {
        id, cc_codigo_cuenta, cc_codigo_sistema, cc_transaccion,
        ca_codigo_sistema, ca_transaccion,
        pf_codigo_producto, pf_codigo_movimiento,
-       sybase_connection_string, sybase_usuario, sybase_password
-     ) VALUES (1, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+       sybase_connection_string, sybase_usuario, sybase_password,
+       consulta_cbu_base_url
+     ) VALUES (1, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
      ON DUPLICATE KEY UPDATE
        cc_codigo_cuenta = VALUES(cc_codigo_cuenta),
        cc_codigo_sistema = VALUES(cc_codigo_sistema),
@@ -91,7 +104,8 @@ async function saveParametria(rootDir, parametria) {
        pf_codigo_movimiento = VALUES(pf_codigo_movimiento),
        sybase_connection_string = VALUES(sybase_connection_string),
        sybase_usuario = VALUES(sybase_usuario),
-       sybase_password = VALUES(sybase_password)`,
+       sybase_password = VALUES(sybase_password),
+       consulta_cbu_base_url = VALUES(consulta_cbu_base_url)`,
     [
       cc.codigoCuenta || '',
       cc.codigoSistema || '',
@@ -103,6 +117,7 @@ async function saveParametria(rootDir, parametria) {
       sybase.connectionString || '',
       sybase.usuario || '',
       encryptedPassword,
+      consultaCbu.baseUrl || '',
     ]
   );
 }

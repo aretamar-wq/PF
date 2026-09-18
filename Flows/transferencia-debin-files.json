@@ -19,7 +19,7 @@
     {
       "name": "1. Consultar CBU destino",
       "method": "GET",
-      "pathTemplate": "http://api-billetera.voii.com.ar:54000/QNet24/Services/rest/Nova/ConsultaCBU/{{creditoCbu}}",
+      "pathTemplate": "{{consultaCbuBaseUrl}}/ConsultaCBU/{{creditoCbu}}",
       "headers": { "Accept": "application/json" },
       "useClientCert": false,
       "extractVariables": {
