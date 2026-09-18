@@ -637,6 +637,16 @@ async function invokeHttpStep(step, flowObj, variables, profileObj, logsDir, run
       if (!valueA || !valueB || valueA !== valueB) {
         entry.status = 'Error';
         entry.errorMessage = `El valor de '${nameA}' ('${valueA || '(vacío)'}') no coincide con '${nameB}' ('${valueB || '(vacío)'}').`;
+        // Sin esto, el log de la corrida (logs/http/...) solo tenía el
+        // REQUEST/RESPONSE de la consulta (con el titular adentro, sin
+        // resaltar) — nada que diga en criollo por qué esta fila no siguió a
+        // la transferencia. Mismo formato que el bloque ERROR de una
+        // excepción, para que sea fácil de grepear.
+        const mismatchLogText = [
+          `<<< ERROR [${formatLocal(new Date(), true)}] Flow=${flowObj.name} | Step=${step.name} | ${entry.errorMessage} (${Date.now() - stepStartedAt} ms)`,
+          '---',
+        ].join('\n');
+        writeHttpLog(logsDir, runLogFileName, mismatchLogText);
         return;
       }
     }
