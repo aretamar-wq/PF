@@ -2012,72 +2012,10 @@ document.getElementById('clearOutputFilesFilterBtn').addEventListener('click', (
 outputFilesFromDate.addEventListener('change', loadOutputFilesList);
 outputFilesToDate.addEventListener('change', loadOutputFilesList);
 
-// --- Logs de ejecución (logs/http/, un archivo por corrida de flow) --------
-// Mismo patrón que "Archivos de salida" arriba (fecha obligatoria para
-// buscar), pero además de descargar deja VER el contenido del log inline
-// (es texto plano legible, no un CSV pensado para abrir en otro programa).
-
-const httpLogsDialog = document.getElementById('httpLogsDialog');
-const httpLogsFromDate = document.getElementById('httpLogsFromDate');
-const httpLogsToDate = document.getElementById('httpLogsToDate');
-let allHttpLogs = [];
-
-function httpLogsDateRangeComplete() {
-  return !!(httpLogsFromDate.value && httpLogsToDate.value);
-}
-
-function renderHttpLogsTable(files, emptyMessage) {
-  const tbody = document.getElementById('httpLogsTableBody');
-  tbody.innerHTML = '';
-  for (const file of files) {
-    const tr = document.createElement('tr');
-    tr.innerHTML = `
-      <td>${escapeHtml(file.name)}</td>
-      <td>${new Date(file.mtime).toLocaleString()}</td>
-      <td>${formatFileSize(file.size)}</td>
-      <td>
-        <button type="button" class="viewHttpLogBtn">Ver</button>
-        <button type="button" class="downloadHttpLogBtn">Descargar</button>
-      </td>
-    `;
-    tr.querySelector('.viewHttpLogBtn').addEventListener('click', () => viewHttpLog(file.name));
-    tr.querySelector('.downloadHttpLogBtn').addEventListener('click', () => downloadHttpLog(file.name));
-    tbody.appendChild(tr);
-  }
-  const hint = document.getElementById('httpLogsEmptyHint');
-  if (files.length === 0) {
-    hint.textContent = emptyMessage;
-    hint.style.display = '';
-  } else {
-    hint.style.display = 'none';
-  }
-}
-
-function applyHttpLogsFilter() {
-  if (!httpLogsDateRangeComplete()) {
-    renderHttpLogsTable([], 'Elegí un rango de fechas (Desde y Hasta) para buscar.');
-    return;
-  }
-  const from = httpLogsFromDate.value;
-  const to = httpLogsToDate.value;
-  const filtered = allHttpLogs.filter((file) => {
-    const fileDate = formatDateOnlyLocal(new Date(file.mtime));
-    return fileDate >= from && fileDate <= to;
-  });
-  renderHttpLogsTable(filtered, 'No hay ningún log guardado para el rango de fechas elegido.');
-}
-
-async function loadHttpLogsList() {
-  if (!httpLogsDateRangeComplete()) {
-    applyHttpLogsFilter();
-    return;
-  }
-  const res = await apiFetch('/api/http-logs');
-  if (!res.ok) return;
-  allHttpLogs = await res.json();
-  applyHttpLogsFilter();
-}
-
+// Descarga de un log de corrida (logs/http/) — usado por el botón
+// "Descargar log" de "Archivos de salida" arriba. Ya no hay una pantalla
+// propia de "Logs de ejecución": quedó unificada ahí (una fila por corrida,
+// con este mismo botón).
 async function fetchHttpLogContent(name) {
   const res = await apiFetch('/api/http-logs/content?name=' + encodeURIComponent(name));
   const data = await res.json();
@@ -2093,46 +2031,6 @@ async function downloadHttpLog(name) {
   if (!data) return;
   downloadTextFile(data.name, data.content, 'text/plain');
 }
-
-async function viewHttpLog(name) {
-  const data = await fetchHttpLogContent(name);
-  if (!data) return;
-  document.getElementById('httpLogsContentFileName').textContent = data.name;
-  document.getElementById('httpLogsContentText').textContent = data.content;
-  document.getElementById('httpLogsListView').style.display = 'none';
-  document.getElementById('httpLogsContentView').style.display = '';
-}
-
-function backToHttpLogsList() {
-  document.getElementById('httpLogsContentView').style.display = 'none';
-  document.getElementById('httpLogsListView').style.display = '';
-}
-
-async function openHttpLogsDialog() {
-  httpLogsFromDate.value = '';
-  httpLogsToDate.value = '';
-  allHttpLogs = [];
-  backToHttpLogsList();
-  applyHttpLogsFilter();
-  httpLogsDialog.showModal();
-}
-
-document.getElementById('httpLogsBtn').addEventListener('click', openHttpLogsDialog);
-document.getElementById('closeHttpLogsDialogBtn').addEventListener('click', () => httpLogsDialog.close());
-document.getElementById('refreshHttpLogsBtn').addEventListener('click', loadHttpLogsList);
-document.getElementById('clearHttpLogsFilterBtn').addEventListener('click', () => {
-  httpLogsFromDate.value = '';
-  httpLogsToDate.value = '';
-  allHttpLogs = [];
-  applyHttpLogsFilter();
-});
-httpLogsFromDate.addEventListener('change', loadHttpLogsList);
-httpLogsToDate.addEventListener('change', loadHttpLogsList);
-document.getElementById('backToHttpLogsListBtn').addEventListener('click', backToHttpLogsList);
-document.getElementById('downloadHttpLogBtn').addEventListener('click', () => {
-  const name = document.getElementById('httpLogsContentFileName').textContent;
-  downloadHttpLog(name);
-});
 
 // --- Login / logout ---------------------------------------------------------
 
