@@ -111,49 +111,6 @@ async function loadProfiles() {
   } else if (state.profiles.length > 0) {
     select.value = state.profiles[0].name;
   }
-
-  updateTestTokenButtonState();
-}
-
-function updateTestTokenButtonState() {
-  const profileName = document.getElementById('profileSelect').value;
-  const profile = state.profiles.find((p) => p.name === profileName);
-  const authType = (profile && profile.authType) || '';
-  document.getElementById('testTokenBtn').disabled = authType.trim().toLowerCase() !== 'oauth2clientcredentials';
-  document.getElementById('tokenTestResult').textContent = '';
-}
-
-async function testToken() {
-  const profileName = document.getElementById('profileSelect').value;
-  if (!profileName) return;
-
-  const btn = document.getElementById('testTokenBtn');
-  const resultSpan = document.getElementById('tokenTestResult');
-  btn.disabled = true;
-  resultSpan.className = 'muted';
-  resultSpan.textContent = 'Probando...';
-
-  try {
-    const res = await apiFetch('/api/test-token', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ profileName }),
-    });
-    const data = await res.json();
-
-    if (data.ok) {
-      resultSpan.className = 'status-Success';
-      resultSpan.textContent = `OK (${data.durationMs} ms) — token: ${data.tokenPreview}`;
-    } else {
-      resultSpan.className = 'status-Error';
-      resultSpan.textContent = `Error: ${data.message}`;
-    }
-  } catch (err) {
-    resultSpan.className = 'status-Error';
-    resultSpan.textContent = 'Error de red: ' + err.message;
-  } finally {
-    btn.disabled = false;
-  }
 }
 
 async function loadFlows() {
@@ -1640,8 +1597,6 @@ document.getElementById('certBrowserUpBtn').addEventListener('click', () => {
 
 document.getElementById('runBtn').addEventListener('click', runFlow);
 document.getElementById('saveLogBtn').addEventListener('click', saveLog);
-document.getElementById('testTokenBtn').addEventListener('click', testToken);
-document.getElementById('profileSelect').addEventListener('change', updateTestTokenButtonState);
 document.getElementById('csvFileInput').addEventListener('change', updateRunButtonState);
 
 // Drag & drop del CSV: asigna el archivo soltado al input nativo vía
