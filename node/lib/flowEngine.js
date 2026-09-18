@@ -634,7 +634,10 @@ async function invokeFlow(profileObj, flowObj, inputValues, logsDir, parametria,
 
   const log = [];
 
-  for (const step of flowObj.steps || []) {
+  // Ejecuta un step (uno de flowObj.steps, o uno de onFailureSteps) y devuelve
+  // su entry ya completo, con el mismo manejo de excepciones/log en los dos
+  // casos.
+  async function runStep(step) {
     const entry = {
       name: step.name,
       status: 'Running',
@@ -671,8 +674,27 @@ async function invokeFlow(profileObj, flowObj, inputValues, logsDir, parametria,
       entry.durationMs = Date.now() - stepStartedAt;
     }
 
+    return entry;
+  }
+
+  for (const step of flowObj.steps || []) {
+    const entry = await runStep(step);
     log.push(entry);
-    if (entry.status === 'Error') break;
+
+    if (entry.status === 'Error') {
+      // onFailureSteps (opcional, en el JSON del flow): contra-asientos u
+      // otra compensación a ejecutar SOLO cuando este step específico falla
+      // (ej. si no se puede dar de alta el Plazo Fijo, hay que revertir el
+      // débito en Cuenta Corriente y el crédito en Caja de Ahorro ya
+      // ejecutados en los steps anteriores). Se corren siempre los
+      // declarados, en el orden en que aparecen, sin volver a disparar
+      // onFailureSteps entre ellos — no hace falta una cadena de
+      // compensaciones para este caso.
+      for (const failureStep of step.onFailureSteps || []) {
+        log.push(await runStep(failureStep));
+      }
+      break;
+    }
   }
 
   return { log, runLogFileName };
