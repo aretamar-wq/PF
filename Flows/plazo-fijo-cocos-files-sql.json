@@ -28,7 +28,18 @@
       "headers": { "Accept": "application/json" },
       "bodyTemplate": "{\n  \"codigoSucursal\": \"1\",\n  \"codigoSistema\": \"{{cajaAhorroCodigoSistema}}\",\n  \"codigoSubSistema\": \"0\",\n  \"codigoMoneda\": \"0\",\n  \"codigoCuenta\": \"{{cuecodSistema5}}\",\n  \"NumeroOperacion\": \"1\",\n  \"Concepto\": \"17\",\n  \"SubConcepto\": \"3\",\n  \"Sistema\": \"{{cajaAhorroCodigoSistema}}\",\n  \"Transaccion\": \"{{cajaAhorroTransaccion}}\",\n  \"FechaMovimiento\": \"{{nowDate}}\",\n  \"FechayHoraMensaje\": \"{{nowDateTime}}\",\n  \"FechaNegocio\": \"{{nowDate}}\",\n  \"Importe\": \"{{importe}}\",\n  \"NumeroComprobante\": \"{{numeroComprobante}}\",\n  \"CodigoContrasiento\": \" \",\n  \"Libre\": \" \",\n  \"Renglon1\": \"Orig.: CUIL Nro.: 30708424478\",\n  \"Renglon2\": \"Nom.: Cocos Capital S.A.\",\n  \"Renglon3\": \"Ref: VAR\",\n  \"IdMensaje\": \"{{idMensajeGenerado}}\",\n  \"forzada\": \"0\"\n}",
       "extractVariables": {},
-      "expectedStatusCode": 200
+      "expectedStatusCode": 200,
+      "onFailureSteps": [
+        {
+          "name": "3. Contra-asiento: Débito en Cuenta Corriente (reversión por crédito en Caja de Ahorro fallido)",
+          "method": "POST",
+          "pathTemplate": "/api/CuentaDebitoCredito/EjecutarCuentaDebitoCredito",
+          "headers": { "Accept": "application/json" },
+          "bodyTemplate": "{\n  \"codigoSucursal\": \"1\",\n  \"codigoSistema\": \"{{ctaCteCodigoSistema}}\",\n  \"codigoSubSistema\": \"0\",\n  \"codigoMoneda\": \"0\",\n  \"codigoCuenta\": \"{{ctaCteCodigoCuenta}}\",\n  \"NumeroOperacion\": \"1\",\n  \"Concepto\": \"17\",\n  \"SubConcepto\": \"3\",\n  \"Sistema\": \"{{ctaCteCodigoSistema}}\",\n  \"Transaccion\": \"{{ctaCteTransaccion}}\",\n  \"FechaMovimiento\": \"{{nowDate}}\",\n  \"FechayHoraMensaje\": \"{{nowDateTime}}\",\n  \"FechaNegocio\": \"{{nowDate}}\",\n  \"Importe\": \"{{importe}}\",\n  \"NumeroComprobante\": \"{{numeroComprobante}}\",\n  \"CodigoContrasiento\": \"C\",\n  \"Libre\": \" \",\n  \"Renglon1\": \"Benef.: CUIL Nro.:{{cuit}}\",\n  \"Renglon2\": \"Nom.:{{apellidoNombre}}\",\n  \"Renglon3\": \"Ref.: VAR\",\n  \"IdMensaje\": \"{{idMensajeGenerado}}\",\n  \"forzada\": \"0\"\n}",
+          "extractVariables": {},
+          "expectedStatusCode": 200
+        }
+      ]
     },
     {
       "name": "3. Alta de Plazo Fijo",
