@@ -26,17 +26,30 @@
       <div class="profile-bar">
         <label for="profileSelect">Perfil:</label>
         <select id="profileSelect"></select>
-        <button id="newProfileBtn">Nuevo...</button>
-        <button id="editProfileBtn">Editar...</button>
-        <button id="deleteProfileBtn">Eliminar</button>
-        <button id="testTokenBtn" disabled>Probar token</button>
-        <span id="tokenTestResult" class="muted"></span>
-        <button id="parametriaBtn">Parametría...</button>
-        <button id="usersBtn" style="display: none;">Usuarios...</button>
-        <button id="outputFilesBtn">Archivos de salida...</button>
         <span class="spacer"></span>
         <span id="currentUserInfo" class="muted"></span>
-        <button id="logoutBtn">Cerrar sesión</button>
+
+        <div class="main-menu" id="mainMenu">
+          <button type="button" id="mainMenuBtn" aria-haspopup="true" aria-expanded="false">Menú ▾</button>
+          <ul id="mainMenuList" style="display: none;">
+            <li class="main-menu-group">
+              <span class="main-menu-group-label">Perfil</span>
+              <ul>
+                <li><button type="button" id="newProfileBtn">Nuevo...</button></li>
+                <li><button type="button" id="editProfileBtn">Editar...</button></li>
+                <li><button type="button" id="deleteProfileBtn">Eliminar</button></li>
+              </ul>
+            </li>
+            <li>
+              <button type="button" id="testTokenBtn" disabled>Probar token</button>
+              <span id="tokenTestResult" class="muted"></span>
+            </li>
+            <li><button type="button" id="parametriaBtn">Parametría</button></li>
+            <li><button type="button" id="usersBtn" style="display: none;">Usuarios</button></li>
+            <li><button type="button" id="outputFilesBtn">Archivos de salida</button></li>
+            <li><button type="button" id="logoutBtn">Cerrar sesión</button></li>
+          </ul>
+        </div>
       </div>
     </header>
 
@@ -96,63 +109,163 @@
           <tbody id="outputFilesTableBody"></tbody>
         </table>
       </section>
+
+      <section id="profileSection" style="display: none;">
+        <div class="section-head">
+          <h2 id="profileDialogTitle">Perfil de conexión</h2>
+          <button type="button" id="closeProfileSectionBtn">Volver a flows</button>
+        </div>
+        <form id="profileForm">
+          <label>Nombre <input name="name" required /></label>
+          <label>URL base <input name="baseUrl" required placeholder="https://host/api" /></label>
+          <label>URL base — Nova-Link (opcional)
+            <input name="novaBaseUrl" placeholder="https://nova-link.voii.com.ar:7443" />
+          </label>
+          <p class="muted">
+            Un mismo perfil puede pegarle a más de un servidor: "URL base" la usan
+            todos los flows salvo que digan lo contrario (ej. "Alta de Plazo Fijos
+            - File", contra IBS-Link), y "URL base — Nova-Link" es la que usa
+            "Transferencia DEBIN" (`baseUrlField` en el flow apunta a este campo).
+            Dejá este campo vacío si no vas a correr ese flow con este perfil.
+          </p>
+          <label>Tipo de autenticación
+            <select name="authType">
+              <option value="None">None</option>
+              <option value="ApiKey">ApiKey</option>
+              <option value="Bearer">Bearer</option>
+              <option value="OAuth2ClientCredentials">OAuth2ClientCredentials</option>
+            </select>
+          </label>
+          <fieldset>
+            <legend>ApiKey / Bearer</legend>
+            <label>Nombre del header (ApiKey) <input name="apiKeyHeaderName" placeholder="X-Api-Key" /></label>
+            <label>API Key / Token <input name="apiKeyOrToken" type="password" placeholder="(sin cambios si se deja vacío)" /></label>
+          </fieldset>
+          <fieldset>
+            <legend>OAuth2 client_credentials</legend>
+            <label>Token URL <input name="tokenUrl" placeholder="https://host/Token" /></label>
+            <label>Client ID <input name="clientId" /></label>
+            <label>Client Secret <input name="clientSecret" type="password" placeholder="(sin cambios si se deja vacío)" /></label>
+          </fieldset>
+          <fieldset>
+            <legend>Certificado cliente (TLS mutuo)</legend>
+            <p class="muted">
+              Solo si el servidor de este perfil exige TLS mutuo (ej. Nova-Link para
+              "Transferencia DEBIN"). Ruta a un archivo .pfx/.p12 ya presente en el
+              servidor (no se sube acá) — no un par certificado+clave en PEM: es el
+              único formato que también carga Windows PowerShell 5.1.
+            </p>
+            <label>Ruta al certificado (.pfx/.p12)
+              <input name="clientCertPfxPath" placeholder="/opt/apicore/certs/nova-link.pfx" />
+              <button type="button" id="browseCertPathBtn">Buscar...</button>
+            </label>
+            <label>Contraseña del .pfx <input name="clientCertPassphrase" type="password" placeholder="(sin cambios si se deja vacío; vacío si el .pfx no tiene contraseña)" /></label>
+          </fieldset>
+          <div class="dialog-actions">
+            <button type="button" id="cancelProfileBtn">Cancelar</button>
+            <button type="submit">Guardar</button>
+          </div>
+        </form>
+      </section>
+
+      <section id="parametriaSection" style="display: none;">
+        <div class="section-head">
+          <h2>Parametría</h2>
+          <button type="button" id="closeParametriaSectionBtn">Volver a flows</button>
+        </div>
+        <form id="parametriaForm">
+          <p class="muted">Valores fijos que usan los flows en vez de pedirlos a mano en cada ejecución.</p>
+          <fieldset>
+            <legend>Cuenta Corriente</legend>
+            <label>Código de cuenta <input name="cuentaCorriente.codigoCuenta" /></label>
+            <label>Código de sistema <input name="cuentaCorriente.codigoSistema" /></label>
+            <label>Transacción <input name="cuentaCorriente.transaccion" /></label>
+          </fieldset>
+          <fieldset>
+            <legend>Caja de Ahorro</legend>
+            <label>Código de sistema <input name="cajaDeAhorro.codigoSistema" /></label>
+            <label>Transacción <input name="cajaDeAhorro.transaccion" /></label>
+          </fieldset>
+          <fieldset>
+            <legend>Plazo Fijo</legend>
+            <label>Código de producto <input name="plazoFijo.codigoProducto" /></label>
+            <label>Código de movimiento <input name="plazoFijo.codigoMovimiento" /></label>
+          </fieldset>
+          <fieldset>
+            <legend>Conexión Sybase</legend>
+            <p class="muted">
+              Requiere un driver ODBC de Sybase/SAP ASE ya instalado en esta máquina — la app
+              no instala ni empaqueta ninguno. El connection string admite
+              <code>{{usuario}}</code> y <code>{{password}}</code> como placeholders.
+            </p>
+            <label>Connection string
+              <textarea name="sybase.connectionString" rows="2" placeholder="Driver={Adaptive Server Enterprise};NetworkAddress=Aconquija4.bv.voii.com.ar,5000;Database=Banksys;Uid={{usuario}};Pwd={{password}}"></textarea>
+            </label>
+            <label>Usuario <input name="sybase.usuario" /></label>
+            <label>Contraseña <input name="sybase.password" type="password" placeholder="(sin cambios si se deja vacío)" /></label>
+            <div class="dialog-actions">
+              <button type="button" id="testSybaseBtn">Probar conexión</button>
+              <span id="sybaseTestResult" class="muted"></span>
+            </div>
+          </fieldset>
+          <div class="dialog-actions">
+            <button type="button" id="cancelParametriaBtn">Cancelar</button>
+            <button type="submit">Guardar</button>
+          </div>
+        </form>
+      </section>
+
+      <section id="usersSection" style="display: none;">
+        <div class="section-head">
+          <h2>Usuarios y Active Directory</h2>
+          <button type="button" id="closeUsersSectionBtn">Volver a flows</button>
+        </div>
+        <p class="muted">Solo administradores pueden ver este panel. La contraseña siempre se valida contra Active Directory — acá no se guarda ninguna.</p>
+
+        <form id="adConfigForm">
+          <fieldset>
+            <legend>Conexión a Active Directory</legend>
+            <label>Servidor (host o IP del Domain Controller) <input name="server" placeholder="dc01.voii.com.ar" /></label>
+            <label>Puerto <input name="port" type="number" placeholder="389" /></label>
+            <label><input name="useSsl" type="checkbox" /> Usar LDAPS (SSL)</label>
+            <label>Dominio <input name="domain" placeholder="voii.com.ar" /></label>
+          </fieldset>
+          <div class="dialog-actions">
+            <span id="adConfigSaveResult" class="muted"></span>
+            <button type="submit">Guardar conexión AD</button>
+          </div>
+        </form>
+
+        <form id="userForm">
+          <fieldset>
+            <legend id="userFormLegend">Nuevo usuario</legend>
+            <label>Usuario (nombre de cuenta de AD) <input name="username" required /></label>
+            <label>Nombre para mostrar <input name="displayName" /></label>
+            <label>Rol
+              <select name="role">
+                <option value="admin">admin — administra usuarios y ejecuta flows</option>
+                <option value="operador" selected>operador — ejecuta flows</option>
+                <option value="lectura">lectura — solo consulta, no ejecuta nada</option>
+              </select>
+            </label>
+            <label><input name="enabled" type="checkbox" checked /> Habilitado</label>
+          </fieldset>
+          <div class="dialog-actions">
+            <span id="userFormResult" class="muted"></span>
+            <button type="button" id="cancelUserEditBtn" style="display: none;">Cancelar edición</button>
+            <button type="submit">Guardar usuario</button>
+          </div>
+        </form>
+
+        <table id="usersTable">
+          <thead>
+            <tr><th>Usuario</th><th>Nombre</th><th>Rol</th><th>Habilitado</th><th>Acciones</th></tr>
+          </thead>
+          <tbody id="usersTableBody"></tbody>
+        </table>
+      </section>
     </main>
   </div>
-
-  <dialog id="profileDialog">
-    <form id="profileForm">
-      <h2 id="profileDialogTitle">Perfil de conexión</h2>
-      <label>Nombre <input name="name" required /></label>
-      <label>URL base <input name="baseUrl" required placeholder="https://host/api" /></label>
-      <label>URL base — Nova-Link (opcional)
-        <input name="novaBaseUrl" placeholder="https://nova-link.voii.com.ar:7443" />
-      </label>
-      <p class="muted">
-        Un mismo perfil puede pegarle a más de un servidor: "URL base" la usan
-        todos los flows salvo que digan lo contrario (ej. "Alta de Plazo Fijos
-        - File", contra IBS-Link), y "URL base — Nova-Link" es la que usa
-        "Transferencia DEBIN" (`baseUrlField` en el flow apunta a este campo).
-        Dejá este campo vacío si no vas a correr ese flow con este perfil.
-      </p>
-      <label>Tipo de autenticación
-        <select name="authType">
-          <option value="None">None</option>
-          <option value="ApiKey">ApiKey</option>
-          <option value="Bearer">Bearer</option>
-          <option value="OAuth2ClientCredentials">OAuth2ClientCredentials</option>
-        </select>
-      </label>
-      <fieldset>
-        <legend>ApiKey / Bearer</legend>
-        <label>Nombre del header (ApiKey) <input name="apiKeyHeaderName" placeholder="X-Api-Key" /></label>
-        <label>API Key / Token <input name="apiKeyOrToken" type="password" placeholder="(sin cambios si se deja vacío)" /></label>
-      </fieldset>
-      <fieldset>
-        <legend>OAuth2 client_credentials</legend>
-        <label>Token URL <input name="tokenUrl" placeholder="https://host/Token" /></label>
-        <label>Client ID <input name="clientId" /></label>
-        <label>Client Secret <input name="clientSecret" type="password" placeholder="(sin cambios si se deja vacío)" /></label>
-      </fieldset>
-      <fieldset>
-        <legend>Certificado cliente (TLS mutuo)</legend>
-        <p class="muted">
-          Solo si el servidor de este perfil exige TLS mutuo (ej. Nova-Link para
-          "Transferencia DEBIN"). Ruta a un archivo .pfx/.p12 ya presente en el
-          servidor (no se sube acá) — no un par certificado+clave en PEM: es el
-          único formato que también carga Windows PowerShell 5.1.
-        </p>
-        <label>Ruta al certificado (.pfx/.p12)
-          <input name="clientCertPfxPath" placeholder="/opt/apicore/certs/nova-link.pfx" />
-          <button type="button" id="browseCertPathBtn">Buscar...</button>
-        </label>
-        <label>Contraseña del .pfx <input name="clientCertPassphrase" type="password" placeholder="(sin cambios si se deja vacío; vacío si el .pfx no tiene contraseña)" /></label>
-      </fieldset>
-      <div class="dialog-actions">
-        <button type="button" id="cancelProfileBtn">Cancelar</button>
-        <button type="submit">Guardar</button>
-      </div>
-    </form>
-  </dialog>
 
   <dialog id="certBrowserDialog">
     <h2>Buscar archivo</h2>
@@ -169,101 +282,6 @@
     <p id="certBrowserEmptyHint" class="muted" style="display: none;">Esta carpeta está vacía.</p>
     <div class="dialog-actions">
       <button type="button" id="cancelCertBrowserBtn">Cancelar</button>
-    </div>
-  </dialog>
-
-  <dialog id="parametriaDialog">
-    <form id="parametriaForm">
-      <h2>Parametría</h2>
-      <p class="muted">Valores fijos que usan los flows en vez de pedirlos a mano en cada ejecución.</p>
-      <fieldset>
-        <legend>Cuenta Corriente</legend>
-        <label>Código de cuenta <input name="cuentaCorriente.codigoCuenta" /></label>
-        <label>Código de sistema <input name="cuentaCorriente.codigoSistema" /></label>
-        <label>Transacción <input name="cuentaCorriente.transaccion" /></label>
-      </fieldset>
-      <fieldset>
-        <legend>Caja de Ahorro</legend>
-        <label>Código de sistema <input name="cajaDeAhorro.codigoSistema" /></label>
-        <label>Transacción <input name="cajaDeAhorro.transaccion" /></label>
-      </fieldset>
-      <fieldset>
-        <legend>Plazo Fijo</legend>
-        <label>Código de producto <input name="plazoFijo.codigoProducto" /></label>
-        <label>Código de movimiento <input name="plazoFijo.codigoMovimiento" /></label>
-      </fieldset>
-      <fieldset>
-        <legend>Conexión Sybase</legend>
-        <p class="muted">
-          Requiere un driver ODBC de Sybase/SAP ASE ya instalado en esta máquina — la app
-          no instala ni empaqueta ninguno. El connection string admite
-          <code>{{usuario}}</code> y <code>{{password}}</code> como placeholders.
-        </p>
-        <label>Connection string
-          <textarea name="sybase.connectionString" rows="2" placeholder="Driver={Adaptive Server Enterprise};NetworkAddress=Aconquija4.bv.voii.com.ar,5000;Database=Banksys;Uid={{usuario}};Pwd={{password}}"></textarea>
-        </label>
-        <label>Usuario <input name="sybase.usuario" /></label>
-        <label>Contraseña <input name="sybase.password" type="password" placeholder="(sin cambios si se deja vacío)" /></label>
-        <div class="dialog-actions">
-          <button type="button" id="testSybaseBtn">Probar conexión</button>
-          <span id="sybaseTestResult" class="muted"></span>
-        </div>
-      </fieldset>
-      <div class="dialog-actions">
-        <button type="button" id="cancelParametriaBtn">Cancelar</button>
-        <button type="submit">Guardar</button>
-      </div>
-    </form>
-  </dialog>
-
-  <dialog id="usersDialog">
-    <h2>Usuarios y Active Directory</h2>
-    <p class="muted">Solo administradores pueden ver este panel. La contraseña siempre se valida contra Active Directory — acá no se guarda ninguna.</p>
-
-    <form id="adConfigForm">
-      <fieldset>
-        <legend>Conexión a Active Directory</legend>
-        <label>Servidor (host o IP del Domain Controller) <input name="server" placeholder="dc01.voii.com.ar" /></label>
-        <label>Puerto <input name="port" type="number" placeholder="389" /></label>
-        <label><input name="useSsl" type="checkbox" /> Usar LDAPS (SSL)</label>
-        <label>Dominio <input name="domain" placeholder="voii.com.ar" /></label>
-      </fieldset>
-      <div class="dialog-actions">
-        <span id="adConfigSaveResult" class="muted"></span>
-        <button type="submit">Guardar conexión AD</button>
-      </div>
-    </form>
-
-    <form id="userForm">
-      <fieldset>
-        <legend id="userFormLegend">Nuevo usuario</legend>
-        <label>Usuario (nombre de cuenta de AD) <input name="username" required /></label>
-        <label>Nombre para mostrar <input name="displayName" /></label>
-        <label>Rol
-          <select name="role">
-            <option value="admin">admin — administra usuarios y ejecuta flows</option>
-            <option value="operador" selected>operador — ejecuta flows</option>
-            <option value="lectura">lectura — solo consulta, no ejecuta nada</option>
-          </select>
-        </label>
-        <label><input name="enabled" type="checkbox" checked /> Habilitado</label>
-      </fieldset>
-      <div class="dialog-actions">
-        <span id="userFormResult" class="muted"></span>
-        <button type="button" id="cancelUserEditBtn" style="display: none;">Cancelar edición</button>
-        <button type="submit">Guardar usuario</button>
-      </div>
-    </form>
-
-    <table id="usersTable">
-      <thead>
-        <tr><th>Usuario</th><th>Nombre</th><th>Rol</th><th>Habilitado</th><th>Acciones</th></tr>
-      </thead>
-      <tbody id="usersTableBody"></tbody>
-    </table>
-
-    <div class="dialog-actions">
-      <button type="button" id="closeUsersDialogBtn">Cerrar</button>
     </div>
   </dialog>
 

@@ -179,11 +179,22 @@ function isCsvFlow(flow) {
   return !!flow && flow.inputMode === 'csv';
 }
 
+// Todas las secciones que ocupan el área principal (a la derecha del listado
+// de flows) se muestran de una a la vez: mostrar una implica ocultar el
+// resto. Ningún panel (perfil, parametría, usuarios, archivos de salida) se
+// abre como <dialog> flotante, todos reemplazan el contenido de esta área.
+const MAIN_SECTION_IDS = ['flowDetail', 'outputFilesSection', 'profileSection', 'parametriaSection', 'usersSection'];
+
+function showMainSection(id) {
+  for (const sectionId of MAIN_SECTION_IDS) {
+    document.getElementById(sectionId).style.display = sectionId === id ? '' : 'none';
+  }
+}
+
 function selectFlow(name) {
-  // Si "Archivos de salida" está mostrado en vez de flowDetail (ver
-  // openOutputFilesSection), elegir un flow de la lista tiene que volver a
-  // la vista normal.
-  closeOutputFilesSection();
+  // Si algún otro panel está mostrado en vez de flowDetail, elegir un flow de
+  // la lista tiene que volver a la vista normal.
+  showMainSection('flowDetail');
 
   state.selectedFlow = state.flows.find((f) => f.name === name) || null;
 
@@ -1508,10 +1519,9 @@ async function postRunSummary(logFileName, flowName, okFileName, errorFileName, 
   }
 }
 
-const profileDialog = document.getElementById('profileDialog');
 const profileForm = document.getElementById('profileForm');
 
-function openProfileDialog(existing) {
+function openProfileSection(existing) {
   profileForm.reset();
   document.getElementById('profileDialogTitle').textContent = existing ? 'Editar perfil' : 'Nuevo perfil';
 
@@ -1530,17 +1540,18 @@ function openProfileDialog(existing) {
     profileForm.elements.authType.value = 'Bearer';
   }
 
-  profileDialog.showModal();
+  showMainSection('profileSection');
 }
 
-document.getElementById('newProfileBtn').addEventListener('click', () => openProfileDialog(null));
+document.getElementById('newProfileBtn').addEventListener('click', () => openProfileSection(null));
 
 document.getElementById('editProfileBtn').addEventListener('click', () => {
   const current = state.profiles.find((p) => p.name === document.getElementById('profileSelect').value);
-  if (current) openProfileDialog(current);
+  if (current) openProfileSection(current);
 });
 
-document.getElementById('cancelProfileBtn').addEventListener('click', () => profileDialog.close());
+document.getElementById('cancelProfileBtn').addEventListener('click', () => showMainSection('flowDetail'));
+document.getElementById('closeProfileSectionBtn').addEventListener('click', () => showMainSection('flowDetail'));
 
 document.getElementById('deleteProfileBtn').addEventListener('click', async () => {
   const name = document.getElementById('profileSelect').value;
@@ -1564,7 +1575,7 @@ profileForm.addEventListener('submit', async (event) => {
     body: JSON.stringify(payload),
   });
 
-  profileDialog.close();
+  showMainSection('flowDetail');
   await loadProfiles();
 });
 
@@ -1676,10 +1687,9 @@ csvDropZone.addEventListener('drop', (event) => {
   csvFileInput.dispatchEvent(new Event('change'));
 });
 
-const parametriaDialog = document.getElementById('parametriaDialog');
 const parametriaForm = document.getElementById('parametriaForm');
 
-async function openParametriaDialog() {
+async function openParametriaSection() {
   parametriaForm.reset();
 
   const res = await apiFetch('/api/parametria');
@@ -1692,11 +1702,12 @@ async function openParametriaDialog() {
     }
   }
 
-  parametriaDialog.showModal();
+  showMainSection('parametriaSection');
 }
 
-document.getElementById('parametriaBtn').addEventListener('click', openParametriaDialog);
-document.getElementById('cancelParametriaBtn').addEventListener('click', () => parametriaDialog.close());
+document.getElementById('parametriaBtn').addEventListener('click', openParametriaSection);
+document.getElementById('cancelParametriaBtn').addEventListener('click', () => showMainSection('flowDetail'));
+document.getElementById('closeParametriaSectionBtn').addEventListener('click', () => showMainSection('flowDetail'));
 
 async function testSybaseConnection() {
   const btn = document.getElementById('testSybaseBtn');
@@ -1750,7 +1761,7 @@ parametriaForm.addEventListener('submit', async (event) => {
     body: JSON.stringify(payload),
   });
 
-  parametriaDialog.close();
+  showMainSection('flowDetail');
 });
 
 // --- Administración de usuarios y configuración de Active Directory --------
@@ -1758,7 +1769,6 @@ parametriaForm.addEventListener('submit', async (event) => {
 // loadMe()); el servidor igual vuelve a chequear el rol en cada request de
 // /api/users y /api/security-config, así que ocultar el botón acá es solo UX.
 
-const usersDialog = document.getElementById('usersDialog');
 const adConfigForm = document.getElementById('adConfigForm');
 const userForm = document.getElementById('userForm');
 let editingUsername = null; // null = alta de un usuario nuevo; si no, username que se está editando
@@ -1834,16 +1844,16 @@ async function deleteUser(username) {
   await loadUsersList();
 }
 
-async function openUsersDialog() {
+async function openUsersSection() {
   resetUserForm();
   document.getElementById('adConfigSaveResult').textContent = '';
   await loadAdConfig();
   await loadUsersList();
-  usersDialog.showModal();
+  showMainSection('usersSection');
 }
 
-document.getElementById('usersBtn').addEventListener('click', openUsersDialog);
-document.getElementById('closeUsersDialogBtn').addEventListener('click', () => usersDialog.close());
+document.getElementById('usersBtn').addEventListener('click', openUsersSection);
+document.getElementById('closeUsersSectionBtn').addEventListener('click', () => showMainSection('flowDetail'));
 document.getElementById('cancelUserEditBtn').addEventListener('click', resetUserForm);
 
 adConfigForm.addEventListener('submit', async (event) => {
@@ -1997,26 +2007,16 @@ async function downloadOutputFile(name) {
   downloadTextFile(data.name, data.content, 'text/csv');
 }
 
-// A diferencia de los demás paneles (perfiles, usuarios, parametría), este
-// no se abre como <dialog> flotante — reemplaza el contenido de la ventana
-// actual (oculta flowDetail, muestra esta sección en el mismo lugar) y
-// "Volver a flows" hace el camino inverso.
 async function openOutputFilesSection() {
   outputFilesFromDate.value = '';
   outputFilesToDate.value = '';
   allOutputFiles = [];
   applyOutputFilesFilter();
-  document.getElementById('flowDetail').style.display = 'none';
-  outputFilesSection.style.display = '';
-}
-
-function closeOutputFilesSection() {
-  outputFilesSection.style.display = 'none';
-  document.getElementById('flowDetail').style.display = '';
+  showMainSection('outputFilesSection');
 }
 
 document.getElementById('outputFilesBtn').addEventListener('click', openOutputFilesSection);
-document.getElementById('closeOutputFilesBtn').addEventListener('click', closeOutputFilesSection);
+document.getElementById('closeOutputFilesBtn').addEventListener('click', () => showMainSection('flowDetail'));
 document.getElementById('refreshOutputFilesBtn').addEventListener('click', loadOutputFilesList);
 document.getElementById('clearOutputFilesFilterBtn').addEventListener('click', () => {
   outputFilesFromDate.value = '';
@@ -2073,6 +2073,37 @@ loginForm.addEventListener('submit', async (event) => {
 });
 
 document.getElementById('logoutBtn').addEventListener('click', logout);
+
+// --- Menú desplegable del header --------------------------------------------
+// Se abre con un click en "Menú ▾" y se cierra con un click afuera o con
+// Escape. No se cierra solo al hacer click en un item: algunos (ej. "Probar
+// token") necesitan que el usuario siga viendo el resultado al lado del botón.
+const mainMenuBtn = document.getElementById('mainMenuBtn');
+const mainMenuList = document.getElementById('mainMenuList');
+
+function closeMainMenu() {
+  mainMenuList.style.display = 'none';
+  mainMenuBtn.setAttribute('aria-expanded', 'false');
+}
+
+function toggleMainMenu() {
+  const isOpen = mainMenuList.style.display !== 'none';
+  mainMenuList.style.display = isOpen ? 'none' : '';
+  mainMenuBtn.setAttribute('aria-expanded', String(!isOpen));
+}
+
+mainMenuBtn.addEventListener('click', (event) => {
+  event.stopPropagation();
+  toggleMainMenu();
+});
+
+document.addEventListener('click', (event) => {
+  if (!document.getElementById('mainMenu').contains(event.target)) closeMainMenu();
+});
+
+document.addEventListener('keydown', (event) => {
+  if (event.key === 'Escape') closeMainMenu();
+});
 
 async function startApp() {
   await loadMe();

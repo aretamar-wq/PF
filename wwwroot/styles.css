@@ -44,6 +44,53 @@ header h1 { margin: 0 0 10px; font-size: 1.25rem; }
 .profile-bar .spacer { flex: 1; }
 .profile-bar .muted { color: rgba(255, 255, 255, 0.7); font-style: normal; }
 
+.main-menu { position: relative; }
+#mainMenuBtn {
+  background: var(--navy-dark);
+  color: #fff;
+  border-color: rgba(255, 255, 255, 0.25);
+}
+#mainMenuBtn:hover { background: var(--accent); border-color: var(--accent); }
+#mainMenuList {
+  position: absolute;
+  top: calc(100% + 6px);
+  right: 0;
+  z-index: 10;
+  list-style: none;
+  margin: 0;
+  padding: 6px;
+  min-width: 200px;
+  background: var(--surface);
+  color: var(--fg);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  box-shadow: 0 12px 32px rgba(7, 27, 55, 0.25);
+}
+#mainMenuList li { list-style: none; }
+#mainMenuList > li > button, #mainMenuList ul > li > button {
+  display: block;
+  width: 100%;
+  text-align: left;
+  border: none;
+  background: none;
+  padding: 8px 10px;
+  border-radius: 6px;
+}
+#mainMenuList > li > button:hover, #mainMenuList ul > li > button:hover { background: var(--accent-tint); }
+#mainMenuList li:has(#tokenTestResult) { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
+.main-menu-group { padding: 0; }
+.main-menu-group-label {
+  display: block;
+  padding: 8px 10px 2px;
+  font-size: 0.75rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--muted-fg);
+}
+.main-menu-group ul { padding: 0; margin: 0; }
+.main-menu-group ul > li > button { padding-left: 20px; }
+
 #loginScreen {
   min-height: 100vh;
   display: flex;
@@ -211,20 +258,19 @@ fieldset { border: 1px solid var(--border); border-radius: 10px; padding: 10px 1
 fieldset legend { color: var(--navy); font-weight: 600; padding: 0 6px; }
 .dialog-actions { display: flex; justify-content: flex-end; gap: 8px; margin-top: 8px; align-items: center; }
 
-/* "Archivos de salida" no es un <dialog> flotante: ocupa el mismo lugar que
-   flowDetail dentro de <main> (ver openOutputFilesSection/
-   closeOutputFilesSection en app.js) — mismo criterio de layout. */
-#outputFilesSection { flex: 1; min-width: 0; }
-#outputFilesSection .section-head {
+/* Ningún panel del menú (perfil, parametría, usuarios, archivos de salida)
+   es un <dialog> flotante: todos ocupan el mismo lugar que flowDetail dentro
+   de <main> (ver showMainSection en app.js) — mismo criterio de layout. */
+#outputFilesSection, #profileSection, #parametriaSection, #usersSection { flex: 1; min-width: 0; }
+.section-head {
   display: flex;
   justify-content: space-between;
   align-items: center;
   gap: 12px;
   margin-bottom: 4px;
 }
-#outputFilesSection h2 { color: var(--navy); margin: 0; }
+.section-head h2 { color: var(--navy); margin: 0; }
 
-#usersDialog { width: 560px; max-width: 90vw; }
 #adConfigForm, #userForm { display: flex; flex-direction: column; gap: 10px; margin-bottom: 12px; }
 #adConfigForm label, #userForm label { display: flex; flex-direction: column; gap: 4px; font-size: 0.9rem; }
 #adConfigForm input, #userForm input, #userForm select {
