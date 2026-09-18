@@ -211,9 +211,18 @@ fieldset { border: 1px solid var(--border); border-radius: 10px; padding: 10px 1
 fieldset legend { color: var(--navy); font-weight: 600; padding: 0 6px; }
 .dialog-actions { display: flex; justify-content: flex-end; gap: 8px; margin-top: 8px; align-items: center; }
 
-/* Más ancho que el default (420px): la tabla de corridas tiene más columnas
-   y 3 botones de acción por fila. */
-#outputFilesDialog { width: 640px; max-width: 90vw; }
+/* "Archivos de salida" no es un <dialog> flotante: ocupa el mismo lugar que
+   flowDetail dentro de <main> (ver openOutputFilesSection/
+   closeOutputFilesSection en app.js) — mismo criterio de layout. */
+#outputFilesSection { flex: 1; min-width: 0; }
+#outputFilesSection .section-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 12px;
+  margin-bottom: 4px;
+}
+#outputFilesSection h2 { color: var(--navy); margin: 0; }
 
 #usersDialog { width: 560px; max-width: 90vw; }
 #adConfigForm, #userForm { display: flex; flex-direction: column; gap: 10px; margin-bottom: 12px; }
