@@ -468,25 +468,36 @@ async function querySybaseRows(parametriaSybase, queryText) {
 
 async function invokeHttpStep(step, flowObj, variables, profileObj, logsDir, runLogFileName, entry, stepStartedAt, username) {
   const stepPath = expandTemplate(step.pathTemplate, variables);
-  // Un flow puede pedir la URL base de otro campo del perfil en vez de
-  // "baseUrl" (ej. "Transferencia DEBIN" usa "novaBaseUrl" — un mismo
-  // perfil puede tener varias URLs, una por servidor, en vez de necesitar
-  // un perfil por servidor). Sin baseUrlField, es el comportamiento de
-  // siempre.
-  const baseUrlFieldName = flowObj.baseUrlField || 'baseUrl';
-  const baseUrl = String(profileObj[baseUrlFieldName] || '').replace(/\/+$/, '');
-  if (!baseUrl) {
-    // Sin esto, fetch tira "Failed to parse URL from /api/..." (porque la
-    // URL queda relativa, sin protocolo ni host) — un mensaje que no dice
-    // nada sobre la causa real: el perfil no tiene declarado el campo de
-    // URL base que este flow necesita (baseUrl, o el que diga baseUrlField,
-    // ej. novaBaseUrl para los flows de Transferencia DEBIN).
-    throw new Error(
-      `El perfil '${profileObj.name}' no tiene configurado el campo '${baseUrlFieldName}' — no se puede armar la URL para este flow.`
-    );
+  let url;
+  if (/^https?:\/\//i.test(stepPath)) {
+    // pathTemplate puede ser una URL absoluta (http:// o https://) en vez de
+    // un path relativo al perfil — para un step que llama a un servicio fijo
+    // que no depende del perfil elegido (ej. ConsultaCBU de la billetera,
+    // que siempre es el mismo host sin importar qué perfil de Nova-Link/
+    // IBS-Link esté seleccionado). Sin esto, no había forma de pegarle a un
+    // host distinto del que declara el perfil (baseUrl / baseUrlField).
+    url = stepPath;
+  } else {
+    // Un flow puede pedir la URL base de otro campo del perfil en vez de
+    // "baseUrl" (ej. "Transferencia DEBIN" usa "novaBaseUrl" — un mismo
+    // perfil puede tener varias URLs, una por servidor, en vez de necesitar
+    // un perfil por servidor). Sin baseUrlField, es el comportamiento de
+    // siempre.
+    const baseUrlFieldName = flowObj.baseUrlField || 'baseUrl';
+    const baseUrl = String(profileObj[baseUrlFieldName] || '').replace(/\/+$/, '');
+    if (!baseUrl) {
+      // Sin esto, fetch tira "Failed to parse URL from /api/..." (porque la
+      // URL queda relativa, sin protocolo ni host) — un mensaje que no dice
+      // nada sobre la causa real: el perfil no tiene declarado el campo de
+      // URL base que este flow necesita (baseUrl, o el que diga baseUrlField,
+      // ej. novaBaseUrl para los flows de Transferencia DEBIN).
+      throw new Error(
+        `El perfil '${profileObj.name}' no tiene configurado el campo '${baseUrlFieldName}' — no se puede armar la URL para este flow.`
+      );
+    }
+    const relativePath = String(stepPath || '').replace(/^\/+/, '');
+    url = `${baseUrl}/${relativePath}`;
   }
-  const relativePath = String(stepPath || '').replace(/^\/+/, '');
-  const url = `${baseUrl}/${relativePath}`;
 
   const headers = {};
   // Un flow puede pedir no mandar el header de autenticación del perfil
@@ -563,8 +574,12 @@ async function invokeHttpStep(step, flowObj, variables, profileObj, logsDir, run
   // useClientCert: solo cuando el flow declaró authOverride "None" (hoy,
   // únicamente los flows de Transferencia DEBIN contra Nova-Link) — así un
   // perfil con clientCertPfxPath mal configurado no rompe otros flows que ni
-  // siquiera tocan Nova-Link (ej. Alta de Plazo Fijos - File).
-  const response = await doFetch(url, fetchOptions, profileObj, flowObj.authOverride === 'None');
+  // siquiera tocan Nova-Link (ej. Alta de Plazo Fijos - File). Un step
+  // puntual puede pisarlo con "useClientCert": false (ej. ConsultaCBU de la
+  // billetera, un host http:// aparte de Nova-Link que no espera ni acepta
+  // el certificado cliente del perfil).
+  const useClientCert = flowObj.authOverride === 'None' && step.useClientCert !== false;
+  const response = await doFetch(url, fetchOptions, profileObj, useClientCert);
   const responseBody = await response.text();
 
   const responseLogText = [
@@ -600,6 +615,24 @@ async function invokeHttpStep(step, flowObj, variables, profileObj, logsDir, run
       }
     } catch (err) {
       // La respuesta no era JSON parseable; se ignora la extracción de variables.
+    }
+  }
+
+  // requireVariablesEqual (opcional, array de pares [nombreA, nombreB]): el
+  // step solo cuenta como exitoso si cada par de variables terminó con el
+  // mismo valor (ej. ConsultaCBU de "Transferencia DEBIN - File": el titular
+  // que devuelve la consulta tiene que ser el mismo CUIT destino del
+  // archivo, antes de animarse a hacer la transferencia). Vacío de
+  // cualquiera de los dos lados también cuenta como no-match.
+  if (step.requireVariablesEqual) {
+    for (const [nameA, nameB] of step.requireVariablesEqual) {
+      const valueA = variables[nameA] !== undefined && variables[nameA] !== null ? String(variables[nameA]).trim() : '';
+      const valueB = variables[nameB] !== undefined && variables[nameB] !== null ? String(variables[nameB]).trim() : '';
+      if (!valueA || !valueB || valueA !== valueB) {
+        entry.status = 'Error';
+        entry.errorMessage = `El valor de '${nameA}' ('${valueA || '(vacío)'}') no coincide con '${nameB}' ('${valueB || '(vacío)'}').`;
+        return;
+      }
     }
   }
 
