@@ -1,6 +1,7 @@
 {
   "name": "Alta de Plazo Fijos - File",
   "description": "",
+  "logAlias": "Alta-PF",
   "inputMode": "csv",
   "inputs": [
     { "variableName": "cuit", "label": "CUIT" },
