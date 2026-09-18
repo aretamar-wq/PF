@@ -575,7 +575,7 @@ async function checkDuplicateOperations(rows) {
 // que el step "Alta de Plazo Fijo" lo trate igual que un valor no
 // encontrado vía omitIfNull). Un cuit sin ninguna cuenta simplemente no
 // aparece en el Map.
-async function fetchAccountsByCuit(rows) {
+async function fetchAccountsByCuit(rows, runLogFileName) {
   const cuits = new Set();
   for (const row of rows) {
     const cuit = (row[0] || '').trim();
@@ -589,7 +589,7 @@ async function fetchAccountsByCuit(rows) {
   const accountsByCuit = new Map();
   if (cuits.size === 0) return accountsByCuit;
 
-  const entries = await runFlowByName('Recupera cuentas (SQL)', { nrodoc: Array.from(cuits).join(',') });
+  const entries = await runFlowByName('Recupera cuentas (SQL)', { nrodoc: Array.from(cuits).join(',') }, runLogFileName);
   const lastEntry = entries[entries.length - 1];
   if (!lastEntry || lastEntry.status !== 'Success' || !lastEntry.responseSummary) {
     throw new Error('No se pudo buscar las cuentas en Sybase para los CUIT del archivo: ' + (lastEntry ? lastEntry.errorMessage : 'sin respuesta'));
@@ -828,6 +828,21 @@ async function runFlowFromCsv() {
       }
     }
 
+    // Nombre de log compartido por TODA la corrida de este archivo — incluida
+    // "Recupera cuentas (SQL)" de más abajo, que si no quedaría en su propio
+    // log separado (con su propio nombre, "recupera-cuentas-sql...") en vez
+    // de en el mismo log que el resto de "Alta de Plazo Fijos - File". Se
+    // genera client-side (mismo formato que generateRunId en
+    // node/lib/flowEngine.js) porque hace falta ANTES de la primera llamada a
+    // /api/run — el servidor lo valida y lo reusa tal cual en vez de generar
+    // uno nuevo (ver runFlowByName/runOnce).
+    let batchLogFileName = `http/${generateFallbackStamp()}-${flowLogNameFallback(flow)}.log`;
+    // "Consulta DEBIN (solo)" (más abajo) es un flow/log aparte del de
+    // arriba, con su propio runId para nombrar dbnconsulta-....csv —
+    // declarado acá (no dentro de su propio if) para que siga en scope
+    // cuando se llama a saveOutputFiles/postRunSummary al final de la función.
+    let consultaLogFileName = null;
+
     // Para "Alta de Plazo Fijos - File": UNA sola consulta a Sybase con
     // todos los CUIT del archivo, antes de procesar ninguna fila — en vez
     // de una consulta por fila (o por CUIT repetido). Si esto falla, se
@@ -837,7 +852,7 @@ async function runFlowFromCsv() {
     if (isPlazoFijoCocosFilesSqlFlow(flow)) {
       progressEl.textContent = 'Buscando cuentas en Sybase para todos los CUIT del archivo...';
       try {
-        accountsByCuit = await fetchAccountsByCuit(rows);
+        accountsByCuit = await fetchAccountsByCuit(rows, batchLogFileName);
       } catch (err) {
         alert('Error buscando las cuentas en Sybase: ' + err.message);
         return;
@@ -845,13 +860,6 @@ async function runFlowFromCsv() {
     }
 
     const startedAt = Date.now();
-
-    // Nombre de log compartido por TODAS las filas de este archivo (ver
-    // runFlowByName/runOnce) — arranca vacío, se completa con el que
-    // devuelve el servidor en la primera fila y de ahí en más se reusa, así
-    // las N filas de un mismo archivo (ej. 5 plazos fijos) quedan en un
-    // solo log de logs/http/ en vez de uno por fila.
-    let batchLogFileName = null;
 
     for (let i = 0; i < rows.length; i++) {
       const rowNumber = i + 1;
@@ -1227,13 +1235,6 @@ async function runFlowFromCsv() {
         }
       }
 
-      // Nombre de log compartido por TODAS las consultas de este archivo —
-      // "Consulta DEBIN (solo)" es un flow distinto del de arriba, así que
-      // usa su propio archivo (no el de batchLogFileName), pero también
-      // único para todo el archivo en vez de uno por transferencia
-      // consultada.
-      let consultaLogFileName = null;
-
       for (let i = 0; i < toQuery.length; i++) {
         const detailRow = toQuery[i];
         progressEl.textContent = `Consultando estado de transferencias (${i + 1} de ${toQuery.length})...`;
@@ -1268,9 +1269,27 @@ async function runFlowFromCsv() {
       }
     }
 
-    const savedFiles = await saveOutputFiles(flow);
+    const saved = await saveOutputFiles(flow, batchLogFileName, consultaLogFileName);
+    const savedFiles = [saved.batchOkFileName, saved.batchErrorFileName, saved.consultaOkFileName].filter(Boolean);
     if (savedFiles.length > 0) {
       doneText += ` Guardado en files/: ${savedFiles.join(', ')}.`;
+    }
+
+    // "Archivos de salida" arma sus filas leyendo esto de logs/http/ (ver
+    // handleOutputFilesGet en server.js) — sin este resumen, la corrida
+    // sigue apareciendo en la lista (por el log), solo que sin flow/usuario/
+    // pasos. pasosOk/pasosError son por FILA del CSV, no por step HTTP
+    // individual (más útil de leer que el conteo de steps que ya guarda
+    // security.log).
+    const pasosOk =
+      state.pfDetailRows.filter((r) => r.realizado === 's').length +
+      state.debinDetailRows.filter((r) => r.realizado === 's').length;
+    const pasosError = state.errorRows.length;
+    if (batchLogFileName) {
+      await postRunSummary(batchLogFileName, flow.name, saved.batchOkFileName, saved.batchErrorFileName, pasosOk, pasosError);
+    }
+    if (consultaLogFileName && saved.consultaOkFileName) {
+      await postRunSummary(consultaLogFileName, DEBIN_CONSULTAR_FLOW_NAME, saved.consultaOkFileName, null, state.debinConsultaRows.length, 0);
     }
     progressEl.textContent = doneText;
   } catch (err) {
@@ -1320,75 +1339,112 @@ function csvEscape(value) {
   return str;
 }
 
-// yyyyMMddHHmmss (sin milisegundos, a diferencia de generateIdMensaje) —
-// nombre de archivo, no necesita esa resolución.
-function generateFileTimestamp() {
-  const now = new Date();
-  const pad = (n) => String(n).padStart(2, '0');
+// Mismo algoritmo de slug que flowNameSlug en node/lib/flowEngine.js — tiene
+// que dar exactamente el mismo resultado, si no un log y sus archivos de
+// salida terminan con nombres que no matchean.
+function flowNameSlugFallback(name) {
   return (
-    now.getFullYear().toString() +
-    pad(now.getMonth() + 1) +
+    String(name || 'flow')
+      .toLowerCase()
+      .replace(/[^a-z0-9]+/g, '-')
+      .replace(/^-+|-+$/g, '') || 'flow'
+  );
+}
+
+// Mismo criterio que flowLogName en node/lib/flowEngine.js: si el flow trae
+// logAlias (ver /api/flows), se usa tal cual (sanitizado, sin forzar
+// minúscula) en vez del slug automático del name completo — ver "Alta-PF"
+// en Flows/plazo-fijo-cocos-files-sql.json. flowLike puede ser el flow
+// entero o directamente un nombre (string) cuando no hay flow object a
+// mano (ej. DEBIN_CONSULTAR_FLOW_NAME).
+function flowLogNameFallback(flowLike) {
+  const flowObj = typeof flowLike === 'string' ? { name: flowLike } : flowLike || {};
+  const alias = flowObj.logAlias ? String(flowObj.logAlias).trim() : '';
+  if (!alias) return flowNameSlugFallback(flowObj.name);
+  const sanitized = alias.replace(/[^A-Za-z0-9-]+/g, '-').replace(/^-+|-+$/g, '');
+  return sanitized || flowNameSlugFallback(flowObj.name);
+}
+
+// ddMMyyyyHHmmss + 4 dígitos (milisegundos, para que no choque con otra
+// corrida en el mismo segundo) — 18 dígitos en total, mismo largo que
+// espera RUN_ID_PATTERN del lado del servidor. Solo se usa en el fallback
+// de deriveRunId.
+function generateFallbackStamp() {
+  const now = new Date();
+  const pad = (n, width = 2) => String(n).padStart(width, '0');
+  return (
     pad(now.getDate()) +
+    pad(now.getMonth() + 1) +
+    now.getFullYear() +
     pad(now.getHours()) +
     pad(now.getMinutes()) +
-    pad(now.getSeconds())
+    pad(now.getSeconds()) +
+    pad(now.getMilliseconds(), 4).slice(0, 4)
   );
+}
+
+// El runId de los archivos de salida es EL MISMO que ya tiene el log de esa
+// corrida (logFileName, devuelto por /api/run — ver batchLogFileName en
+// runFlowFromCsv): así "Archivos de salida" los encuentra por nombre sin
+// tener que parsear nada (ver handleOutputFilesGet en server.js). El
+// fallback (sin logFileName) es para el caso raro de que ninguna fila del
+// CSV haya llegado a completar ni un solo /api/run (todas fallaron
+// validación del lado del navegador antes de llegar al servidor) — ahí no
+// hay ningún log con el que emparejar, pero el archivo se guarda igual.
+function deriveRunId(logFileName, flowLike) {
+  if (logFileName) return logFileName.replace(/^http\//, '').replace(/\.log$/, '');
+  return `${generateFallbackStamp()}-${flowLogNameFallback(flowLike)}`;
 }
 
 // Guarda un archivo en el servidor, en la carpeta files/ (POST /api/save-output
 // lo crea si no existe) — queda en una ubicación fija y predecible, accesible
 // después desde "Archivos de salida" (ver loadOutputFiles) — y además dispara
-// la descarga automática al navegador de quien corrió el flow.
-async function saveOutputFile(prefix, timestamp, content) {
+// la descarga automática al navegador de quien corrió el flow. "kind" es
+// solo para que el servidor sepa si además tiene que registrar el contenido
+// en MariaDB (dbn_out/dbn_consulta) — no forma parte del nombre del archivo.
+async function saveOutputFile(runId, variant, kind, content) {
   try {
     const res = await apiFetch('/api/save-output', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ prefix, timestamp, content }),
+      body: JSON.stringify({ runId, variant, kind, content }),
     });
     const data = await res.json();
     if (!res.ok) {
-      alert(`No se pudo guardar ${prefix}${timestamp}.csv: ` + (data.error || 'error desconocido.'));
+      alert(`No se pudo guardar el archivo de salida: ` + (data.error || 'error desconocido.'));
       return null;
     }
     downloadTextFile(data.fileName, content, 'text/csv');
     return data.fileName;
   } catch (err) {
-    alert(`Error de red guardando ${prefix}${timestamp}.csv: ` + err.message);
+    alert(`Error de red guardando el archivo de salida: ` + err.message);
     return null;
   }
 }
 
-// Al terminar de procesar el CSV: guarda, si corresponde, hasta 3 archivos
-// con el mismo timestamp (para que se identifiquen como del mismo lote).
-// Para "Alta de Plazo Fijos - File": pfout-<timestamp>.csv con una fila por
-// cada fila del archivo de entrada (se haya completado o no: "realizado" =
-// "s"/"n" — si es "n", el resto de las columnas del plazo fijo quedan en
-// blanco porque nunca se dio de alta) y pfouterror-<timestamp>.csv con la
-// fila de entrada + IdMensaje de cada fila que falló. Para "Transferencia
-// DEBIN - File": mismo esquema para dbnout-<timestamp>.csv (con las
-// columnas de la transferencia en vez de las del plazo fijo) y
-// dbnouterror-<timestamp>.csv, más dbnconsulta-<timestamp>.csv con el
-// resultado de consultar el estado de cada transferencia que sí se hizo
-// (ver el loop en runFlowFromCsv, después de procesar todas las filas).
-// Como cada corrida es de un solo flow CSV, nunca se mezclan pfDetailRows
-// con debinDetailRows/debinConsultaRows en la misma corrida — alcanza con
-// mirar cuál de los dos tiene filas para saber cuál generar. Las filas con
-// "realizado" = "n" están en los dos archivos de ese flow, con formato
-// distinto cada vez (acá el de salida normal, en el de error tal cual vino
-// en el archivo de entrada).
-async function saveOutputFiles(flow) {
-  const savedFiles = [];
+// Al terminar de procesar el CSV: guarda, si corresponde, hasta 3 archivos.
+// El de la corrida principal (pfout/dbnout, más el de error si hubo filas
+// fallidas) comparte runId con batchLogFileName; el de la consulta DEBIN
+// (dbnconsulta) es una corrida/log aparte, con su propio runId
+// (consultaLogFileName) — "Consulta DEBIN (solo)" es un flow distinto del
+// de arriba. Como cada corrida es de un solo flow CSV, nunca se mezclan
+// pfDetailRows con debinDetailRows en la misma corrida — alcanza con mirar
+// cuál de los dos tiene filas para saber cuál generar. Las filas con
+// "realizado" = "n" están en los dos archivos de ese flow (ok y error), con
+// formato distinto cada vez (acá el de salida normal, en el de error tal
+// cual vino en el archivo de entrada).
+async function saveOutputFiles(flow, batchLogFileName, consultaLogFileName) {
+  const result = { batchOkFileName: null, batchErrorFileName: null, consultaOkFileName: null };
   if (
     state.pfDetailRows.length === 0 &&
     state.debinDetailRows.length === 0 &&
     state.debinConsultaRows.length === 0 &&
     state.errorRows.length === 0
   ) {
-    return savedFiles;
+    return result;
   }
 
-  const timestamp = generateFileTimestamp();
+  const batchRunId = deriveRunId(batchLogFileName, flow);
 
   if (state.pfDetailRows.length > 0) {
     const headers = ['numeroComprobante', 'cuit', 'apellidoNombre', 'operacion', 'vencimiento', 'tem', 'tna', 'importeNeto', 'montoCapital', 'montoInteres', 'otros', 'idMensaje', 'realizado'];
@@ -1396,8 +1452,7 @@ async function saveOutputFiles(flow) {
     for (const row of state.pfDetailRows) {
       lines.push(headers.map((h) => csvEscape(row[h])).join(','));
     }
-    const fileName = await saveOutputFile('pfout-', timestamp, lines.join('\r\n'));
-    if (fileName) savedFiles.push(fileName);
+    result.batchOkFileName = await saveOutputFile(batchRunId, 'ok', 'pfout', lines.join('\r\n'));
   }
 
   if (state.debinDetailRows.length > 0) {
@@ -1406,18 +1461,7 @@ async function saveOutputFiles(flow) {
     for (const row of state.debinDetailRows) {
       lines.push(headers.map((h) => csvEscape(row[h])).join(','));
     }
-    const fileName = await saveOutputFile('dbnout-', timestamp, lines.join('\r\n'));
-    if (fileName) savedFiles.push(fileName);
-  }
-
-  if (state.debinConsultaRows.length > 0) {
-    const headers = ['idMensaje', 'idComprobante', 'idOperacion', ...DEBIN_CONSULTA_COLUMNS, 'errorConsulta'];
-    const lines = [headers.join(',')];
-    for (const row of state.debinConsultaRows) {
-      lines.push(headers.map((h) => csvEscape(row[h])).join(','));
-    }
-    const fileName = await saveOutputFile('dbnconsulta-', timestamp, lines.join('\r\n'));
-    if (fileName) savedFiles.push(fileName);
+    result.batchOkFileName = await saveOutputFile(batchRunId, 'ok', 'dbnout', lines.join('\r\n'));
   }
 
   if (state.errorRows.length > 0) {
@@ -1425,12 +1469,38 @@ async function saveOutputFiles(flow) {
     // vino en el archivo de entrada (que tampoco lleva encabezado) más el
     // IdMensaje al final.
     const lines = state.errorRows.map((row) => row.map(csvEscape).join(','));
-    const errorPrefix = isTransferenciaDebinFilesFlow(flow) ? 'dbnouterror-' : 'pfouterror-';
-    const fileName = await saveOutputFile(errorPrefix, timestamp, lines.join('\r\n'));
-    if (fileName) savedFiles.push(fileName);
+    result.batchErrorFileName = await saveOutputFile(batchRunId, 'error', null, lines.join('\r\n'));
   }
 
-  return savedFiles;
+  if (state.debinConsultaRows.length > 0) {
+    const consultaRunId = deriveRunId(consultaLogFileName, DEBIN_CONSULTAR_FLOW_NAME);
+    const headers = ['idMensaje', 'idComprobante', 'idOperacion', ...DEBIN_CONSULTA_COLUMNS, 'errorConsulta'];
+    const lines = [headers.join(',')];
+    for (const row of state.debinConsultaRows) {
+      lines.push(headers.map((h) => csvEscape(row[h])).join(','));
+    }
+    result.consultaOkFileName = await saveOutputFile(consultaRunId, 'ok', 'dbnconsulta', lines.join('\r\n'));
+  }
+
+  return result;
+}
+
+// Anexa, al log de esa corrida, quién la corrió y qué archivos quedaron
+// guardados (ver appendRunSummary en flowEngine.js) — así "Archivos de
+// salida" puede mostrar esos datos sin tener que abrir el log. Si esto
+// falla (ej. se cerró el navegador antes de que termine) no bloquea nada:
+// el/los archivo(s) ya se guardaron bien, la corrida sigue apareciendo en
+// la lista, solo sin este resumen.
+async function postRunSummary(logFileName, flowName, okFileName, errorFileName, pasosOk, pasosError) {
+  try {
+    await apiFetch('/api/run-summary', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ logFileName, flowName, okFileName, errorFileName, pasosOk, pasosError }),
+    });
+  } catch (err) {
+    // Ver comentario de la función.
+  }
 }
 
 const profileDialog = document.getElementById('profileDialog');
@@ -1830,47 +1900,49 @@ const outputFilesFromDate = document.getElementById('outputFilesFromDate');
 const outputFilesToDate = document.getElementById('outputFilesToDate');
 let allOutputFiles = []; // última lista traída del servidor, sin filtrar — el filtro de fecha se aplica en el cliente
 
-function formatFileSize(bytes) {
-  if (bytes < 1024) return `${bytes} B`;
-  return `${(bytes / 1024).toFixed(1)} KB`;
-}
-
-// pfout-... = detalle de plazos fijos dados de alta; dbnout-... = detalle
-// de transferencias DEBIN; dbnconsulta-... = resultado de consultar el
-// estado de cada transferencia DEBIN; pfouterror-.../dbnouterror-... =
-// filas que fallaron, de cada uno de los dos flows (ver "Archivos de
-// salida (files/)" en el README).
-function outputFileTypeLabel(name) {
-  if (name.startsWith('pfouterror-') || name.startsWith('dbnouterror-')) return 'Filas con error';
-  if (name.startsWith('dbnconsulta-')) return 'Consulta de estado DEBIN';
-  if (name.startsWith('dbnout-')) return 'Detalle de Transferencias DEBIN';
-  return 'Detalle de Plazos Fijos';
-}
-
 // Requiere Desde Y Hasta completos para buscar — sin rango de fechas no se
 // lista nada (ni se llama a la API), a propósito: son carpetas que pueden
-// acumular muchos archivos con el tiempo.
+// acumular muchas corridas con el tiempo.
 function outputFilesDateRangeComplete() {
   return !!(outputFilesFromDate.value && outputFilesToDate.value);
 }
 
-function renderOutputFilesTable(files, emptyMessage) {
+// Una fila por CORRIDA (no por archivo suelto, ver handleOutputFilesGet en
+// server.js): hora, flow, usuario y pasos ok/error (si el resumen de esa
+// corrida llegó a guardarse), más los 3 botones de descarga — ok/error solo
+// si ese archivo existe, el log siempre (mientras la corrida haya llegado a
+// generarlo).
+function renderOutputFilesTable(runs, emptyMessage) {
   const tbody = document.getElementById('outputFilesTableBody');
   tbody.innerHTML = '';
-  for (const file of files) {
+  for (const run of runs) {
     const tr = document.createElement('tr');
+    const pasos =
+      run.pasosOk != null || run.pasosError != null
+        ? `${run.pasosOk != null ? run.pasosOk : '?'} ok / ${run.pasosError != null ? run.pasosError : '?'} error`
+        : '—';
     tr.innerHTML = `
-      <td>${escapeHtml(file.name)}</td>
-      <td>${escapeHtml(outputFileTypeLabel(file.name))}</td>
-      <td>${new Date(file.mtime).toLocaleString()}</td>
-      <td>${formatFileSize(file.size)}</td>
-      <td><button type="button" class="downloadOutputFileBtn">Descargar</button></td>
+      <td>${new Date(run.mtime).toLocaleString()}</td>
+      <td>${escapeHtml(run.flowName || '—')}</td>
+      <td>${escapeHtml(run.username || '—')}</td>
+      <td>${escapeHtml(pasos)}</td>
+      <td>
+        <button type="button" class="downloadRunOkBtn" ${run.okFileName ? '' : 'disabled'}>Descargar OK</button>
+        <button type="button" class="downloadRunErrorBtn" ${run.errorFileName ? '' : 'disabled'}>Descargar error</button>
+        <button type="button" class="downloadRunLogBtn">Descargar log</button>
+      </td>
     `;
-    tr.querySelector('.downloadOutputFileBtn').addEventListener('click', () => downloadOutputFile(file.name));
+    if (run.okFileName) {
+      tr.querySelector('.downloadRunOkBtn').addEventListener('click', () => downloadOutputFile(run.okFileName));
+    }
+    if (run.errorFileName) {
+      tr.querySelector('.downloadRunErrorBtn').addEventListener('click', () => downloadOutputFile(run.errorFileName));
+    }
+    tr.querySelector('.downloadRunLogBtn').addEventListener('click', () => downloadHttpLog(run.logFileName));
     tbody.appendChild(tr);
   }
   const hint = document.getElementById('outputFilesEmptyHint');
-  if (files.length === 0) {
+  if (runs.length === 0) {
     hint.textContent = emptyMessage;
     hint.style.display = '';
   } else {
@@ -1878,7 +1950,7 @@ function renderOutputFilesTable(files, emptyMessage) {
   }
 }
 
-// Compara solo la parte de fecha (yyyy-mm-dd, hora local) de file.mtime contra
+// Compara solo la parte de fecha (yyyy-mm-dd, hora local) de run.mtime contra
 // los <input type="date"> Desde/Hasta — ambos límites inclusive.
 function applyOutputFilesFilter() {
   if (!outputFilesDateRangeComplete()) {
@@ -1887,11 +1959,11 @@ function applyOutputFilesFilter() {
   }
   const from = outputFilesFromDate.value;
   const to = outputFilesToDate.value;
-  const filtered = allOutputFiles.filter((file) => {
-    const fileDate = formatDateOnlyLocal(new Date(file.mtime));
-    return fileDate >= from && fileDate <= to;
+  const filtered = allOutputFiles.filter((run) => {
+    const runDate = formatDateOnlyLocal(new Date(run.mtime));
+    return runDate >= from && runDate <= to;
   });
-  renderOutputFilesTable(filtered, 'No hay ningún archivo guardado para el rango de fechas elegido.');
+  renderOutputFilesTable(filtered, 'No hay ninguna corrida para el rango de fechas elegido.');
 }
 
 function formatDateOnlyLocal(date) {
