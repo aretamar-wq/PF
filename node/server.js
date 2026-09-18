@@ -550,32 +550,12 @@ function handleOutputFileContentGet(parsedUrl, res, session) {
 
 // Logs de ejecución (logs/http/, un archivo por corrida — ver
 // generateRunLogFileName/writeHttpLog en flowEngine.js): detalle de
-// request/response de cada step de cada flow corrido, útil para diagnosticar
-// un flow que falló sin tener acceso SSH al servidor. Mismo patrón que
-// "Archivos de salida" arriba: nombre exacto vía regex como única defensa
-// anti path-traversal, sin restricción de rol adicional (ver el comentario de
-// testRoleCanRunFlow en securityStore.js: "'lectura' es solo consulta: puede
-// ver flows/perfiles/logs pero no ejecutar nada" — ver logs es para
-// cualquier rol autenticado).
+// request/response de cada step de cada flow corrido. No hay un listado
+// propio de esto (ver handleOutputFilesGet más abajo, que ya arma una fila
+// por corrida leyendo esta misma carpeta) — solo queda el endpoint de
+// contenido, para el botón "Descargar log" de "Archivos de salida".
 const HTTP_LOG_SUBDIR = 'http';
 const HTTP_LOG_FILE_NAME_PATTERN = new RegExp(`^${flowEngine.RUN_ID_PATTERN.source.slice(1, -1)}\\.log$`);
-
-function handleHttpLogsGet(res) {
-  const httpLogsDir = path.join(logsDir, HTTP_LOG_SUBDIR);
-  if (!fs.existsSync(httpLogsDir)) {
-    writeJsonResponse(res, 200, []);
-    return;
-  }
-  const files = fs
-    .readdirSync(httpLogsDir)
-    .filter((name) => HTTP_LOG_FILE_NAME_PATTERN.test(name))
-    .map((name) => {
-      const stat = fs.statSync(path.join(httpLogsDir, name));
-      return { name, size: stat.size, mtime: stat.mtime.toISOString() };
-    })
-    .sort((a, b) => b.mtime.localeCompare(a.mtime));
-  writeJsonResponse(res, 200, files);
-}
 
 function handleHttpLogContentGet(parsedUrl, res, session) {
   const name = parsedUrl.searchParams.get('name') || '';
@@ -805,7 +785,6 @@ async function handleRequest(req, res) {
     if (method === 'POST' && pathname === '/api/run-summary') return void (await handleRunSummaryPost(req, res, session));
     if (method === 'GET' && pathname === '/api/output-files') return void handleOutputFilesGet(res);
     if (method === 'GET' && pathname === '/api/output-files/content') return void handleOutputFileContentGet(parsedUrl, res, session);
-    if (method === 'GET' && pathname === '/api/http-logs') return void handleHttpLogsGet(res);
     if (method === 'GET' && pathname === '/api/http-logs/content') return void handleHttpLogContentGet(parsedUrl, res, session);
     if (method === 'GET' && pathname === '/api/certs-browse') return void handleCertsBrowseGet(parsedUrl, res, session);
     if (method === 'POST' && pathname === '/api/check-operations') return void (await handleCheckOperations(req, res, session));

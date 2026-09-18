@@ -34,7 +34,6 @@
         <button id="parametriaBtn">Parametría...</button>
         <button id="usersBtn" style="display: none;">Usuarios...</button>
         <button id="outputFilesBtn">Archivos de salida...</button>
-        <button id="httpLogsBtn">Logs de ejecución...</button>
         <span class="spacer"></span>
         <span id="currentUserInfo" class="muted"></span>
         <button id="logoutBtn">Cerrar sesión</button>
@@ -265,37 +264,6 @@
     <div class="dialog-actions">
       <button type="button" id="refreshOutputFilesBtn">Actualizar</button>
       <button type="button" id="closeOutputFilesDialogBtn">Cerrar</button>
-    </div>
-  </dialog>
-
-  <dialog id="httpLogsDialog">
-    <h2>Logs de ejecución</h2>
-    <p class="muted">Un archivo por corrida de flow (logs/http/), con el detalle de request/response de cada step — útil para ver por qué falló una corrida sin tener acceso directo al servidor.</p>
-    <div id="httpLogsListView">
-      <div class="dialog-actions">
-        <label>Desde <input type="date" id="httpLogsFromDate" /></label>
-        <label>Hasta <input type="date" id="httpLogsToDate" /></label>
-        <button type="button" id="clearHttpLogsFilterBtn">Limpiar filtro</button>
-      </div>
-      <p id="httpLogsEmptyHint" class="muted" style="display: none;">No hay ningún log guardado para el filtro elegido.</p>
-      <table id="httpLogsTable">
-        <thead>
-          <tr><th>Archivo</th><th>Fecha</th><th>Tamaño</th><th>Acciones</th></tr>
-        </thead>
-        <tbody id="httpLogsTableBody"></tbody>
-      </table>
-      <div class="dialog-actions">
-        <button type="button" id="refreshHttpLogsBtn">Actualizar</button>
-        <button type="button" id="closeHttpLogsDialogBtn">Cerrar</button>
-      </div>
-    </div>
-    <div id="httpLogsContentView" style="display: none;">
-      <p><strong id="httpLogsContentFileName"></strong></p>
-      <pre id="httpLogsContentText" class="log-content-view"></pre>
-      <div class="dialog-actions">
-        <button type="button" id="downloadHttpLogBtn">Descargar</button>
-        <button type="button" id="backToHttpLogsListBtn">Volver a la lista</button>
-      </div>
     </div>
   </dialog>
 
