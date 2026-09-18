@@ -180,6 +180,11 @@ function isCsvFlow(flow) {
 }
 
 function selectFlow(name) {
+  // Si "Archivos de salida" está mostrado en vez de flowDetail (ver
+  // openOutputFilesSection), elegir un flow de la lista tiene que volver a
+  // la vista normal.
+  closeOutputFilesSection();
+
   state.selectedFlow = state.flows.find((f) => f.name === name) || null;
 
   document.querySelectorAll('#flowList li').forEach((li) => {
@@ -1895,7 +1900,7 @@ userForm.addEventListener('submit', async (event) => {
 // el servidor — útil si se cerró el navegador antes de que la descarga
 // terminara, o si hace falta recuperar el de una corrida anterior.
 
-const outputFilesDialog = document.getElementById('outputFilesDialog');
+const outputFilesSection = document.getElementById('outputFilesSection');
 const outputFilesFromDate = document.getElementById('outputFilesFromDate');
 const outputFilesToDate = document.getElementById('outputFilesToDate');
 let allOutputFiles = []; // última lista traída del servidor, sin filtrar — el filtro de fecha se aplica en el cliente
@@ -1992,16 +1997,26 @@ async function downloadOutputFile(name) {
   downloadTextFile(data.name, data.content, 'text/csv');
 }
 
-async function openOutputFilesDialog() {
+// A diferencia de los demás paneles (perfiles, usuarios, parametría), este
+// no se abre como <dialog> flotante — reemplaza el contenido de la ventana
+// actual (oculta flowDetail, muestra esta sección en el mismo lugar) y
+// "Volver a flows" hace el camino inverso.
+async function openOutputFilesSection() {
   outputFilesFromDate.value = '';
   outputFilesToDate.value = '';
   allOutputFiles = [];
   applyOutputFilesFilter();
-  outputFilesDialog.showModal();
+  document.getElementById('flowDetail').style.display = 'none';
+  outputFilesSection.style.display = '';
 }
 
-document.getElementById('outputFilesBtn').addEventListener('click', openOutputFilesDialog);
-document.getElementById('closeOutputFilesDialogBtn').addEventListener('click', () => outputFilesDialog.close());
+function closeOutputFilesSection() {
+  outputFilesSection.style.display = 'none';
+  document.getElementById('flowDetail').style.display = '';
+}
+
+document.getElementById('outputFilesBtn').addEventListener('click', openOutputFilesSection);
+document.getElementById('closeOutputFilesBtn').addEventListener('click', closeOutputFilesSection);
 document.getElementById('refreshOutputFilesBtn').addEventListener('click', loadOutputFilesList);
 document.getElementById('clearOutputFilesFilterBtn').addEventListener('click', () => {
   outputFilesFromDate.value = '';
