@@ -318,7 +318,11 @@ function hideCsvSummary() {
 // contando, por cada fila del CSV, si ese paso terminó en 'Success' o no
 // (no ejecutado por una fila mal formada, por una falla de red, o porque un
 // paso anterior de la misma fila falló, cuenta como error de ese paso).
-function renderCsvSummary(flow, totalRows, stepCounts) {
+// contraasientoCounts (opcional) cuenta, por fila, si se dispararon
+// contra-asientos (onFailureSteps del flow, ver flowEngine.js) y si
+// terminaron bien o no — ver runFlowFromCsv. Solo se muestra la línea si
+// alguna fila los disparó (la mayoría de las corridas nunca los necesita).
+function renderCsvSummary(flow, totalRows, stepCounts, contraasientoCounts) {
   const summaryEl = document.getElementById('csvSummary');
   const lines = [`<div><strong>Total de registros: ${totalRows}</strong></div>`];
   flow.steps.forEach((step, idx) => {
@@ -330,6 +334,13 @@ function renderCsvSummary(flow, totalRows, stepCounts) {
         `<span class="status-Error">${error} con error</span>${skippedHtml}</div>`
     );
   });
+  if (contraasientoCounts && (contraasientoCounts.ok > 0 || contraasientoCounts.error > 0)) {
+    lines.push(
+      `<div>Contra-asientos (reversión por alta de PF fallida): ` +
+        `<span class="status-Success">${contraasientoCounts.ok} correcto(s)</span> / ` +
+        `<span class="status-Error">${contraasientoCounts.error} con error</span></div>`
+    );
+  }
   summaryEl.innerHTML = lines.join('');
   summaryEl.style.display = '';
 }
@@ -770,6 +781,13 @@ async function runFlowFromCsv() {
   // cuántas se saltearon a propósito ('skipped', fila con Circuito = 1: no
   // se ejecutan los steps de débito/crédito, solo el alta de Plazo Fijo).
   const stepCounts = flow.steps.map(() => ({ ok: 0, error: 0, skipped: 0 }));
+  // Cuenta, por fila, si se dispararon contra-asientos (onFailureSteps del
+  // último step que falló, ver flowEngine.js) y si todos ellos terminaron en
+  // 'Success' ('ok') o no ('error', aunque haya sido solo uno de los dos:
+  // los libros quedan sin cuadrar igual). Una fila sin contra-asientos
+  // (alta de PF exitosa, o un error anterior sin llegar a esa etapa) no
+  // suma a ninguno de los dos.
+  const contraasientoCounts = { ok: 0, error: 0 };
 
   try {
     const text = await readFileAsText(file);
@@ -999,7 +1017,20 @@ async function runFlowFromCsv() {
         if (ok) stepCounts[s].ok++;
         else stepCounts[s].error++;
       }
-      renderCsvSummary(flow, rows.length, stepCounts);
+
+      // Entries que sobran más allá de los steps esperados (expectedStepIndices,
+      // no flow.steps.length: con Circuito = 1 solo se espera 1 entry) son los
+      // onFailureSteps que se dispararon porque el último step falló — ver
+      // flowEngine.js. Todos tienen que haber terminado en 'Success' para que la
+      // fila cuente como corregida.
+      if (stepEntries && stepEntries.length > expectedStepIndices.length) {
+        const contraasientoEntries = stepEntries.slice(expectedStepIndices.length);
+        const allOk = contraasientoEntries.every((entry) => entry && entry.status === 'Success');
+        if (allOk) contraasientoCounts.ok++;
+        else contraasientoCounts.error++;
+      }
+
+      renderCsvSummary(flow, rows.length, stepCounts, contraasientoCounts);
 
       // Fila fallada: columnas de más/menos, cuenta no encontrada (nunca
       // llegó a llamar a ningún endpoint), o algún paso terminó en error.
