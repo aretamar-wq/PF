@@ -39,6 +39,7 @@
         "descripcionRespuesta": "params.response.respuesta.descripcion",
         "idRespuesta": "params.response.respuesta.id"
       },
+      "failIfEquals": [["descripcionRespuesta", "ERROR GENERAL GARANTIAS"]],
       "expectedStatusCode": 200
     }
   ]
