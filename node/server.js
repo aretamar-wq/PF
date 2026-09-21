@@ -24,6 +24,7 @@ const flowEngine = require('./lib/flowEngine');
 const securityStore = require('./lib/securityStore');
 const processedOperationsStore = require('./lib/processedOperationsStore');
 const debinOutputStore = require('./lib/debinOutputStore');
+const { formatDateOnlyDMY } = require('./lib/dateUtil');
 
 function parsePort() {
   const args = process.argv.slice(2);
@@ -637,12 +638,45 @@ async function handleRegisterOperations(req, res, session) {
     fechaVencimiento: op.fechaVencimiento != null ? String(op.fechaVencimiento) : '',
     tipoCircuito: op.tipoCircuito != null ? String(op.tipoCircuito) : '',
     pfPagado: !!op.pfPagado,
+    apellidoNombre: op.apellidoNombre != null ? String(op.apellidoNombre) : '',
   }));
   if (operations.length > 0) {
     await processedOperationsStore.addProcessedOperations(rootDir, operations, session.username);
     securityStore.writeSecurityLog(logsDir, `OPERACIONES REGISTRADAS: ${operations.length} por '${session.username}' (antiduplicado)`);
   }
   writeJsonResponse(res, 200, { ok: true, registered: operations.length });
+}
+
+// Flow "Pago de Plazo Fijos": lista de candidatos a pagar hoy (fecha_vencimiento
+// = hoy, tipo_circuito = '0', pf_pagado = 0 — ver findOperationsToPay). Mismo
+// requisito que /api/run: un rol sin permiso para ejecutar flows tampoco puede
+// ver ni disparar esta lista (aunque en sí misma es de solo lectura, es el
+// primer paso de una corrida que va a mover dinero real).
+async function handlePlazosFijosAPagarGet(res, session) {
+  if (!securityStore.testRoleCanRunFlow(session.role)) {
+    writeJsonResponse(res, 403, { error: `Tu rol ('${session.role}') no tiene permiso para ejecutar flows.` });
+    return;
+  }
+  const operations = await processedOperationsStore.findOperationsToPay(rootDir, formatDateOnlyDMY());
+  writeJsonResponse(res, 200, operations);
+}
+
+// Se llama al final de una corrida de "Pago de Plazo Fijos", solo con las
+// operaciones cuyo débito en Caja de Ahorro Y crédito en Cuenta Corriente
+// salieron bien (ver runPagoPlazoFijos en wwwroot/app.js) — acá no se vuelve
+// a validar eso, se confía en lo que mandó el cliente (los movimientos
+// bancarios en sí ya se hicieron vía /api/run, que sí valida el rol).
+async function handlePlazosFijosPagadosPost(req, res, session) {
+  const payload = await readJsonBody(req);
+  const operations = (payload.operations || []).map((op) => ({
+    cuit: String(op.cuit),
+    numeroComprobante: String(op.numeroComprobante),
+  }));
+  if (operations.length > 0) {
+    await processedOperationsStore.markOperationsPaid(rootDir, operations);
+    securityStore.writeSecurityLog(logsDir, `PLAZOS FIJOS MARCADOS COMO PAGADOS: ${operations.length} por '${session.username}'`);
+  }
+  writeJsonResponse(res, 200, { ok: true, marked: operations.length });
 }
 
 async function handleParametriaGet(res, session) {
@@ -794,6 +828,8 @@ async function handleRequest(req, res) {
     if (method === 'GET' && pathname === '/api/certs-browse') return void handleCertsBrowseGet(parsedUrl, res, session);
     if (method === 'POST' && pathname === '/api/check-operations') return void (await handleCheckOperations(req, res, session));
     if (method === 'POST' && pathname === '/api/register-operations') return void (await handleRegisterOperations(req, res, session));
+    if (method === 'GET' && pathname === '/api/plazos-fijos-a-pagar') return void (await handlePlazosFijosAPagarGet(res, session));
+    if (method === 'POST' && pathname === '/api/plazos-fijos-pagados') return void (await handlePlazosFijosPagadosPost(req, res, session));
     if (method === 'GET' && pathname === '/api/parametria') return void (await handleParametriaGet(res, session));
     if (method === 'POST' && pathname === '/api/parametria') return void (await handleParametriaPost(req, res, session));
     if (method === 'POST' && pathname === '/api/test-sybase') return void (await handleTestSybase(req, res, session));

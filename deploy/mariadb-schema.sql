@@ -189,6 +189,11 @@ CREATE TABLE IF NOT EXISTS operaciones_procesadas (
   fecha_vencimiento VARCHAR(50) NOT NULL DEFAULT '',
   tipo_circuito VARCHAR(10) NOT NULL DEFAULT '',
   pf_pagado TINYINT(1) NOT NULL DEFAULT 0,
+  -- Apellido y Nombre del titular, tal como vino en el CSV de "Alta de
+  -- Plazo Fijos - File" — no se usaba hasta ahora (pfDetailRows/pfout-...csv
+  -- ya lo tenía, pero no se guardaba acá). Lo necesita el flow "Pago de
+  -- Plazo Fijos" para el Renglon2 del crédito en Cuenta Corriente.
+  apellido_nombre VARCHAR(255) NOT NULL DEFAULT '',
   processed_at DATETIME NOT NULL,
   processed_by VARCHAR(255) NOT NULL DEFAULT '',
   PRIMARY KEY (id),
@@ -203,6 +208,14 @@ ALTER TABLE operaciones_procesadas ADD COLUMN IF NOT EXISTS importe_neto VARCHAR
 ALTER TABLE operaciones_procesadas ADD COLUMN IF NOT EXISTS fecha_vencimiento VARCHAR(50) NOT NULL DEFAULT '';
 ALTER TABLE operaciones_procesadas ADD COLUMN IF NOT EXISTS tipo_circuito VARCHAR(10) NOT NULL DEFAULT '';
 ALTER TABLE operaciones_procesadas ADD COLUMN IF NOT EXISTS pf_pagado TINYINT(1) NOT NULL DEFAULT 0;
+ALTER TABLE operaciones_procesadas ADD COLUMN IF NOT EXISTS apellido_nombre VARCHAR(255) NOT NULL DEFAULT '';
+
+-- Índice para el flow "Pago de Plazo Fijos" (findOperationsToPay en
+-- processedOperationsStore.js): busca por fecha_vencimiento + tipo_circuito
+-- + pf_pagado todos los días, sin este índice sería un full scan de la
+-- tabla cada vez que se aprieta "Buscar plazos fijos a pagar".
+CREATE INDEX IF NOT EXISTS idx_operaciones_vencimiento_pago
+  ON operaciones_procesadas (fecha_vencimiento, tipo_circuito, pf_pagado);
 
 -- Registro en base del contenido de dbnout-...csv (detalle de cada
 -- Transferencia DEBIN de un archivo procesado) y dbnconsulta-...csv
