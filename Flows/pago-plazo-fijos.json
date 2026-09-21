@@ -1,0 +1,32 @@
+{
+  "name": "Pago de Plazo Fijos",
+  "description": "Paga los plazos fijos que vencen hoy: para cada uno, debita el importe de la Caja de Ahorro que lo fondeó (transacción de débito de Caja de Ahorro, Parametría) y, si el débito se pudo hacer, acredita el mismo importe en la Cuenta Corriente (transacción de crédito de Cuenta Corriente, Parametría). Si el débito falla, no se ejecuta el crédito. No tiene un CSV de entrada: la lista de plazos fijos a pagar sale de una consulta a operaciones_procesadas (fecha_vencimiento = hoy, tipo_circuito = 0, pf_pagado = 0) que se dispara desde el botón 'Buscar plazos fijos a pagar' — ver isPagoPlazoFijosFlow en wwwroot/app.js.",
+  "logAlias": "Pago-PF",
+  "inputs": [
+    { "variableName": "cuit", "label": "CUIT" },
+    { "variableName": "apellidoNombre", "label": "Apellido y Nombre" },
+    { "variableName": "numeroComprobante", "label": "Nro_Comprobante" },
+    { "variableName": "importe", "label": "Importe" },
+    { "variableName": "cajaAhorro", "label": "Caja de Ahorro (código de cuenta a debitar)" }
+  ],
+  "steps": [
+    {
+      "name": "1. Débito en Caja de Ahorro",
+      "method": "POST",
+      "pathTemplate": "/api/CuentaDebitoCredito/EjecutarCuentaDebitoCredito",
+      "headers": { "Accept": "application/json" },
+      "bodyTemplate": "{\n  \"codigoSucursal\": \"1\",\n  \"codigoSistema\": \"{{cajaAhorroCodigoSistema}}\",\n  \"codigoSubSistema\": \"0\",\n  \"codigoMoneda\": \"0\",\n  \"codigoCuenta\": \"{{cajaAhorro}}\",\n  \"NumeroOperacion\": \"1\",\n  \"Concepto\": \"17\",\n  \"SubConcepto\": \"3\",\n  \"Sistema\": \"{{cajaAhorroCodigoSistema}}\",\n  \"Transaccion\": \"{{cajaAhorroTransaccionDebito}}\",\n  \"FechaMovimiento\": \"{{nowDate}}\",\n  \"FechayHoraMensaje\": \"{{nowDateTime}}\",\n  \"FechaNegocio\": \"{{nowDate}}\",\n  \"Importe\": \"{{importe}}\",\n  \"NumeroComprobante\": \"{{numeroComprobante}}\",\n  \"CodigoContrasiento\": \" \",\n  \"Libre\": \" \",\n  \"Renglon1\": \"Benef.: CUIL Nro.: 30708424478\",\n  \"Renglon2\": \"Nom.: Cocos Capital S.A.\",\n  \"Renglon3\": \"Ref: VAR\",\n  \"IdMensaje\": \"{{idMensajeGenerado}}\",\n  \"forzada\": \"0\"\n}",
+      "extractVariables": {},
+      "expectedStatusCode": 200
+    },
+    {
+      "name": "2. Crédito en Cuenta Corriente",
+      "method": "POST",
+      "pathTemplate": "/api/CuentaDebitoCredito/EjecutarCuentaDebitoCredito",
+      "headers": { "Accept": "application/json" },
+      "bodyTemplate": "{\n  \"codigoSucursal\": \"1\",\n  \"codigoSistema\": \"{{ctaCteCodigoSistema}}\",\n  \"codigoSubSistema\": \"0\",\n  \"codigoMoneda\": \"0\",\n  \"codigoCuenta\": \"{{ctaCteCodigoCuenta}}\",\n  \"NumeroOperacion\": \"1\",\n  \"Concepto\": \"17\",\n  \"SubConcepto\": \"3\",\n  \"Sistema\": \"{{ctaCteCodigoSistema}}\",\n  \"Transaccion\": \"{{ctaCteTransaccionCredito}}\",\n  \"FechaMovimiento\": \"{{nowDate}}\",\n  \"FechayHoraMensaje\": \"{{nowDateTime}}\",\n  \"FechaNegocio\": \"{{nowDate}}\",\n  \"Importe\": \"{{importe}}\",\n  \"NumeroComprobante\": \"{{numeroComprobante}}\",\n  \"CodigoContrasiento\": \" \",\n  \"Libre\": \" \",\n  \"Renglon1\": \"Orig.: CUIL Nro.:{{cuit}}\",\n  \"Renglon2\": \"Nom.:{{apellidoNombre}}\",\n  \"Renglon3\": \"Ref.: VAR\",\n  \"IdMensaje\": \"{{idMensajeGenerado}}\",\n  \"forzada\": \"0\"\n}",
+      "extractVariables": {},
+      "expectedStatusCode": 200
+    }
+  ]
+}

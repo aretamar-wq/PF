@@ -40,4 +40,21 @@ function formatCompactDMY(date = new Date()) {
   return `${pad(date.getDate())}${pad(date.getMonth() + 1)}${date.getFullYear()}${pad(date.getHours())}${pad(date.getMinutes())}${pad(date.getSeconds())}`;
 }
 
-module.exports = { formatLocal, formatDateOnly, formatTimeOnly, formatCompact, formatCompactMillis, formatCompactDMY };
+// dd/MM/yyyy — mismo formato en el que queda guardado fecha_vencimiento en
+// operaciones_procesadas (lo que devuelve el banco al dar de alta el plazo
+// fijo). Se usa para el "hoy" del flow "Pago de Plazo Fijos"
+// (findOperationsToPay en processedOperationsStore.js), que compara por
+// igualdad de texto contra esa columna.
+function formatDateOnlyDMY(date = new Date()) {
+  return `${pad(date.getDate())}/${pad(date.getMonth() + 1)}/${date.getFullYear()}`;
+}
+
+module.exports = {
+  formatLocal,
+  formatDateOnly,
+  formatTimeOnly,
+  formatCompact,
+  formatCompactMillis,
+  formatCompactDMY,
+  formatDateOnlyDMY,
+};

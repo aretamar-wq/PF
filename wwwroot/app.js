@@ -8,6 +8,7 @@ const state = {
   debinConsultaRows: [],
   errorRows: [],
   successfulOperations: [],
+  pagoPlazoFijosRows: [],
   token: sessionStorage.getItem('pf_token') || null,
   currentUser: null, // { username, role, displayName, canManageUsers } — se completa en loadMe()
 };
@@ -167,6 +168,7 @@ function selectFlow(name) {
   const form = document.getElementById('inputsForm');
   const csvSection = document.getElementById('csvInputSection');
   const csvFileInput = document.getElementById('csvFileInput');
+  const pagoPlazoFijosSection = document.getElementById('pagoPlazoFijosSection');
 
   form.innerHTML = '';
   csvFileInput.value = '';
@@ -178,10 +180,27 @@ function selectFlow(name) {
   state.debinConsultaRows = [];
   state.errorRows = [];
   state.successfulOperations = [];
+  state.pagoPlazoFijosRows = [];
+  document.getElementById('pagoPlazoFijosProgress').textContent = '';
+  document.getElementById('pagoPlazoFijosResult').style.display = 'none';
+  document.getElementById('confirmarPagoPlazoFijosBtn').disabled = true;
+  hideCsvSummary('pagoPlazoFijosSummary');
 
-  if (isCsvFlow(state.selectedFlow)) {
+  if (isPagoPlazoFijosFlow(state.selectedFlow)) {
+    form.style.display = 'none';
+    csvSection.style.display = 'none';
+    pagoPlazoFijosSection.style.display = '';
+    // Esta corrida no se arma llenando un form ni subiendo un CSV: no tiene
+    // sentido mostrar la tabla de log paso a paso genérica ni el botón
+    // "Ejecutar flow" (ver runFlow/updateRunButtonState) — el disparo es
+    // "Buscar..." + "Confirmar y pagar" dentro de #pagoPlazoFijosSection.
+    document.getElementById('logTable').style.display = 'none';
+    document.getElementById('runBtn').style.display = 'none';
+  } else if (isCsvFlow(state.selectedFlow)) {
     form.style.display = 'none';
     csvSection.style.display = '';
+    pagoPlazoFijosSection.style.display = 'none';
+    document.getElementById('runBtn').style.display = '';
     // Para flows con inputMode: "csv" no se muestra la tabla de log paso a
     // paso (queda solo el resumen ok/error por paso, en #csvSummary) — el
     // detalle completo de cada request/response sigue quedando en
@@ -193,6 +212,8 @@ function selectFlow(name) {
   } else {
     form.style.display = '';
     csvSection.style.display = 'none';
+    pagoPlazoFijosSection.style.display = 'none';
+    document.getElementById('runBtn').style.display = '';
     // Un flow con un step SQL tampoco muestra la tabla de log: la respuesta
     // es una tabla más legible en su propio panel (#sqlResultPanel) que como
     // fila de la tabla genérica. El detalle completo sigue en logs/http.log
@@ -308,8 +329,8 @@ function sleep(ms) {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
-function hideCsvSummary() {
-  const summaryEl = document.getElementById('csvSummary');
+function hideCsvSummary(targetId = 'csvSummary') {
+  const summaryEl = document.getElementById(targetId);
   summaryEl.style.display = 'none';
   summaryEl.innerHTML = '';
 }
@@ -336,8 +357,8 @@ function classifyStepErrorType(entry) {
 // contra-asientos (onFailureSteps del flow, ver flowEngine.js) y si
 // terminaron bien o no — ver runFlowFromCsv. Solo se muestra la línea si
 // alguna fila los disparó (la mayoría de las corridas nunca los necesita).
-function renderCsvSummary(flow, totalRows, stepCounts, contraasientoCounts) {
-  const summaryEl = document.getElementById('csvSummary');
+function renderCsvSummary(flow, totalRows, stepCounts, contraasientoCounts, targetId = 'csvSummary') {
+  const summaryEl = document.getElementById(targetId);
   const lines = [`<div><strong>Total de registros: ${totalRows}</strong></div>`];
   flow.steps.forEach((step, idx) => {
     const { ok, error, skipped, errorTypes } = stepCounts[idx];
@@ -412,6 +433,15 @@ function isPlazoFijoCocosFilesSqlFlow(flow) {
 // ver runFlowFromCsv.
 function isTransferenciaDebinFilesFlow(flow) {
   return !!flow && flow.name === 'Transferencia DEBIN - File';
+}
+
+// No es un flow CSV ni manual: no tiene inputs para llenar a mano ni un
+// archivo para subir. Las filas a procesar (una por plazo fijo a pagar)
+// salen de una consulta al servidor (GET /api/plazos-fijos-a-pagar, ver
+// buscarPlazosFijosAPagar) — ver #pagoPlazoFijosSection en index.html y
+// runPagoPlazoFijos más abajo.
+function isPagoPlazoFijosFlow(flow) {
+  return !!flow && flow.name === 'Pago de Plazo Fijos';
 }
 
 // Cuando la columna Circuito de una fila viene en 1, no se ejecutan los
@@ -1153,6 +1183,7 @@ async function runFlowFromCsv() {
                 fechaVencimiento: first.vencimiento,
                 tipoCircuito: (row[row.length - 1] || '').trim(),
                 pfPagado: false,
+                apellidoNombre: (row[1] || '').trim(),
               });
             }
           } catch (err) {
@@ -1396,6 +1427,195 @@ async function runFlowFromCsv() {
     runBtn.disabled = false;
   }
 }
+
+// "Buscar plazos fijos a pagar" (flow "Pago de Plazo Fijos"): trae del
+// servidor los plazos fijos con fecha_vencimiento = hoy, tipo_circuito = 0
+// y pf_pagado = 0 (ver findOperationsToPay en processedOperationsStore.js)
+// y los muestra en una tabla para revisar antes de tocar ningún endpoint
+// del banco — correrPagoPlazoFijos recién se puede apretar después de esto.
+async function buscarPlazosFijosAPagar() {
+  const buscarBtn = document.getElementById('buscarPagoPlazoFijosBtn');
+  const confirmBtn = document.getElementById('confirmarPagoPlazoFijosBtn');
+  const progressEl = document.getElementById('pagoPlazoFijosProgress');
+  const resultDiv = document.getElementById('pagoPlazoFijosResult');
+  const tbody = document.getElementById('pagoPlazoFijosBody');
+
+  buscarBtn.disabled = true;
+  confirmBtn.disabled = true;
+  resultDiv.style.display = 'none';
+  hideCsvSummary('pagoPlazoFijosSummary');
+  progressEl.textContent = 'Buscando plazos fijos a pagar...';
+  state.pagoPlazoFijosRows = [];
+
+  try {
+    const res = await apiFetch('/api/plazos-fijos-a-pagar');
+    const data = await res.json();
+    if (!res.ok) throw new Error((data && data.error) || 'Error buscando plazos fijos a pagar.');
+
+    state.pagoPlazoFijosRows = data;
+    tbody.innerHTML = '';
+    for (const row of data) {
+      const tr = document.createElement('tr');
+      tr.innerHTML = `
+        <td>${escapeHtml(row.cuit)}</td>
+        <td>${escapeHtml(row.apellidoNombre)}</td>
+        <td>${escapeHtml(row.numeroComprobante)}</td>
+        <td>${escapeHtml(row.importeNeto)}</td>
+        <td>${escapeHtml(row.cajaAhorro)}</td>
+        <td>${escapeHtml(row.fechaVencimiento)}</td>
+      `;
+      tbody.appendChild(tr);
+    }
+    progressEl.textContent = `${data.length} plazo(s) fijo(s) a pagar.`;
+    resultDiv.style.display = '';
+    confirmBtn.disabled = data.length === 0;
+  } catch (err) {
+    progressEl.textContent = '';
+    alert('Error buscando plazos fijos a pagar: ' + err.message);
+  } finally {
+    buscarBtn.disabled = false;
+  }
+}
+
+// "Confirmar y pagar": corre el flow "Pago de Plazo Fijos" (Débito en Caja
+// de Ahorro + Crédito en Cuenta Corriente, en ese orden — si el débito
+// falla, flowEngine.js corta la cadena y no llega a correr el crédito, ver
+// invokeFlow) una vez por cada fila que trajo buscarPlazosFijosAPagar. Todas
+// las filas comparten un solo log (mismo criterio que batchLogFileName en
+// runFlowFromCsv) y, al terminar, se marca pf_pagado = 1 en
+// operaciones_procesadas solo para las filas donde los 2 pasos salieron
+// bien — una fila con el débito en error nunca llega a marcarse (ni se
+// intenta el crédito), así puede reintentarse en una corrida posterior sin
+// haber tocado ninguna cuenta.
+async function confirmarPagoPlazoFijos() {
+  const flow = state.selectedFlow;
+  const rows = state.pagoPlazoFijosRows || [];
+  if (rows.length === 0) return;
+
+  const buscarBtn = document.getElementById('buscarPagoPlazoFijosBtn');
+  const confirmBtn = document.getElementById('confirmarPagoPlazoFijosBtn');
+  const progressEl = document.getElementById('pagoPlazoFijosProgress');
+
+  buscarBtn.disabled = true;
+  confirmBtn.disabled = true;
+  document.getElementById('logBody').innerHTML = '';
+  state.lastLog = [];
+
+  const stepCounts = flow.steps.map(() => ({ ok: 0, error: 0, skipped: 0, errorTypes: {} }));
+  let batchLogFileName = `http/${generateFallbackStamp()}-${flowLogNameFallback(flow)}.log`;
+  const paidOperations = [];
+  const startedAt = Date.now();
+
+  for (let i = 0; i < rows.length; i++) {
+    const row = rows[i];
+    const rowNumber = i + 1;
+    progressEl.textContent = `Pagando ${rowNumber} de ${rows.length} (CUIT ${row.cuit}, comprobante ${row.numeroComprobante})...`;
+
+    let rowEntries;
+    if (!row.cajaAhorro) {
+      // Sin cuenta de Caja de Ahorro guardada (dato faltante de una
+      // instalación anterior a esta columna, o de un alta hecha antes de
+      // que se empezara a guardar) no se llama a ningún endpoint del
+      // banco — mismo criterio de seguridad que accountLookupError en
+      // runFlowFromCsv para "Alta de Plazo Fijos - File".
+      rowEntries = [
+        {
+          name: '1. Débito en Caja de Ahorro',
+          status: 'Error',
+          requestSummary: null,
+          responseSummary: null,
+          httpStatusCode: null,
+          durationMs: 0,
+          errorMessage: `No hay cuenta de Caja de Ahorro guardada para el CUIT ${row.cuit} (comprobante ${row.numeroComprobante}).`,
+        },
+      ];
+    } else {
+      const inputs = {
+        cuit: row.cuit,
+        apellidoNombre: row.apellidoNombre || '',
+        numeroComprobante: row.numeroComprobante,
+        importe: row.importeNeto || '',
+        cajaAhorro: row.cajaAhorro,
+      };
+      try {
+        rowEntries = await runFlowByName(flow.name, inputs, batchLogFileName);
+        batchLogFileName = rowEntries.runLogFileName || batchLogFileName;
+      } catch (err) {
+        rowEntries = [
+          {
+            name: '1. Débito en Caja de Ahorro',
+            status: 'Error',
+            requestSummary: null,
+            responseSummary: null,
+            httpStatusCode: null,
+            durationMs: 0,
+            errorMessage: err.message,
+          },
+        ];
+      }
+    }
+
+    for (let s = 0; s < flow.steps.length; s++) {
+      const entry = rowEntries[s];
+      if (entry && entry.status === 'Success') {
+        stepCounts[s].ok++;
+      } else {
+        stepCounts[s].error++;
+        const errorType = classifyStepErrorType(entry);
+        stepCounts[s].errorTypes[errorType] = (stepCounts[s].errorTypes[errorType] || 0) + 1;
+      }
+    }
+
+    const allOk = rowEntries.length === flow.steps.length && rowEntries.every((entry) => entry.status === 'Success');
+    if (allOk) paidOperations.push({ cuit: row.cuit, numeroComprobante: row.numeroComprobante });
+
+    renderCsvSummary(flow, rows.length, stepCounts, null, 'pagoPlazoFijosSummary');
+
+    const prefixed = rowEntries.map((entry) => ({ ...entry, name: `Fila ${rowNumber} — ${entry.name}` }));
+    state.lastLog = state.lastLog.concat(prefixed);
+    document.getElementById('saveLogBtn').disabled = state.lastLog.length === 0;
+  }
+
+  let doneText = `Listo: ${rows.length} plazo(s) fijo(s) procesado(s) en ${formatDurationShort(Date.now() - startedAt)}.`;
+
+  if (paidOperations.length > 0) {
+    try {
+      const res = await apiFetch('/api/plazos-fijos-pagados', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ operations: paidOperations }),
+      });
+      if (!res.ok) {
+        let data = null;
+        try {
+          data = await res.json();
+        } catch (err) {
+          // Respuesta de error sin body JSON — se avisa igual, solo que sin
+          // el detalle de data.error.
+        }
+        throw new Error((data && data.error) || `HTTP ${res.status}`);
+      }
+      doneText += ` ${paidOperations.length} marcado(s) como pagado(s).`;
+    } catch (err) {
+      // Los pagos que sí se hicieron en el banco no quedan marcados como
+      // pagados en operaciones_procesadas — hay que avisar, no fallar en
+      // silencio (mismo criterio que el aviso post register-operations en
+      // runFlowFromCsv).
+      alert('Atención: los pagos se hicieron pero no se pudieron marcar como pagados en la base: ' + err.message);
+    }
+  }
+
+  if (batchLogFileName) {
+    await postRunSummary(batchLogFileName, flow.name, null, null, paidOperations.length, rows.length - paidOperations.length);
+  }
+
+  progressEl.textContent = doneText;
+  buscarBtn.disabled = false;
+  confirmBtn.disabled = false;
+}
+
+document.getElementById('buscarPagoPlazoFijosBtn').addEventListener('click', buscarPlazosFijosAPagar);
+document.getElementById('confirmarPagoPlazoFijosBtn').addEventListener('click', confirmarPagoPlazoFijos);
 
 function saveLog() {
   const lines = state.lastLog
