@@ -907,9 +907,11 @@ El botón **"Parametría..."** (al lado de "Probar token") abre un formulario
 para configurar valores fijos que varios flows necesitan y que casi nunca
 cambian de una ejecución a otra, agrupados por tipo de cuenta:
 
-- **Cuenta Corriente**: código de cuenta, código de sistema, transacción.
-- **Caja de Ahorro**: código de sistema, transacción (el código de
-  cuenta sigue siendo manual en cada flow, porque cambia por operación).
+- **Cuenta Corriente**: código de cuenta, código de sistema, transacción de
+  débito y transacción de crédito.
+- **Caja de Ahorro**: código de sistema, transacción de crédito y
+  transacción de débito (el código de cuenta sigue siendo manual en cada
+  flow, porque cambia por operación).
 - **Plazo Fijo**: código de producto, código de movimiento.
 - **Conexión Sybase**: connection string, usuario y contraseña — ver
   "Conexión a una base Sybase (para steps SQL)" más abajo. A diferencia de
@@ -929,8 +931,10 @@ cifrados").
 Dentro de un flow, estos valores están disponibles como variables de sistema
 con nombre fijo (no hace falta declararlos como inputs):
 
-- `{{ctaCteCodigoCuenta}}`, `{{ctaCteCodigoSistema}}`, `{{ctaCteTransaccion}}`
-- `{{cajaAhorroCodigoSistema}}`, `{{cajaAhorroTransaccion}}`
+- `{{ctaCteCodigoCuenta}}`, `{{ctaCteCodigoSistema}}`, `{{ctaCteTransaccionDebito}}`,
+  `{{ctaCteTransaccionCredito}}`
+- `{{cajaAhorroCodigoSistema}}`, `{{cajaAhorroTransaccionCredito}}`,
+  `{{cajaAhorroTransaccionDebito}}`
 - `{{plazoFijoCodigoProducto}}`, `{{plazoFijoCodigoMovimiento}}`
 - `{{consultaCbuBaseUrl}}` (sin barra final, aunque se haya guardado con una)
 
