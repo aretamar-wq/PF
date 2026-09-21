@@ -1544,6 +1544,25 @@ salieron bien (no con todas): eso marca `pf_pagado = 1` en
 error nunca se marca (ni se intenta el crédito), así vuelve a aparecer en
 la próxima búsqueda sin haber tocado ninguna cuenta.
 
+Al terminar la corrida se guardan (en `files/`, mismo `runId` que el log de
+la corrida, ver `deriveRunId`) hasta **2 archivos de salida** — mismo
+criterio de "un archivo ok + un archivo error, con motivo" que el resto de
+los flows de archivo:
+
+- `<runId>.csv` — una fila por plazo fijo pagado con éxito (los 2 steps en
+  `Success`).
+- `<runId>-error.csv` — una fila por plazo fijo que no se pudo pagar (el
+  débito falló, o el crédito falló después de un débito exitoso, o la fila
+  ni siquiera tenía `caja_ahorro` guardada), con el motivo del fallo.
+
+Los dos comparten las mismas columnas de "datos del pago del PF" (más
+`motivo` en el de error), un `IdMensaje` generado por fila
+(`generateIdMensaje`, mismo criterio que "Alta de Plazo Fijos - File") que
+identifica esa corrida del pago — no es el mismo `IdMensaje` que se usó al
+dar de alta el plazo fijo:
+
+`idMensaje, cuit, apellidoNombre, numeroComprobante, importe, cajaAhorro, fechaVencimiento[, motivo]`
+
 **Transacciones de Parametría usadas**: débito en Caja de Ahorro con
 `{{cajaAhorroTransaccionDebito}}`, crédito en Cuenta Corriente con
 `{{ctaCteTransaccionCredito}}` — las mismas 2 columnas nuevas que agregó
