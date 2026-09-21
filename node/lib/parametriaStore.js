@@ -25,8 +25,8 @@ const DEFAULT_CONSULTA_CBU_BASE_URL = 'http://api-billetera.voii.com.ar:54000/QN
 
 function getDefaultParametria() {
   return {
-    cuentaCorriente: { codigoCuenta: '', codigoSistema: '', transaccion: '' },
-    cajaDeAhorro: { codigoSistema: '', transaccion: '' },
+    cuentaCorriente: { codigoCuenta: '', codigoSistema: '', transaccionDebito: '', transaccionCredito: '' },
+    cajaDeAhorro: { codigoSistema: '', transaccionCredito: '', transaccionDebito: '' },
     plazoFijo: { codigoProducto: '', codigoMovimiento: '' },
     sybase: {
       connectionString:
@@ -43,11 +43,13 @@ function mapParametriaRow(row) {
     cuentaCorriente: {
       codigoCuenta: row.cc_codigo_cuenta,
       codigoSistema: row.cc_codigo_sistema,
-      transaccion: row.cc_transaccion,
+      transaccionDebito: row.cc_transaccion_debito,
+      transaccionCredito: row.cc_transaccion_credito,
     },
     cajaDeAhorro: {
       codigoSistema: row.ca_codigo_sistema,
-      transaccion: row.ca_transaccion,
+      transaccionCredito: row.ca_transaccion_credito,
+      transaccionDebito: row.ca_transaccion_debito,
     },
     plazoFijo: {
       codigoProducto: row.pf_codigo_producto,
@@ -88,18 +90,20 @@ async function saveParametria(rootDir, parametria) {
   await db.query(
     rootDir,
     `INSERT INTO parametria (
-       id, cc_codigo_cuenta, cc_codigo_sistema, cc_transaccion,
-       ca_codigo_sistema, ca_transaccion,
+       id, cc_codigo_cuenta, cc_codigo_sistema, cc_transaccion_debito, cc_transaccion_credito,
+       ca_codigo_sistema, ca_transaccion_credito, ca_transaccion_debito,
        pf_codigo_producto, pf_codigo_movimiento,
        sybase_connection_string, sybase_usuario, sybase_password,
        consulta_cbu_base_url
-     ) VALUES (1, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+     ) VALUES (1, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
      ON DUPLICATE KEY UPDATE
        cc_codigo_cuenta = VALUES(cc_codigo_cuenta),
        cc_codigo_sistema = VALUES(cc_codigo_sistema),
-       cc_transaccion = VALUES(cc_transaccion),
+       cc_transaccion_debito = VALUES(cc_transaccion_debito),
+       cc_transaccion_credito = VALUES(cc_transaccion_credito),
        ca_codigo_sistema = VALUES(ca_codigo_sistema),
-       ca_transaccion = VALUES(ca_transaccion),
+       ca_transaccion_credito = VALUES(ca_transaccion_credito),
+       ca_transaccion_debito = VALUES(ca_transaccion_debito),
        pf_codigo_producto = VALUES(pf_codigo_producto),
        pf_codigo_movimiento = VALUES(pf_codigo_movimiento),
        sybase_connection_string = VALUES(sybase_connection_string),
@@ -109,9 +113,11 @@ async function saveParametria(rootDir, parametria) {
     [
       cc.codigoCuenta || '',
       cc.codigoSistema || '',
-      cc.transaccion || '',
+      cc.transaccionDebito || '',
+      cc.transaccionCredito || '',
       ca.codigoSistema || '',
-      ca.transaccion || '',
+      ca.transaccionCredito || '',
+      ca.transaccionDebito || '',
       pf.codigoProducto || '',
       pf.codigoMovimiento || '',
       sybase.connectionString || '',
