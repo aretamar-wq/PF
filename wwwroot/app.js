@@ -2107,11 +2107,16 @@ async function downloadOutputFile(name) {
 }
 
 async function openOutputFilesSection() {
-  outputFilesFromDate.value = '';
-  outputFilesToDate.value = '';
+  // Por default Desde/Hasta quedan en el día de hoy (rango de un solo día) —
+  // así se puede ver algo apenas se abre el panel, sin tener que elegir
+  // fecha a mano cada vez. Sigue siendo editable: "Limpiar filtro" los deja
+  // vacíos si hace falta buscar en otro rango.
+  const today = formatDateOnlyLocal(new Date());
+  outputFilesFromDate.value = today;
+  outputFilesToDate.value = today;
   allOutputFiles = [];
-  applyOutputFilesFilter();
   showMainSection('outputFilesSection');
+  await loadOutputFilesList();
 }
 
 document.getElementById('outputFilesBtn').addEventListener('click', openOutputFilesSection);
