@@ -843,19 +843,16 @@ async function runFlowFromCsv() {
     }
 
     // Nombre de log compartido por TODA la corrida de este archivo — incluida
-    // "Recupera cuentas (SQL)" de más abajo, que si no quedaría en su propio
-    // log separado (con su propio nombre, "recupera-cuentas-sql...") en vez
-    // de en el mismo log que el resto de "Alta de Plazo Fijos - File". Se
-    // genera client-side (mismo formato que generateRunId en
+    // "Recupera cuentas (SQL)" de más abajo (para "Alta de Plazo Fijos -
+    // File") y "Consulta DEBIN (solo)" de más abajo (para "Transferencia
+    // DEBIN - File"), que si no quedarían en su propio log separado en vez
+    // de en el mismo log que el resto de la corrida — un solo archivo con
+    // todo lo que pasó, en vez de dos para revisar por separado. Se genera
+    // client-side (mismo formato que generateRunId en
     // node/lib/flowEngine.js) porque hace falta ANTES de la primera llamada a
     // /api/run — el servidor lo valida y lo reusa tal cual en vez de generar
     // uno nuevo (ver runFlowByName/runOnce).
     let batchLogFileName = `http/${generateFallbackStamp()}-${flowLogNameFallback(flow)}.log`;
-    // "Consulta DEBIN (solo)" (más abajo) es un flow/log aparte del de
-    // arriba, con su propio runId para nombrar dbnconsulta-....csv —
-    // declarado acá (no dentro de su propio if) para que siga en scope
-    // cuando se llama a saveOutputFiles/postRunSummary al final de la función.
-    let consultaLogFileName = null;
 
     // Para "Alta de Plazo Fijos - File": UNA sola consulta a Sybase con
     // todos los CUIT del archivo, antes de procesar ninguna fila — en vez
@@ -1324,9 +1321,9 @@ async function runFlowFromCsv() {
           const consultaEntries = await runFlowByName(
             DEBIN_CONSULTAR_FLOW_NAME,
             { idOperacion: detailRow.idRespuesta },
-            consultaLogFileName
+            batchLogFileName
           );
-          consultaLogFileName = consultaEntries.runLogFileName || consultaLogFileName;
+          batchLogFileName = consultaEntries.runLogFileName || batchLogFileName;
           const lastEntry = consultaEntries[consultaEntries.length - 1];
           if (lastEntry && lastEntry.status === 'Success' && lastEntry.responseSummary) {
             const parsed = JSON.parse(lastEntry.responseSummary);
@@ -1342,7 +1339,7 @@ async function runFlowFromCsv() {
       }
     }
 
-    const saved = await saveOutputFiles(flow, batchLogFileName, consultaLogFileName);
+    const saved = await saveOutputFiles(flow, batchLogFileName);
     const savedFiles = [saved.batchOkFileName, saved.batchErrorFileName, saved.consultaOkFileName].filter(Boolean);
     if (savedFiles.length > 0) {
       doneText += ` Guardado en files/: ${savedFiles.join(', ')}.`;
@@ -1353,16 +1350,15 @@ async function runFlowFromCsv() {
     // sigue apareciendo en la lista (por el log), solo que sin flow/usuario/
     // pasos. pasosOk/pasosError son por FILA del CSV, no por step HTTP
     // individual (más útil de leer que el conteo de steps que ya guarda
-    // security.log).
+    // security.log). Un solo resumen para toda la corrida (batchLogFileName
+    // es también el log de "Consulta DEBIN (solo)" ahora, ver más arriba) —
+    // ya no hace falta un segundo postRunSummary aparte para la consulta.
     const pasosOk =
       state.pfDetailRows.filter((r) => r.realizado === 's').length +
       state.debinDetailRows.filter((r) => r.realizado === 's').length;
     const pasosError = state.errorRows.length;
     if (batchLogFileName) {
       await postRunSummary(batchLogFileName, flow.name, saved.batchOkFileName, saved.batchErrorFileName, pasosOk, pasosError);
-    }
-    if (consultaLogFileName && saved.consultaOkFileName) {
-      await postRunSummary(consultaLogFileName, DEBIN_CONSULTAR_FLOW_NAME, saved.consultaOkFileName, null, state.debinConsultaRows.length, 0);
     }
     progressEl.textContent = doneText;
   } catch (err) {
@@ -1496,21 +1492,29 @@ async function saveOutputFile(runId, variant, kind, content) {
 }
 
 // Al terminar de procesar el CSV: guarda, si corresponde, hasta 3 archivos.
-// El de la corrida principal (pfout/dbnout, más el de error si hubo filas
-// fallidas) comparte runId con batchLogFileName; el de la consulta DEBIN
-// (dbnconsulta) es una corrida/log aparte, con su propio runId
-// (consultaLogFileName) — "Consulta DEBIN (solo)" es un flow distinto del
-// de arriba. Como cada corrida es de un solo flow CSV, nunca se mezclan
+// El de la corrida principal (pfout, más el de error si hubo filas
+// fallidas) comparte runId con batchLogFileName. El de la consulta DEBIN
+// (dbnconsulta, solo para "Transferencia DEBIN - File") tiene su propio
+// runId — un timestamp propio, no atado a ningún log — porque el nombre
+// tiene que seguir empezando con su propio slug ("...-consulta-debin-solo",
+// no el de la corrida principal), aunque el log de esa consulta ahora sea
+// el MISMO archivo que batchLogFileName (ver runFlowFromCsv: ya no hay un
+// consultaLogFileName aparte, todo el detalle HTTP de una corrida de
+// "Transferencia DEBIN - File" — transferencias y consultas — queda en un
+// solo .log). "Transferencia DEBIN - File" ya NO genera su propio archivo
+// "ok" (dbnout): con dbnouterror-... (las filas que fallaron) y
+// dbnconsulta-... (el estado de las que sí se transfirieron, incluidos los
+// rechazos de negocio que ya arman su propia fila ahí) alcanza — el
+// contenido de dbnout terminaba duplicando lo que ya se puede ver en esos
+// dos. Como cada corrida es de un solo flow CSV, nunca se mezclan
 // pfDetailRows con debinDetailRows en la misma corrida — alcanza con mirar
-// cuál de los dos tiene filas para saber cuál generar. Las filas con
-// "realizado" = "n" están en los dos archivos de ese flow (ok y error), con
-// formato distinto cada vez (acá el de salida normal, en el de error tal
-// cual vino en el archivo de entrada).
-async function saveOutputFiles(flow, batchLogFileName, consultaLogFileName) {
+// cuál de los dos tiene filas para saber cuál generar. debinDetailRows
+// sigue existiendo en memoria igual (lo usa el loop de consultas y el
+// conteo de pasosOk más abajo), solo dejó de volcarse a un archivo propio.
+async function saveOutputFiles(flow, batchLogFileName) {
   const result = { batchOkFileName: null, batchErrorFileName: null, consultaOkFileName: null };
   if (
     state.pfDetailRows.length === 0 &&
-    state.debinDetailRows.length === 0 &&
     state.debinConsultaRows.length === 0 &&
     state.errorRows.length === 0
   ) {
@@ -1528,15 +1532,6 @@ async function saveOutputFiles(flow, batchLogFileName, consultaLogFileName) {
     result.batchOkFileName = await saveOutputFile(batchRunId, 'ok', 'pfout', lines.join('\r\n'));
   }
 
-  if (state.debinDetailRows.length > 0) {
-    const headers = ['creditoCuit', 'creditoCbu', 'creditoTitular', 'debitoCuit', 'debitoCbu', 'debitoTitular', 'idComprobante', 'moneda', 'importe', 'codigoRespuesta', 'descripcionRespuesta', 'idRespuesta', 'idMensaje', 'realizado'];
-    const lines = [headers.join(',')];
-    for (const row of state.debinDetailRows) {
-      lines.push(headers.map((h) => csvEscape(row[h])).join(','));
-    }
-    result.batchOkFileName = await saveOutputFile(batchRunId, 'ok', 'dbnout', lines.join('\r\n'));
-  }
-
   if (state.errorRows.length > 0) {
     // Sin fila de encabezado, a propósito: cada fila queda igual a como
     // vino en el archivo de entrada (que tampoco lleva encabezado) más el
@@ -1546,7 +1541,7 @@ async function saveOutputFiles(flow, batchLogFileName, consultaLogFileName) {
   }
 
   if (state.debinConsultaRows.length > 0) {
-    const consultaRunId = deriveRunId(consultaLogFileName, DEBIN_CONSULTAR_FLOW_NAME);
+    const consultaRunId = deriveRunId(null, DEBIN_CONSULTAR_FLOW_NAME);
     const headers = ['idMensaje', 'idComprobante', 'idOperacion', ...DEBIN_CONSULTA_COLUMNS, 'errorConsulta'];
     const lines = [headers.join(',')];
     for (const row of state.debinConsultaRows) {
