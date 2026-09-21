@@ -1207,18 +1207,18 @@ async function runFlowFromCsv() {
           realizado: 'n',
         });
 
-        // Si la fila falló puntualmente porque el titular real del CBU
+        // Si la fila falló puntualmente porque (a) el titular real del CBU
         // destino (ConsultaCBU) no coincide con el CUIT destino del
-        // archivo, también se agrega una fila a dbnconsulta-...csv (además
-        // de dbnouterror-...csv): nunca hubo transferencia que consultar
-        // (por eso idOperacion y el resto de las columnas de Nova-Link
-        // quedan vacías), pero conviene que el motivo quede en el mismo
-        // archivo donde se revisa el estado de las transferencias, no solo
-        // en el de errores. compradorCuentaCbu/estadoCodigo/
-        // estadoDescripcion (no errorConsulta) es el formato pedido para
-        // este caso puntual.
+        // archivo, o (b) Nova-Link rechazó la transferencia por garantías
+        // (HTTP 200 con descripcionRespuesta="ERROR GENERAL GARANTIAS", ver
+        // failIfEquals en el step "2. Transferencia DEBIN"), también se
+        // agrega una fila a dbnconsulta-...csv (además de
+        // dbnouterror-...csv) con el mismo formato fijo para los dos casos
+        // (compradorCuentaCbu/estadoCodigo/estadoDescripcion, no
+        // errorConsulta) — solo cambia el texto de estadoDescripcion.
         const mismatchEntry = rowEntries.find((entry) => entry.isVariableMismatch);
-        if (mismatchEntry) {
+        const garantiasEntry = rowEntries.find((entry) => entry.isGarantiasError);
+        if (mismatchEntry || garantiasEntry) {
           const consultaRow = {
             idMensaje: rowIdMensaje,
             idComprobante: row[6] || '',
@@ -1228,7 +1228,7 @@ async function runFlowFromCsv() {
           for (const col of DEBIN_CONSULTA_COLUMNS) consultaRow[col] = '';
           consultaRow.compradorCuentaCbu = row[4] || ''; // CBU origen (debitoCbu)
           consultaRow.estadoCodigo = 'Error';
-          consultaRow.estadoDescripcion = 'El CUIT no coincide con el CBU Destino';
+          consultaRow.estadoDescripcion = mismatchEntry ? 'El CUIT no coincide con el CBU Destino' : 'Error en Garantias';
           state.debinConsultaRows.push(consultaRow);
         }
       }

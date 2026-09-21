@@ -624,6 +624,31 @@ async function invokeHttpStep(step, flowObj, variables, profileObj, logsDir, run
     }
   }
 
+  // failIfEquals (opcional, array de pares [nombreVariable, valorLiteral]): el
+  // step cuenta como fallido si esa variable extraída (recién asignada arriba)
+  // coincide con el valor literal indicado — para un rechazo de negocio que
+  // vuelve con HTTP 200 y por lo tanto no lo agarra el chequeo de
+  // expectedStatusCode (ej. "Transferencia DEBIN": Nova-Link responde 200
+  // con descripcionRespuesta="ERROR GENERAL GARANTIAS" cuando rechaza por
+  // garantías, un rechazo real que a nivel HTTP es indistinguible de un
+  // éxito).
+  if (step.failIfEquals) {
+    for (const [name, literalValue] of step.failIfEquals) {
+      const value = variables[name] !== undefined && variables[name] !== null ? String(variables[name]).trim() : '';
+      if (value === String(literalValue)) {
+        entry.status = 'Error';
+        entry.errorMessage = `El campo '${name}' vino '${value}' — rechazo de negocio, no un error de transporte.`;
+        entry.isGarantiasError = true;
+        const rejectionLogText = [
+          `<<< ERROR [${formatLocal(new Date(), true)}] Flow=${flowObj.name} | Step=${step.name} | ${entry.errorMessage} (${Date.now() - stepStartedAt} ms)`,
+          '---',
+        ].join('\n');
+        writeHttpLog(logsDir, runLogFileName, rejectionLogText);
+        return;
+      }
+    }
+  }
+
   // requireVariablesEqual (opcional, array de pares [nombreA, nombreB]): el
   // step solo cuenta como exitoso si cada par de variables terminó con el
   // mismo valor (ej. ConsultaCBU de "Transferencia DEBIN - File": el titular
