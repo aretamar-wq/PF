@@ -1206,6 +1206,31 @@ async function runFlowFromCsv() {
           idMensaje: rowIdMensaje,
           realizado: 'n',
         });
+
+        // Si la fila falló puntualmente porque el titular real del CBU
+        // destino (ConsultaCBU) no coincide con el CUIT destino del
+        // archivo, también se agrega una fila a dbnconsulta-...csv (además
+        // de dbnouterror-...csv): nunca hubo transferencia que consultar
+        // (por eso idOperacion y el resto de las columnas de Nova-Link
+        // quedan vacías), pero conviene que el motivo quede en el mismo
+        // archivo donde se revisa el estado de las transferencias, no solo
+        // en el de errores. compradorCuentaCbu/estadoCodigo/
+        // estadoDescripcion (no errorConsulta) es el formato pedido para
+        // este caso puntual.
+        const mismatchEntry = rowEntries.find((entry) => entry.isVariableMismatch);
+        if (mismatchEntry) {
+          const consultaRow = {
+            idMensaje: rowIdMensaje,
+            idComprobante: row[6] || '',
+            idOperacion: '',
+            errorConsulta: '',
+          };
+          for (const col of DEBIN_CONSULTA_COLUMNS) consultaRow[col] = '';
+          consultaRow.compradorCuentaCbu = row[4] || ''; // CBU origen (debitoCbu)
+          consultaRow.estadoCodigo = 'Error';
+          consultaRow.estadoDescripcion = 'El CUIT no coincide con el CBU Destino';
+          state.debinConsultaRows.push(consultaRow);
+        }
       }
 
       const prefixed = rowEntries.map((entry) => ({ ...entry, name: `Fila ${rowNumber} — ${entry.name}` }));
