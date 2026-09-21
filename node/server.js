@@ -632,6 +632,11 @@ async function handleRegisterOperations(req, res, session) {
     cuit: String(op.cuit),
     numeroComprobante: String(op.numeroComprobante),
     idMensaje: String(op.idMensaje),
+    cajaAhorro: op.cajaAhorro != null ? String(op.cajaAhorro) : '',
+    importeNeto: op.importeNeto != null ? String(op.importeNeto) : '',
+    fechaVencimiento: op.fechaVencimiento != null ? String(op.fechaVencimiento) : '',
+    tipoCircuito: op.tipoCircuito != null ? String(op.tipoCircuito) : '',
+    pfPagado: !!op.pfPagado,
   }));
   if (operations.length > 0) {
     await processedOperationsStore.addProcessedOperations(rootDir, operations, session.username);
