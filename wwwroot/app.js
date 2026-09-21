@@ -1504,12 +1504,27 @@ async function confirmarPagoPlazoFijos() {
   const stepCounts = flow.steps.map(() => ({ ok: 0, error: 0, skipped: 0, errorTypes: {} }));
   let batchLogFileName = `http/${generateFallbackStamp()}-${flowLogNameFallback(flow)}.log`;
   const paidOperations = [];
+  // Filas para los 2 archivos de salida (ver más abajo, después del loop):
+  // <runId>.csv (pago OK) y <runId>-error.csv (motivo del fallo) — mismo
+  // criterio de "2 archivos, mismo runId" que pfout/pfouterror para "Alta
+  // de Plazo Fijos - File".
+  const okRows = [];
+  const errorRows = [];
   const startedAt = Date.now();
 
   for (let i = 0; i < rows.length; i++) {
     const row = rows[i];
     const rowNumber = i + 1;
     progressEl.textContent = `Pagando ${rowNumber} de ${rows.length} (CUIT ${row.cuit}, comprobante ${row.numeroComprobante})...`;
+
+    // Un IdMensaje propio por fila (mismo criterio que runFlowFromCsv para
+    // "Alta de Plazo Fijos - File"): generado acá para que quede disponible
+    // en los 2 archivos de salida aunque la fila ni siquiera haya llegado a
+    // llamar a ningún endpoint del banco (fila sin Caja de Ahorro, ver
+    // abajo) — el server también lo genera si no se lo mandamos
+    // (idMensajeGenerado), pero entonces el cliente nunca se entera de cuál
+    // usó.
+    const rowIdMensaje = generateIdMensaje();
 
     let rowEntries;
     if (!row.cajaAhorro) {
@@ -1536,6 +1551,7 @@ async function confirmarPagoPlazoFijos() {
         numeroComprobante: row.numeroComprobante,
         importe: row.importeNeto || '',
         cajaAhorro: row.cajaAhorro,
+        idMensajeGenerado: rowIdMensaje,
       };
       try {
         rowEntries = await runFlowByName(flow.name, inputs, batchLogFileName);
@@ -1567,7 +1583,26 @@ async function confirmarPagoPlazoFijos() {
     }
 
     const allOk = rowEntries.length === flow.steps.length && rowEntries.every((entry) => entry.status === 'Success');
-    if (allOk) paidOperations.push({ cuit: row.cuit, numeroComprobante: row.numeroComprobante });
+    // "Datos del pago del PF": los mismos datos con los que se corrió la
+    // fila (numeroComprobante/cuit/apellidoNombre/importe/cajaAhorro/
+    // fechaVencimiento) más el IdMensaje que se le generó — iguales en el
+    // archivo OK y en el de error, este último con "motivo" al final.
+    const pagoRow = {
+      idMensaje: rowIdMensaje,
+      cuit: row.cuit,
+      apellidoNombre: row.apellidoNombre || '',
+      numeroComprobante: row.numeroComprobante,
+      importe: row.importeNeto || '',
+      cajaAhorro: row.cajaAhorro || '',
+      fechaVencimiento: row.fechaVencimiento || '',
+    };
+    if (allOk) {
+      paidOperations.push({ cuit: row.cuit, numeroComprobante: row.numeroComprobante });
+      okRows.push(pagoRow);
+    } else {
+      const failedEntry = rowEntries.find((entry) => entry.status !== 'Success' && entry.errorMessage);
+      errorRows.push({ ...pagoRow, motivo: failedEntry ? failedEntry.errorMessage : '' });
+    }
 
     renderCsvSummary(flow, rows.length, stepCounts, null, 'pagoPlazoFijosSummary');
 
@@ -1577,6 +1612,29 @@ async function confirmarPagoPlazoFijos() {
   }
 
   let doneText = `Listo: ${rows.length} plazo(s) fijo(s) procesado(s) en ${formatDurationShort(Date.now() - startedAt)}.`;
+
+  // 2 archivos de salida, mismo runId (atado al log de esta corrida, igual
+  // que pfout/pfouterror): <runId>.csv (pagos OK) y <runId>-error.csv
+  // (fallidos, con el motivo).
+  const runId = deriveRunId(batchLogFileName, flow);
+  let okFileName = null;
+  let errorFileName = null;
+  if (okRows.length > 0) {
+    const headers = ['idMensaje', 'cuit', 'apellidoNombre', 'numeroComprobante', 'importe', 'cajaAhorro', 'fechaVencimiento'];
+    const lines = [headers.join(',')];
+    for (const r of okRows) lines.push(headers.map((h) => csvEscape(r[h])).join(','));
+    okFileName = await saveOutputFile(runId, 'ok', null, lines.join('\r\n'));
+  }
+  if (errorRows.length > 0) {
+    const headers = ['idMensaje', 'cuit', 'apellidoNombre', 'numeroComprobante', 'importe', 'cajaAhorro', 'fechaVencimiento', 'motivo'];
+    const lines = [headers.join(',')];
+    for (const r of errorRows) lines.push(headers.map((h) => csvEscape(r[h])).join(','));
+    errorFileName = await saveOutputFile(runId, 'error', null, lines.join('\r\n'));
+  }
+  const savedFiles = [okFileName, errorFileName].filter(Boolean);
+  if (savedFiles.length > 0) {
+    doneText += ` Guardado en files/: ${savedFiles.join(', ')}.`;
+  }
 
   if (paidOperations.length > 0) {
     try {
@@ -1606,7 +1664,7 @@ async function confirmarPagoPlazoFijos() {
   }
 
   if (batchLogFileName) {
-    await postRunSummary(batchLogFileName, flow.name, null, null, paidOperations.length, rows.length - paidOperations.length);
+    await postRunSummary(batchLogFileName, flow.name, okFileName, errorFileName, paidOperations.length, rows.length - paidOperations.length);
   }
 
   progressEl.textContent = doneText;
