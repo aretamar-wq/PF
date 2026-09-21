@@ -164,10 +164,9 @@ CREATE TABLE IF NOT EXISTS operaciones_procesadas (
   -- plazo fijo, importe neto y fecha de vencimiento tal como los devolvió
   -- el alta (mismos valores que pfDetailRows/pfout-...csv), el valor de
   -- Circuito de esa fila (0 = flujo completo, 1 = solo alta) y un flag
-  -- binario de que el plazo fijo efectivamente se pagó/registró (siempre 1
-  -- en las filas que llegan a registrarse acá: solo se registra una
-  -- operación después de confirmar el alta real, ver successfulOperations
-  -- en wwwroot/app.js).
+  -- binario de si el plazo fijo se pagó — arranca siempre en 0 al
+  -- registrar la operación (confirmar el alta no es lo mismo que
+  -- confirmar el pago); algún proceso posterior lo pasa a 1.
   caja_ahorro VARCHAR(100) NOT NULL DEFAULT '',
   importe_neto VARCHAR(50) NOT NULL DEFAULT '',
   fecha_vencimiento VARCHAR(50) NOT NULL DEFAULT '',
