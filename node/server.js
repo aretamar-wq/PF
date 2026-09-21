@@ -24,7 +24,7 @@ const flowEngine = require('./lib/flowEngine');
 const securityStore = require('./lib/securityStore');
 const processedOperationsStore = require('./lib/processedOperationsStore');
 const debinOutputStore = require('./lib/debinOutputStore');
-const { formatDateOnlyDMY } = require('./lib/dateUtil');
+const sybaseClient = require('./lib/sybaseClient');
 
 function parsePort() {
   const args = process.argv.slice(2);
@@ -647,17 +647,59 @@ async function handleRegisterOperations(req, res, session) {
   writeJsonResponse(res, 200, { ok: true, registered: operations.length });
 }
 
+// La "fecha de hoy" para "Pago de Plazo Fijos" no es la fecha del sistema
+// operativo del servidor: tiene que ser la fecha de PROCESO del banco
+// (tabla tgl_fechaproceso en Sybase), que puede no coincidir con el
+// calendario (ej. mientras no cerró el batch de fin de día). Se pide a los
+// 3 sistemas relacionados (3 = Cuenta Corriente, 4 = Plazo Fijo, 5 = Caja
+// de Ahorro) en la sucursal 1, estado 10 — si no están los 3 en ese estado,
+// o sus fechas no coinciden entre sí, no hay una única fecha de proceso
+// confiable todavía: se corta acá (mejor no mostrar nada que mostrar una
+// lista de plazos fijos con la fecha equivocada). CONVERT(..., 103) fuerza
+// dd/mm/yyyy sin hora, sea cual sea el dateformat/idioma de la sesión de
+// Sybase — mismo formato en el que queda guardado fecha_vencimiento en
+// operaciones_procesadas (ver formatDateOnlyDMY en dateUtil.js, que ya no
+// se usa para esto: antes se tomaba la fecha del sistema operativo).
+const FECHA_PROCESO_QUERY =
+  'SELECT sistcod, CONVERT(CHAR(10), fecproceso, 103) AS fecproceso FROM tgl_fechaproceso WHERE sistcod IN (3, 4, 5) AND succod = 1 AND estado = 10';
+
+async function getFechaProcesoBancaria(parametria) {
+  const rows = await sybaseClient.querySybase(parametria.sybase, FECHA_PROCESO_QUERY);
+  if (rows.length !== 3) {
+    throw new Error(
+      `tgl_fechaproceso no tiene los 3 sistemas (3, 4 y 5) en succod=1 y estado=10 en este momento (hay ${rows.length}).`
+    );
+  }
+  const fechas = rows.map((row) => String(row.fecproceso || '').trim());
+  const distintas = [...new Set(fechas)];
+  if (distintas.length !== 1) {
+    throw new Error(`Las fechas de proceso de los sistemas 3/4/5 no coinciden entre sí (${fechas.join(', ')}).`);
+  }
+  return distintas[0];
+}
+
 // Flow "Pago de Plazo Fijos": lista de candidatos a pagar hoy (fecha_vencimiento
-// = hoy, tipo_circuito = '0', pf_pagado = 0 — ver findOperationsToPay). Mismo
-// requisito que /api/run: un rol sin permiso para ejecutar flows tampoco puede
-// ver ni disparar esta lista (aunque en sí misma es de solo lectura, es el
-// primer paso de una corrida que va a mover dinero real).
+// = fecha de proceso bancaria, tipo_circuito = '0', pf_pagado = 0 — ver
+// findOperationsToPay). Mismo requisito que /api/run: un rol sin permiso para
+// ejecutar flows tampoco puede ver ni disparar esta lista (aunque en sí misma
+// es de solo lectura, es el primer paso de una corrida que va a mover dinero
+// real).
 async function handlePlazosFijosAPagarGet(res, session) {
   if (!securityStore.testRoleCanRunFlow(session.role)) {
     writeJsonResponse(res, 403, { error: `Tu rol ('${session.role}') no tiene permiso para ejecutar flows.` });
     return;
   }
-  const operations = await processedOperationsStore.findOperationsToPay(rootDir, formatDateOnlyDMY());
+
+  const parametria = await parametriaStore.getParametria(rootDir);
+  let fechaProceso;
+  try {
+    fechaProceso = await getFechaProcesoBancaria(parametria);
+  } catch (err) {
+    writeJsonResponse(res, 400, { error: `No se pudo obtener la fecha de proceso de Sybase: ${err.message}` });
+    return;
+  }
+
+  const operations = await processedOperationsStore.findOperationsToPay(rootDir, fechaProceso);
   writeJsonResponse(res, 200, operations);
 }
 
