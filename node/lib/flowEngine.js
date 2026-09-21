@@ -637,6 +637,13 @@ async function invokeHttpStep(step, flowObj, variables, profileObj, logsDir, run
       if (!valueA || !valueB || valueA !== valueB) {
         entry.status = 'Error';
         entry.errorMessage = `El valor de '${nameA}' ('${valueA || '(vacío)'}') no coincide con '${nameB}' ('${valueB || '(vacío)'}').`;
+        // Marca genérica (no solo para ConsultaCBU) para que el cliente pueda
+        // distinguir este motivo puntual de falla de cualquier otro (HTTP
+        // distinto de 200, excepción de red, etc.) sin tener que parsear
+        // errorMessage — ver dbnconsulta-...csv en wwwroot/app.js, que
+        // agrega una fila con este motivo cuando el CUIT destino no
+        // coincide con el titular real del CBU.
+        entry.isVariableMismatch = true;
         // Sin esto, el log de la corrida (logs/http/...) solo tenía el
         // REQUEST/RESPONSE de la consulta (con el titular adentro, sin
         // resaltar) — nada que diga en criollo por qué esta fila no siguió a
