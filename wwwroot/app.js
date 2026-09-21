@@ -1285,11 +1285,26 @@ async function runFlowFromCsv() {
 
     if (state.successfulOperations.length > 0) {
       try {
-        await apiFetch('/api/register-operations', {
+        const res = await apiFetch('/api/register-operations', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ operations: state.successfulOperations }),
         });
+        if (!res.ok) {
+          // apiFetch no tira excepción para un 4xx/5xx (devuelve la Response
+          // tal cual) — sin este chequeo, un error del servidor acá (ej. la
+          // tabla operaciones_procesadas sin las columnas nuevas todavía)
+          // pasaba desapercibido: el catch de abajo solo agarra fallas de
+          // red, nunca una respuesta de error real.
+          let data = null;
+          try {
+            data = await res.json();
+          } catch (err) {
+            // Respuesta de error sin body JSON (ej. un 500 crudo del server) — se
+            // avisa igual, solo que sin el detalle de data.error.
+          }
+          throw new Error((data && data.error) || `HTTP ${res.status}`);
+        }
       } catch (err) {
         // Si esto falla, las operaciones que sí se dieron de alta no quedan
         // protegidas contra un reintento futuro del mismo archivo — hay que
