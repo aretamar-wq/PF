@@ -570,7 +570,7 @@ deploy/
   nginx-apicore-node.conf Reverse proxy nginx, backend Node.js (ver "Instalación en Linux")
   mariadb-schema.sql      DDL de las tablas de MariaDB (ver "Base de datos (MariaDB)") — compartido por los dos backends
 Flows/                   *.json de flows (ver "Cómo definir un flow nuevo") — compartido por los dos backends
-files/                   Archivos de salida pfout-/pfouterror-/dbnout-/dbnouterror-... (no versionado, se crea solo)
+files/                   Archivos de salida pfout-/pfouterror-/dbnouterror-/dbnconsulta-... (no versionado, se crea solo)
 db.sample.json           Plantilla de conexión a MariaDB + clave de cifrado (ver "Base de datos (MariaDB)") — compartida por los dos backends
 ```
 
@@ -1173,7 +1173,7 @@ tener datos bancarios reales). Todos comparten el mismo timestamp
 (`yyyyMMddHHmmss`, generado una sola vez al terminar el lote), para que se
 identifiquen como del mismo archivo procesado. Solo dos flows CSV generan
 estos archivos hoy — "Alta de Plazo Fijos - File" (`pfout-`/`pfouterror-`)
-y "Transferencia DEBIN - File" (`dbnout-`/`dbnouterror-`/`dbnconsulta-`) —
+y "Transferencia DEBIN - File" (`dbnouterror-`/`dbnconsulta-`) —
 y, como cada corrida es de un solo flow, nunca se mezclan entre sí:
 
 - **`pfout-<timestamp>.csv`** — **una fila por cada fila del CSV de
@@ -1216,34 +1216,34 @@ y, como cada corrida es de un solo flow, nunca se mezclan entre sí:
   **Sin encabezado**, igual que el archivo de entrada (salvo por las 2
   columnas agregadas al final) — pensado para poder inspeccionar o volver a
   subir las filas que fallaron (sacando esas 2 columnas antes de resubir).
-- **`dbnout-<timestamp>.csv`** (solo "Transferencia DEBIN - File") — mismo
-  criterio que `pfout-...` pero con las columnas de la transferencia: los 9
-  valores de la fila de entrada (`creditoCuit`/`creditoCbu`/
-  `creditoTitular`/`debitoCuit`/`debitoCbu`/`debitoTitular`/
-  `idComprobante`/`moneda`/`importe`) más `codigoRespuesta`/
-  `descripcionRespuesta`/`idRespuesta` (de `params.response.respuesta` en
-  la respuesta de Nova-Link), `idMensaje` y `realizado`. `realizado = "n"`
-  deja esas 3 columnas de respuesta en blanco. **Con encabezado.**
 - **`dbnouterror-<timestamp>.csv`** (solo "Transferencia DEBIN - File") —
   mismo formato que `pfouterror-...` (fila de entrada tal cual + IdMensaje +
   mensaje de error, sin encabezado), para las filas que fallaron.
 - **`dbnconsulta-<timestamp>.csv`** (solo "Transferencia DEBIN - File") —
-  una fila por cada transferencia consultada (`realizado = "s"` en
-  `dbnout-...`), con el resultado de `GET /api/debin/cuenta/consultar/{id}`
-  — ver "Flow 'Transferencia DEBIN - File'" más abajo para el detalle
-  completo de columnas. **Con encabezado.** Si ninguna fila llegó a
-  transferirse, no se genera.
+  una fila por cada transferencia consultada (`realizado = "s"`, con el
+  resultado de `GET /api/debin/cuenta/consultar/{id}`), MÁS una fila por
+  cada fila que falló puntualmente por un motivo de rechazo que el flow
+  sabe nombrar (CUIT destino que no coincide con el titular real del CBU,
+  o un rechazo de negocio de Nova-Link como "ERROR GENERAL GARANTIAS" o
+  "No existe saldo para efectuar el debito" — ver `failIfEquals` en
+  `Flows/transferencia-debin-files.json`), con un formato fijo para esas
+  (`compradorCuentaCbu` = CBU origen, `estadoCodigo` = `"Error"`,
+  `estadoDescripcion` = el motivo) — ver "Flow 'Transferencia DEBIN -
+  File'" más abajo para el detalle completo de columnas. **Con
+  encabezado.** Si ninguna fila llegó a transferirse ni disparó uno de esos
+  motivos, no se genera. "Transferencia DEBIN - File" ya NO genera su
+  propio `dbnout-...csv`: con `dbnouterror-...` y `dbnconsulta-...` alcanza
+  para ver qué pasó con cada fila del archivo.
 
-El contenido de `dbnout-...`/`dbnconsulta-...` además queda registrado en
-MariaDB (tablas `dbn_out`/`dbn_consulta`, ver "Base de datos (MariaDB)")
-con quién ejecutó la carga y cuándo — el `.csv` en `files/` se sigue
-generando igual, esto es un registro adicional consultable sin tener que
-ir a buscar el archivo.
+El contenido de `dbnconsulta-...` además queda registrado en MariaDB
+(tabla `dbn_consulta`, ver "Base de datos (MariaDB)") con quién ejecutó la
+carga y cuándo — el `.csv` en `files/` se sigue generando igual, esto es un
+registro adicional consultable sin tener que ir a buscar el archivo.
 
 Si no hubo ningún plazo fijo dado de alta, no se genera `pfout-...`; si no
 hubo ninguna fila fallada, no se genera `pfouterror-.../dbnouterror-...`.
 `POST /api/save-output` valida que `prefix`
-(`pfout-`/`pfouterror-`/`dbnout-`/`dbnouterror-`/`dbnconsulta-`) y
+(`pfout-`/`pfouterror-`/`dbnouterror-`/`dbnconsulta-`) y
 `timestamp` tengan un formato estricto (`[a-zA-Z0-9-]` y 14 dígitos,
 respectivamente) antes de armar el nombre de archivo — es la única defensa
 contra path traversal en un endpoint que escribe a disco a partir de un
@@ -1579,18 +1579,17 @@ la mayoría de los campos del body salen de tres fuentes distintas:
   en blanco; `tipoDispositivo` = `"04"`; `lat`/`lng` = `"0"`) — son datos de
   un cliente final que no existen en una carga por archivo.
 
-Igual que "Alta de Plazo Fijos - File" (ver "Archivos de salida (`files/`)"
-más abajo), al terminar genera hasta 3 archivos con el mismo timestamp:
-`dbnout-<timestamp>.csv` (una fila por cada fila del archivo de entrada —
-los 9 valores de entrada más `codigoRespuesta`/`descripcionRespuesta`/
-`idRespuesta` de la respuesta, `idMensaje` y `realizado` = `"s"`/`"n"`; si
-es `"n"` las 3 columnas de respuesta quedan en blanco porque nunca se
-transfirió), `dbnouterror-<timestamp>.csv` (la fila de entrada + IdMensaje
-de cada fila que falló, mismo formato que `pfouterror-...csv`) y
-`dbnconsulta-<timestamp>.csv` (ver más abajo). El resultado de cada fila
-también queda en el resumen por step en pantalla (`#csvSummary`) y, con el
-detalle completo de cada request/response, en el log compartido de todo el
-archivo bajo `logs/http/` (ver "Logs en disco").
+Al terminar, genera hasta 2 archivos de salida (no 3: ya no genera su
+propio `dbnout-...csv`, ver "Archivos de salida (`files/`)" más abajo) con
+el mismo timestamp que el log de la corrida: `dbnouterror-<timestamp>.csv`
+(la fila de entrada + IdMensaje de cada fila que falló, mismo formato que
+`pfouterror-...csv`) y `dbnconsulta-<timestamp>.csv` (ver más abajo, con su
+propio timestamp — no comparte el de la corrida principal). El resultado
+de cada fila también queda en el resumen por step en pantalla
+(`#csvSummary`, con el motivo de error cuando el flow lo sabe distinguir)
+y, con el detalle completo de cada request/response — incluidas las
+consultas de estado de más abajo, todo en un solo archivo —, en el log
+compartido de toda la corrida bajo `logs/http/` (ver "Logs en disco").
 
 **Consulta de estado, al terminar todas las transferencias.** La respuesta
 de la transferencia en sí solo trae el resultado de la evaluación inicial
@@ -1614,8 +1613,8 @@ respuesta (se pidió explícitamente todo el `params.response`, no un
 resumen) aplanado en columnas (`wwwroot/app.js`, `extractDebinConsultaFields`
 + `DEBIN_CONSULTA_COLUMNS` — un solo lugar donde agregar una columna si
 Nova-Link suma un campo nuevo al futuro), más `idMensaje`/`idComprobante`
-(para cruzar con `dbnout-...`) y `errorConsulta` (vacío salvo que esa
-consulta puntual haya fallado — un error acá no aborta el resto: la
+(para cruzar con el archivo de entrada) y `errorConsulta` (vacío salvo que
+esa consulta puntual haya fallado — un error acá no aborta el resto: la
 transferencia ya se hizo, la consulta es solo informativa). Columnas, en
 este orden:
 
