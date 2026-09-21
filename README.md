@@ -456,12 +456,15 @@ columnas):
   una `Map` en memoria sobre el archivo completo, ahora resuelto con una
   sola consulta SQL en vez de traer todo el archivo a memoria en cada
   chequeo. Para "Alta de Plazo Fijos - File" también guarda `caja_ahorro`
-  (cuenta usada para fondear el plazo fijo), `importe_neto` y
-  `fecha_vencimiento` (mismos valores que `pfout-...csv`), `tipo_circuito`
-  (el valor de Circuito de esa fila) y `pf_pagado` (flag binario de si el
-  plazo fijo se pagó — arranca siempre en 0 al registrar la operación, lo
-  pasa a 1 algún proceso posterior) — vacíos/en 0 para cualquier otro flow
-  que use esta tabla.
+  (cuenta usada para fondear el plazo fijo), `importe_neto`,
+  `fecha_vencimiento` y `apellido_nombre` (mismos valores que
+  `pfout-...csv`), `tipo_circuito` (el valor de Circuito de esa fila) y
+  `pf_pagado` (flag binario de si el plazo fijo se pagó — arranca siempre
+  en 0 al registrar la operación; el flow "Pago de Plazo Fijos" es el
+  "proceso posterior" que lo pasa a 1, ver más abajo) — vacíos/en 0 para
+  cualquier otro flow que use esta tabla. Tiene un índice
+  `(fecha_vencimiento, tipo_circuito, pf_pagado)` para que la búsqueda de
+  "Pago de Plazo Fijos" no sea un full scan.
 - **`dbn_out`** y **`dbn_consulta`** — registro en base (no de
   deduplicación, puramente de auditoría) del contenido de
   `dbnout-...csv`/`dbnconsulta-...csv` (ver "Archivos de salida (`files/`)"
@@ -1484,6 +1487,60 @@ de Parametría (ver "Módulo de parametría" más arriba: ese campo se sacó):
   `Renglon1` = `"Orig.: CUIL Nro.: 30708424478"`, `Renglon2` =
   `"Nom.: Cocos Capital S.A."`, `Renglon3` = `"Ref: VAR"` (sin el punto
   después de "Ref", a diferencia del paso 1 — así lo pidieron).
+
+### Flow "Pago de Plazo Fijos"
+
+`Flows/pago-plazo-fijos.json` paga los plazos fijos que dio de alta "Alta
+de Plazo Fijos - File" cuando vencen: por cada uno, debita de la Caja de
+Ahorro que lo fondeó (columna `caja_ahorro` de `operaciones_procesadas`) y,
+si el débito salió bien, acredita el mismo importe en la Cuenta Corriente
+(`cuentaCorriente.codigoCuenta` de Parametría). Si el débito falla, el
+crédito no se ejecuta (el motor corta la cadena en el primer error de un
+step, ver "Variables de sistema" e `invokeFlow` en `flowEngine.js`).
+
+A diferencia de los otros flows de archivo, **no tiene un CSV de entrada**:
+las filas a pagar salen de una consulta a `operaciones_procesadas` con
+`fecha_vencimiento` = hoy, `tipo_circuito = '0'` (un plazo fijo dado de
+alta con Circuito = 1 no se paga por acá) y `pf_pagado = 0` — ver
+`findOperationsToPay` en `node/lib/processedOperationsStore.js`,
+`GET /api/plazos-fijos-a-pagar`. `fecha_vencimiento` es texto libre tal
+como lo devolvió el banco al dar de alta el plazo fijo (`dd/MM/yyyy`, ver
+`formatDateOnlyDMY` en `dateUtil.js`) — se compara por igualdad exacta de
+string, no como fecha, así que una instalación cuyo banco devuelva otro
+formato necesita ajustar esa función.
+
+En la UI, seleccionar este flow en la lista muestra un panel propio (no el
+form genérico ni la carga de CSV): un botón **"Buscar plazos fijos a
+pagar"** trae la lista y la muestra en una tabla (CUIT, Apellido y Nombre,
+Nro_Comprobante, Importe, Caja de Ahorro, Vencimiento) antes de tocar nada,
+y recién después se puede apretar **"Confirmar y pagar"**, que corre el
+flow una vez por fila (`runPagoPlazoFijos`/`confirmarPagoPlazoFijos` en
+`wwwroot/app.js`). Todas las filas de una corrida comparten un solo log
+(mismo criterio que el resto de los flows de archivo). Al terminar, se
+llama a `POST /api/plazos-fijos-pagados` con las filas cuyos 2 steps
+salieron bien (no con todas): eso marca `pf_pagado = 1` en
+`operaciones_procesadas` (`markOperationsPaid`). Una fila con el débito en
+error nunca se marca (ni se intenta el crédito), así vuelve a aparecer en
+la próxima búsqueda sin haber tocado ninguna cuenta.
+
+**Transacciones de Parametría usadas**: débito en Caja de Ahorro con
+`{{cajaAhorroTransaccionDebito}}`, crédito en Cuenta Corriente con
+`{{ctaCteTransaccionCredito}}` — las mismas 2 columnas nuevas que agregó
+"Separar transacción débito/crédito en Parametría" (ver "Módulo de
+parametría" más arriba), que hasta este flow no las usaba ningún otro.
+
+**Renglon1/Renglon2/Renglon3**, simétrico a "Alta de Plazo Fijos - File"
+pero con los roles invertidos (acá el cliente es quien recibe el débito, no
+quien lo origina):
+
+- Paso 1, débito en Caja de Ahorro — fijos, iguales en todas las filas (el
+  "Benef." de la operación es siempre Cocos Capital S.A.): `Renglon1` =
+  `"Benef.: CUIL Nro.: 30708424478"`, `Renglon2` = `"Nom.: Cocos Capital
+  S.A."`, `Renglon3` = `"Ref: VAR"`.
+- Paso 2, crédito en Cuenta Corriente — armados por fila, con datos del
+  cliente (columna `apellido_nombre` de `operaciones_procesadas`, agregada
+  junto con este flow): `Renglon1` = `"Orig.: CUIL Nro.:" + cuit`,
+  `Renglon2` = `"Nom.:" + apellidoNombre`, `Renglon3` fijo en `"Ref.: VAR"`.
 
 ### Flow "Transferencia DEBIN"
 

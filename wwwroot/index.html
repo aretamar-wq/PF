@@ -67,6 +67,27 @@
           <p id="csvProgress" class="muted"></p>
           <div id="csvSummary" class="csv-summary" style="display: none;"></div>
         </div>
+        <div id="pagoPlazoFijosSection" style="display: none;">
+          <p class="muted">
+            Busca los plazos fijos que vencen hoy (Circuito = 0, todavía no pagados) y, para cada uno, debita el
+            importe de la Caja de Ahorro que lo fondeó y lo acredita en la Cuenta Corriente.
+          </p>
+          <button type="button" id="buscarPagoPlazoFijosBtn">Buscar plazos fijos a pagar</button>
+          <p id="pagoPlazoFijosProgress" class="muted"></p>
+          <div id="pagoPlazoFijosResult" style="display: none;">
+            <table id="pagoPlazoFijosTable">
+              <thead>
+                <tr>
+                  <th>CUIT</th><th>Apellido y Nombre</th><th>Nro_Comprobante</th><th>Importe</th>
+                  <th>Caja de Ahorro</th><th>Vencimiento</th>
+                </tr>
+              </thead>
+              <tbody id="pagoPlazoFijosBody"></tbody>
+            </table>
+            <button type="button" id="confirmarPagoPlazoFijosBtn">Confirmar y pagar</button>
+          </div>
+          <div id="pagoPlazoFijosSummary" class="csv-summary" style="display: none;"></div>
+        </div>
         <div class="actions">
           <button id="runBtn" disabled>Ejecutar flow</button>
           <button id="saveLogBtn" disabled>Guardar log...</button>
