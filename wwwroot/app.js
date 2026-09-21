@@ -315,8 +315,8 @@ function hideCsvSummary() {
 }
 
 // Traduce una entry en Error a una etiqueta corta de motivo, cuando el step
-// sabe distinguir POR QUÉ falló (ver isVariableMismatch/isGarantiasError en
-// flowEngine.js — hoy solo los steps de "Transferencia DEBIN - File" los
+// sabe distinguir POR QUÉ falló (ver isVariableMismatch/isBusinessRejection
+// en flowEngine.js — hoy solo los steps de "Transferencia DEBIN - File" los
 // usan). Un step que no distingue motivos, o una entry que ni siquiera llegó
 // a correr (un step anterior de la misma fila falló antes), cae en un cubo
 // genérico — sigue sumando al total de "con error" igual, solo que sin
@@ -324,7 +324,7 @@ function hideCsvSummary() {
 function classifyStepErrorType(entry) {
   if (!entry) return 'No se llegó a ejecutar';
   if (entry.isVariableMismatch) return 'CUIT no coincide con el CBU';
-  if (entry.isGarantiasError) return 'Error en Garantías';
+  if (entry.isBusinessRejection) return entry.businessRejectionMessage || 'Rechazo de negocio';
   return 'Otro motivo';
 }
 
@@ -1237,16 +1237,18 @@ async function runFlowFromCsv() {
 
         // Si la fila falló puntualmente porque (a) el titular real del CBU
         // destino (ConsultaCBU) no coincide con el CUIT destino del
-        // archivo, o (b) Nova-Link rechazó la transferencia por garantías
-        // (HTTP 200 con descripcionRespuesta="ERROR GENERAL GARANTIAS", ver
-        // failIfEquals en el step "2. Transferencia DEBIN"), también se
+        // archivo, o (b) Nova-Link rechazó la transferencia por un motivo
+        // de negocio (HTTP 200 con una descripcionRespuesta puntual — ver
+        // failIfEquals en el step "2. Transferencia DEBIN": hoy cubre
+        // "ERROR GENERAL GARANTIAS" y "No existe saldo para efectuar el
+        // debito", agregar otro motivo es solo otra tupla ahí), también se
         // agrega una fila a dbnconsulta-...csv (además de
-        // dbnouterror-...csv) con el mismo formato fijo para los dos casos
-        // (compradorCuentaCbu/estadoCodigo/estadoDescripcion, no
+        // dbnouterror-...csv) con el mismo formato fijo para todos los
+        // casos (compradorCuentaCbu/estadoCodigo/estadoDescripcion, no
         // errorConsulta) — solo cambia el texto de estadoDescripcion.
         const mismatchEntry = rowEntries.find((entry) => entry.isVariableMismatch);
-        const garantiasEntry = rowEntries.find((entry) => entry.isGarantiasError);
-        if (mismatchEntry || garantiasEntry) {
+        const businessRejectionEntry = rowEntries.find((entry) => entry.isBusinessRejection);
+        if (mismatchEntry || businessRejectionEntry) {
           const consultaRow = {
             idMensaje: rowIdMensaje,
             idComprobante: row[6] || '',
@@ -1256,7 +1258,9 @@ async function runFlowFromCsv() {
           for (const col of DEBIN_CONSULTA_COLUMNS) consultaRow[col] = '';
           consultaRow.compradorCuentaCbu = row[4] || ''; // CBU origen (debitoCbu)
           consultaRow.estadoCodigo = 'Error';
-          consultaRow.estadoDescripcion = mismatchEntry ? 'El CUIT no coincide con el CBU Destino' : 'Error en Garantias';
+          consultaRow.estadoDescripcion = mismatchEntry
+            ? 'El CUIT no coincide con el CBU Destino'
+            : businessRejectionEntry.businessRejectionMessage;
           state.debinConsultaRows.push(consultaRow);
         }
       }

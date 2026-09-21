@@ -39,7 +39,10 @@
         "descripcionRespuesta": "params.response.respuesta.descripcion",
         "idRespuesta": "params.response.respuesta.id"
       },
-      "failIfEquals": [["descripcionRespuesta", "ERROR GENERAL GARANTIAS"]],
+      "failIfEquals": [
+        ["descripcionRespuesta", "ERROR GENERAL GARANTIAS", "Error en Garantias"],
+        ["descripcionRespuesta", "No existe saldo para efectuar el debito", "No existe saldo para efectuar el debito"]
+      ],
       "expectedStatusCode": 200
     }
   ]
