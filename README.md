@@ -321,9 +321,10 @@ columnas):
   chequeo. Para "Alta de Plazo Fijos - File" también guarda `caja_ahorro`
   (cuenta usada para fondear el plazo fijo), `importe_neto` y
   `fecha_vencimiento` (mismos valores que `pfout-...csv`), `tipo_circuito`
-  (el valor de Circuito de esa fila) y `pf_pagado` (flag binario, siempre
-  1 en las filas que llegan a registrarse acá) — vacíos/en 0 para
-  cualquier otro flow que use esta tabla.
+  (el valor de Circuito de esa fila) y `pf_pagado` (flag binario de si el
+  plazo fijo se pagó — arranca siempre en 0 al registrar la operación, lo
+  pasa a 1 algún proceso posterior) — vacíos/en 0 para cualquier otro flow
+  que use esta tabla.
 - **`dbn_out`** y **`dbn_consulta`** — registro en base (no de
   deduplicación, puramente de auditoría) del contenido de
   `dbnout-...csv`/`dbnconsulta-...csv` (ver "Archivos de salida (`files/`)"
