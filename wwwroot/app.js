@@ -314,6 +314,20 @@ function hideCsvSummary() {
   summaryEl.innerHTML = '';
 }
 
+// Traduce una entry en Error a una etiqueta corta de motivo, cuando el step
+// sabe distinguir POR QUÉ falló (ver isVariableMismatch/isGarantiasError en
+// flowEngine.js — hoy solo los steps de "Transferencia DEBIN - File" los
+// usan). Un step que no distingue motivos, o una entry que ni siquiera llegó
+// a correr (un step anterior de la misma fila falló antes), cae en un cubo
+// genérico — sigue sumando al total de "con error" igual, solo que sin
+// desglose.
+function classifyStepErrorType(entry) {
+  if (!entry) return 'No se llegó a ejecutar';
+  if (entry.isVariableMismatch) return 'CUIT no coincide con el CBU';
+  if (entry.isGarantiasError) return 'Error en Garantías';
+  return 'Otro motivo';
+}
+
 // stepCounts es un array paralelo a flow.steps: stepCounts[i] = { ok, error }
 // contando, por cada fila del CSV, si ese paso terminó en 'Success' o no
 // (no ejecutado por una fila mal formada, por una falla de red, o porque un
@@ -326,12 +340,21 @@ function renderCsvSummary(flow, totalRows, stepCounts, contraasientoCounts) {
   const summaryEl = document.getElementById('csvSummary');
   const lines = [`<div><strong>Total de registros: ${totalRows}</strong></div>`];
   flow.steps.forEach((step, idx) => {
-    const { ok, error, skipped } = stepCounts[idx];
+    const { ok, error, skipped, errorTypes } = stepCounts[idx];
     const skippedHtml = skipped > 0 ? ` / <span>${skipped} sin ejecutar (Circuito = 1)</span>` : '';
+    // Desglose de motivos de error (opcional): además de cuántas filas
+    // fallaron, cuántas por cada motivo puntual que el step sepa distinguir
+    // (ver classifyStepErrorType) — así el semáforo no solo dice "hay
+    // errores", dice de qué tipo son sin tener que abrir el CSV de errores.
+    const errorTypeEntries = Object.entries(errorTypes || {}).filter(([, count]) => count > 0);
+    const errorTypesHtml =
+      errorTypeEntries.length > 0
+        ? ` <span class="muted">(${errorTypeEntries.map(([label, count]) => `${count} ${escapeHtml(label)}`).join(', ')})</span>`
+        : '';
     lines.push(
       `<div>${escapeHtml(step.name)}: ` +
         `<span class="status-Success">${ok} correcto(s)</span> / ` +
-        `<span class="status-Error">${error} con error</span>${skippedHtml}</div>`
+        `<span class="status-Error">${error} con error</span>${errorTypesHtml}${skippedHtml}</div>`
     );
   });
   if (contraasientoCounts && (contraasientoCounts.ok > 0 || contraasientoCounts.error > 0)) {
@@ -780,7 +803,7 @@ async function runFlowFromCsv() {
   // más/menos, o un error de red/servidor antes de tener respuesta) — y
   // cuántas se saltearon a propósito ('skipped', fila con Circuito = 1: no
   // se ejecutan los steps de débito/crédito, solo el alta de Plazo Fijo).
-  const stepCounts = flow.steps.map(() => ({ ok: 0, error: 0, skipped: 0 }));
+  const stepCounts = flow.steps.map(() => ({ ok: 0, error: 0, skipped: 0, errorTypes: {} }));
   // Cuenta, por fila, si se dispararon contra-asientos (onFailureSteps del
   // último step que falló, ver flowEngine.js) y si todos ellos terminaron en
   // 'Success' ('ok') o no ('error', aunque haya sido solo uno de los dos:
@@ -1025,8 +1048,13 @@ async function runFlowFromCsv() {
         }
         const entry = realStepEntries ? realStepEntries[expectedStepIndices.indexOf(s)] : null;
         const ok = !!entry && entry.status === 'Success';
-        if (ok) stepCounts[s].ok++;
-        else stepCounts[s].error++;
+        if (ok) {
+          stepCounts[s].ok++;
+        } else {
+          stepCounts[s].error++;
+          const errorType = classifyStepErrorType(entry);
+          stepCounts[s].errorTypes[errorType] = (stepCounts[s].errorTypes[errorType] || 0) + 1;
+        }
       }
 
       // Todos los contra-asientos de esta fila (si los hubo) tienen que haber
