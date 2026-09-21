@@ -1500,14 +1500,35 @@ step, ver "Variables de sistema" e `invokeFlow` en `flowEngine.js`).
 
 A diferencia de los otros flows de archivo, **no tiene un CSV de entrada**:
 las filas a pagar salen de una consulta a `operaciones_procesadas` con
-`fecha_vencimiento` = hoy, `tipo_circuito = '0'` (un plazo fijo dado de
-alta con Circuito = 1 no se paga por acá) y `pf_pagado = 0` — ver
-`findOperationsToPay` en `node/lib/processedOperationsStore.js`,
-`GET /api/plazos-fijos-a-pagar`. `fecha_vencimiento` es texto libre tal
-como lo devolvió el banco al dar de alta el plazo fijo (`dd/MM/yyyy`, ver
-`formatDateOnlyDMY` en `dateUtil.js`) — se compara por igualdad exacta de
-string, no como fecha, así que una instalación cuyo banco devuelva otro
-formato necesita ajustar esa función.
+`fecha_vencimiento` = fecha de proceso bancaria, `tipo_circuito = '0'` (un
+plazo fijo dado de alta con Circuito = 1 no se paga por acá) y
+`pf_pagado = 0` — ver `findOperationsToPay` en
+`node/lib/processedOperationsStore.js`, `GET /api/plazos-fijos-a-pagar`.
+
+**"Hoy" no es la fecha del sistema operativo del servidor**, es la fecha de
+PROCESO del banco: `handlePlazosFijosAPagarGet`/`getFechaProcesoBancaria`
+(`node/server.js`) consultan, antes de tocar `operaciones_procesadas`, la
+tabla `tgl_fechaproceso` de Sybase:
+
+```sql
+SELECT sistcod, CONVERT(CHAR(10), fecproceso, 103) AS fecproceso
+FROM tgl_fechaproceso
+WHERE sistcod IN (3, 4, 5) AND succod = 1 AND estado = 10
+```
+
+(3 = Cuenta Corriente, 4 = Plazo Fijo, 5 = Caja de Ahorro — los 3 sistemas
+que este flow toca). Si no devuelve exactamente 3 filas, o sus 3 fechas no
+coinciden entre sí, `GET /api/plazos-fijos-a-pagar` devuelve 400 sin tocar
+`operaciones_procesadas` (mejor no mostrar nada que mostrar una lista con
+la fecha equivocada) — la UI lo muestra como cualquier otro error de
+"Buscar plazos fijos a pagar". `CONVERT(..., 103)` fuerza `dd/mm/yyyy` sin
+hora, sea cual sea el `dateformat`/idioma de la sesión de Sybase — mismo
+formato en el que queda guardado `fecha_vencimiento` en
+`operaciones_procesadas` (texto libre tal como lo devolvió el banco al dar
+de alta el plazo fijo, ver `formatDateOnlyDMY` en `dateUtil.js`) — se
+compara por igualdad exacta de string, no como fecha, así que una
+instalación cuyo banco devuelva `fecha_vencimiento` en otro formato
+necesita ajustar esa función o el estilo del `CONVERT`.
 
 En la UI, seleccionar este flow en la lista muestra un panel propio (no el
 form genérico ni la carga de CSV): un botón **"Buscar plazos fijos a
