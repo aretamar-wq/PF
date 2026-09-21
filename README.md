@@ -318,7 +318,12 @@ columnas):
   numero_comprobante)` — mismo criterio de deduplicación que antes usaba
   una `Map` en memoria sobre el archivo completo, ahora resuelto con una
   sola consulta SQL en vez de traer todo el archivo a memoria en cada
-  chequeo.
+  chequeo. Para "Alta de Plazo Fijos - File" también guarda `caja_ahorro`
+  (cuenta usada para fondear el plazo fijo), `importe_neto` y
+  `fecha_vencimiento` (mismos valores que `pfout-...csv`), `tipo_circuito`
+  (el valor de Circuito de esa fila) y `pf_pagado` (flag binario, siempre
+  1 en las filas que llegan a registrarse acá) — vacíos/en 0 para
+  cualquier otro flow que use esta tabla.
 - **`dbn_out`** y **`dbn_consulta`** — registro en base (no de
   deduplicación, puramente de auditoría) del contenido de
   `dbnout-...csv`/`dbnconsulta-...csv` (ver "Archivos de salida (`files/`)"

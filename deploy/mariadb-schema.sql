@@ -158,11 +158,35 @@ CREATE TABLE IF NOT EXISTS operaciones_procesadas (
   cuit VARCHAR(50) NOT NULL,
   numero_comprobante VARCHAR(100) NOT NULL,
   id_mensaje VARCHAR(100) NOT NULL DEFAULT '',
+  -- Los siguientes 5 campos son específicos de "Alta de Plazo Fijos - File"
+  -- (quedan vacíos/en 0 para cualquier otro flow que registre acá en el
+  -- futuro) — código de cuenta de Caja de Ahorro usado para fondear el
+  -- plazo fijo, importe neto y fecha de vencimiento tal como los devolvió
+  -- el alta (mismos valores que pfDetailRows/pfout-...csv), el valor de
+  -- Circuito de esa fila (0 = flujo completo, 1 = solo alta) y un flag
+  -- binario de que el plazo fijo efectivamente se pagó/registró (siempre 1
+  -- en las filas que llegan a registrarse acá: solo se registra una
+  -- operación después de confirmar el alta real, ver successfulOperations
+  -- en wwwroot/app.js).
+  caja_ahorro VARCHAR(100) NOT NULL DEFAULT '',
+  importe_neto VARCHAR(50) NOT NULL DEFAULT '',
+  fecha_vencimiento VARCHAR(50) NOT NULL DEFAULT '',
+  tipo_circuito VARCHAR(10) NOT NULL DEFAULT '',
+  pf_pagado TINYINT(1) NOT NULL DEFAULT 0,
   processed_at DATETIME NOT NULL,
   processed_by VARCHAR(255) NOT NULL DEFAULT '',
   PRIMARY KEY (id),
   UNIQUE KEY uk_operaciones_cuit_comprobante (cuit, numero_comprobante)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- Si la tabla ya existía de una instalación anterior a estos 5 campos
+-- (correr este archivo es idempotente: CREATE TABLE IF NOT EXISTS no la
+-- toca si ya existe), esto la pone al día sin perder los datos que ya tenía.
+ALTER TABLE operaciones_procesadas ADD COLUMN IF NOT EXISTS caja_ahorro VARCHAR(100) NOT NULL DEFAULT '';
+ALTER TABLE operaciones_procesadas ADD COLUMN IF NOT EXISTS importe_neto VARCHAR(50) NOT NULL DEFAULT '';
+ALTER TABLE operaciones_procesadas ADD COLUMN IF NOT EXISTS fecha_vencimiento VARCHAR(50) NOT NULL DEFAULT '';
+ALTER TABLE operaciones_procesadas ADD COLUMN IF NOT EXISTS tipo_circuito VARCHAR(10) NOT NULL DEFAULT '';
+ALTER TABLE operaciones_procesadas ADD COLUMN IF NOT EXISTS pf_pagado TINYINT(1) NOT NULL DEFAULT 0;
 
 -- Registro en base del contenido de dbnout-...csv (detalle de cada
 -- Transferencia DEBIN de un archivo procesado) y dbnconsulta-...csv
