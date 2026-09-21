@@ -74,9 +74,11 @@ CREATE TABLE IF NOT EXISTS parametria (
   id TINYINT UNSIGNED NOT NULL,
   cc_codigo_cuenta VARCHAR(100) NOT NULL DEFAULT '',
   cc_codigo_sistema VARCHAR(100) NOT NULL DEFAULT '',
-  cc_transaccion VARCHAR(100) NOT NULL DEFAULT '',
+  cc_transaccion_debito VARCHAR(100) NOT NULL DEFAULT '',
+  cc_transaccion_credito VARCHAR(100) NOT NULL DEFAULT '',
   ca_codigo_sistema VARCHAR(100) NOT NULL DEFAULT '',
-  ca_transaccion VARCHAR(100) NOT NULL DEFAULT '',
+  ca_transaccion_credito VARCHAR(100) NOT NULL DEFAULT '',
+  ca_transaccion_debito VARCHAR(100) NOT NULL DEFAULT '',
   pf_codigo_producto VARCHAR(100) NOT NULL DEFAULT '',
   pf_codigo_movimiento VARCHAR(100) NOT NULL DEFAULT '',
   sybase_connection_string VARCHAR(1000) NOT NULL DEFAULT '',
@@ -100,14 +102,29 @@ CREATE TABLE IF NOT EXISTS parametria (
 -- existe), esto la pone al día sin perder los datos que ya tenía.
 ALTER TABLE parametria ADD COLUMN IF NOT EXISTS consulta_cbu_base_url VARCHAR(500) NOT NULL DEFAULT '';
 
+-- Migración: cc_transaccion / ca_transaccion pasan a ser cc_transaccion_debito
+-- / ca_transaccion_credito (mismo valor que ya tenían cargado, solo cambia el
+-- nombre de la columna) y se agregan cc_transaccion_credito /
+-- ca_transaccion_debito para completar la matriz débito/crédito de cada
+-- cuenta. CHANGE COLUMN IF EXISTS (en vez de RENAME COLUMN a secas) es
+-- idempotente como el resto de este archivo: en una instalación nueva
+-- cc_transaccion/ca_transaccion nunca existieron (CREATE TABLE de arriba ya
+-- crea la tabla con los nombres nuevos) y estas dos líneas no hacen nada; en
+-- una instalación existente renombran la columna la primera vez, y no
+-- rompen si el archivo se vuelve a correr después.
+ALTER TABLE parametria CHANGE COLUMN IF EXISTS cc_transaccion cc_transaccion_debito VARCHAR(100) NOT NULL DEFAULT '';
+ALTER TABLE parametria CHANGE COLUMN IF EXISTS ca_transaccion ca_transaccion_credito VARCHAR(100) NOT NULL DEFAULT '';
+ALTER TABLE parametria ADD COLUMN IF NOT EXISTS cc_transaccion_credito VARCHAR(100) NOT NULL DEFAULT '' AFTER cc_transaccion_debito;
+ALTER TABLE parametria ADD COLUMN IF NOT EXISTS ca_transaccion_debito VARCHAR(100) NOT NULL DEFAULT '' AFTER ca_transaccion_credito;
+
 INSERT INTO parametria (
-    id, cc_codigo_cuenta, cc_codigo_sistema, cc_transaccion,
-    ca_codigo_sistema, ca_transaccion,
+    id, cc_codigo_cuenta, cc_codigo_sistema, cc_transaccion_debito, cc_transaccion_credito,
+    ca_codigo_sistema, ca_transaccion_credito, ca_transaccion_debito,
     pf_codigo_producto, pf_codigo_movimiento,
     sybase_connection_string, sybase_usuario, sybase_password
   ) VALUES (
-    1, '', '', '',
-    '', '',
+    1, '', '', '', '',
+    '', '', '',
     '', '',
     'Driver={Adaptive Server Enterprise};NetworkAddress=Aconquija4.bv.voii.com.ar,5000;Database=Banksys;Uid={{usuario}};Pwd={{password}}', '', ''
   )

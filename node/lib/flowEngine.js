@@ -340,11 +340,13 @@ function getParametriaVariables(parametria) {
   if (parametria.cuentaCorriente) {
     variables.ctaCteCodigoCuenta = String(parametria.cuentaCorriente.codigoCuenta || '');
     variables.ctaCteCodigoSistema = String(parametria.cuentaCorriente.codigoSistema || '');
-    variables.ctaCteTransaccion = String(parametria.cuentaCorriente.transaccion || '');
+    variables.ctaCteTransaccionDebito = String(parametria.cuentaCorriente.transaccionDebito || '');
+    variables.ctaCteTransaccionCredito = String(parametria.cuentaCorriente.transaccionCredito || '');
   }
   if (parametria.cajaDeAhorro) {
     variables.cajaAhorroCodigoSistema = String(parametria.cajaDeAhorro.codigoSistema || '');
-    variables.cajaAhorroTransaccion = String(parametria.cajaDeAhorro.transaccion || '');
+    variables.cajaAhorroTransaccionCredito = String(parametria.cajaDeAhorro.transaccionCredito || '');
+    variables.cajaAhorroTransaccionDebito = String(parametria.cajaDeAhorro.transaccionDebito || '');
   }
   if (parametria.plazoFijo) {
     variables.plazoFijoCodigoProducto = String(parametria.plazoFijo.codigoProducto || '');
