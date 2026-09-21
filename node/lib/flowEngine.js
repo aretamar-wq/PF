@@ -632,13 +632,25 @@ async function invokeHttpStep(step, flowObj, variables, profileObj, logsDir, run
   // con descripcionRespuesta="ERROR GENERAL GARANTIAS" cuando rechaza por
   // garantías, un rechazo real que a nivel HTTP es indistinguible de un
   // éxito).
+  // failIfEquals (opcional, array de tuplas [nombreVariable, valorLiteral,
+  // mensajeParaElCliente]): el step cuenta como fallido si esa variable
+  // extraída (recién asignada arriba) coincide con el valor literal
+  // indicado — para un rechazo de negocio que vuelve con HTTP 200 y por lo
+  // tanto no lo agarra el chequeo de expectedStatusCode (ej. "Transferencia
+  // DEBIN": Nova-Link responde 200 con descripcionRespuesta="ERROR GENERAL
+  // GARANTIAS" o "No existe saldo para efectuar el debito", rechazos reales
+  // que a nivel HTTP son indistinguibles de un éxito). mensajeParaElCliente
+  // es el texto que el cliente vuelca en dbnconsulta-...csv (ver
+  // isBusinessRejection/businessRejectionMessage en wwwroot/app.js) — si no
+  // se manda, se usa el valor literal tal cual.
   if (step.failIfEquals) {
-    for (const [name, literalValue] of step.failIfEquals) {
+    for (const [name, literalValue, message] of step.failIfEquals) {
       const value = variables[name] !== undefined && variables[name] !== null ? String(variables[name]).trim() : '';
       if (value === String(literalValue)) {
         entry.status = 'Error';
         entry.errorMessage = `El campo '${name}' vino '${value}' — rechazo de negocio, no un error de transporte.`;
-        entry.isGarantiasError = true;
+        entry.isBusinessRejection = true;
+        entry.businessRejectionMessage = message || value;
         const rejectionLogText = [
           `<<< ERROR [${formatLocal(new Date(), true)}] Flow=${flowObj.name} | Step=${step.name} | ${entry.errorMessage} (${Date.now() - stepStartedAt} ms)`,
           '---',
