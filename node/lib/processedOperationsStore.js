@@ -19,6 +19,11 @@ function mapOperationRow(row) {
     cuit: row.cuit,
     numeroComprobante: row.numero_comprobante,
     idMensaje: row.id_mensaje,
+    cajaAhorro: row.caja_ahorro,
+    importeNeto: row.importe_neto,
+    fechaVencimiento: row.fecha_vencimiento,
+    tipoCircuito: row.tipo_circuito,
+    pfPagado: !!row.pf_pagado,
     processedAt: row.processed_at,
     processedBy: row.processed_by,
   };
@@ -69,10 +74,25 @@ async function addProcessedOperations(rootDir, operations, username) {
       // estaba (la deduplicación real la hacía findDuplicateOperations
       // ANTES de llegar acá, bloqueando la fila).
       await connection.query(
-        `INSERT INTO operaciones_procesadas (cuit, numero_comprobante, id_mensaje, processed_at, processed_by)
-         VALUES (?, ?, ?, ?, ?)
+        `INSERT INTO operaciones_procesadas (
+           cuit, numero_comprobante, id_mensaje,
+           caja_ahorro, importe_neto, fecha_vencimiento, tipo_circuito, pf_pagado,
+           processed_at, processed_by
+         )
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
          ON DUPLICATE KEY UPDATE id = id`,
-        [String(op.cuit), String(op.numeroComprobante), String(op.idMensaje), now, username]
+        [
+          String(op.cuit),
+          String(op.numeroComprobante),
+          String(op.idMensaje),
+          String(op.cajaAhorro || ''),
+          String(op.importeNeto || ''),
+          String(op.fechaVencimiento || ''),
+          String(op.tipoCircuito || ''),
+          op.pfPagado ? 1 : 0,
+          now,
+          username,
+        ]
       );
     }
     await connection.commit();

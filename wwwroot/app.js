@@ -1135,10 +1135,21 @@ async function runFlowFromCsv() {
               // reintento del mismo cuit+numeroComprobante) recién acá, con
               // el mismo criterio que decide si entra a pfDetailRows — nunca
               // antes de haber confirmado la alta real del plazo fijo.
+              // cajaAhorro/importeNeto/fechaVencimiento/tipoCircuito/
+              // pfPagado quedan en operaciones_procesadas además de en
+              // pfDetailRows/pfout-...csv — mismos valores, pero acá quedan
+              // ligados al registro antiduplicado en vez de a un archivo.
+              const rowCuit = (row[0] || '').trim();
+              const rowAccounts = accountsByCuit ? accountsByCuit.get(rowCuit) : null;
               state.successfulOperations.push({
-                cuit: (row[0] || '').trim(),
+                cuit: rowCuit,
                 numeroComprobante: (row[4] || '').trim(),
                 idMensaje: rowIdMensaje,
+                cajaAhorro: (rowAccounts && rowAccounts.cuecodSistema5) || '',
+                importeNeto: first.importeNeto,
+                fechaVencimiento: first.vencimiento,
+                tipoCircuito: (row[row.length - 1] || '').trim(),
+                pfPagado: true,
               });
             }
           } catch (err) {
