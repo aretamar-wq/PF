@@ -338,15 +338,24 @@ columnas):
   deduplicación, puramente de auditoría) del contenido de
   `dbnout-...csv`/`dbnconsulta-...csv` (ver "Archivos de salida (`files/`)"
   más abajo), una fila por fila del `.csv` correspondiente, con quién
-  ejecutó la carga (`ejecutado_por`) y cuándo (`ejecutado_en`). Las dos
-  tablas guardan, como columnas propias, los datos del archivo de
-  **entrada** de "Transferencia DEBIN - File" — `credito_cuit`,
-  `credito_cbu`, `credito_titular` (CUIT/CBU/Nombre destino),
-  `debito_cuit`, `debito_cbu`, `debito_titular` (CUIT/CBU/Nombre origen),
-  `moneda`, `importe` (Monto) y `id_comprobante` (Nro_Comprobante) — además
-  de lo que le es propio a cada una (`dbn_out`: `codigo_respuesta`/
-  `descripcion_respuesta`/`id_respuesta`/`realizado`, el resultado de la
-  transferencia en sí; `dbn_consulta`: `id_operacion`/`error_consulta`). En
+  ejecutó la carga (`ejecutado_por`) y cuándo (`ejecutado_en`). `dbn_out` ya
+  no recibe filas nuevas (dejó de generarse `dbnout-...csv`, ver más abajo)
+  pero se deja la tabla tal cual por si hay historial viejo — toda esta
+  descripción, salvo esa salvedad, vale igual para las dos tablas, porque
+  `dbn_consulta` terminó con prácticamente las mismas columnas. Las dos
+  guardan, como columnas propias, los datos del archivo de **entrada** de
+  "Transferencia DEBIN - File" (`credito_cuit`, `credito_cbu`,
+  `credito_titular` = CUIT/CBU/Nombre destino; `debito_cuit`, `debito_cbu`,
+  `debito_titular` = CUIT/CBU/Nombre origen; `moneda`, `importe` = Monto;
+  `id_comprobante` = Nro_Comprobante) y el resultado de la transferencia
+  ORIGINAL (`codigo_respuesta`/`descripcion_respuesta`/`realizado` —en
+  `dbn_consulta` con ese mismo nombre de columna en la tabla, aunque en el
+  CSV/JS vengan como `codigoRespuestaTransferencia`/
+  `descripcionRespuestaTransferencia` para no chocar con los
+  `codigoRespuesta`/`descripcionRespuesta` de la consulta de estado, que
+  son otra cosa). `dbn_out` además tiene `id_respuesta`, que en
+  `dbn_consulta` es `id_operacion` (mismo valor, nombre distinto porque ahí
+  pasa a ser el identificador que se usa para consultar el estado). En
   `dbn_consulta`, el resto de las ~58 columnas que trae la respuesta de
   "Consulta DEBIN (solo)" (ver `DEBIN_CONSULTA_COLUMNS` en
   `wwwroot/app.js`) se guardan enteras en `respuesta_json`, no una por

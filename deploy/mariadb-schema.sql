@@ -287,6 +287,16 @@ CREATE TABLE IF NOT EXISTS dbn_consulta (
   debito_titular VARCHAR(255) NOT NULL DEFAULT '',
   moneda VARCHAR(20) NOT NULL DEFAULT '',
   importe VARCHAR(50) NOT NULL DEFAULT '',
+  -- Resultado de la transferencia ORIGINAL (el POST credin, antes de
+  -- cualquier consulta de estado) — mismas columnas que tenía dbn_out para
+  -- esto (dbn_out dejó de recibir filas nuevas: ver "Archivos de salida
+  -- (files/)" en el README, ya no se genera dbnout-...csv). codigo_respuesta/
+  -- descripcion_respuesta son los de ESA llamada, no los de la consulta de
+  -- estado posterior (esos quedan en respuesta_json, ver más abajo).
+  -- realizado = 's'/'n' según si la transferencia se llegó a hacer.
+  codigo_respuesta VARCHAR(100) NOT NULL DEFAULT '',
+  descripcion_respuesta VARCHAR(500) NOT NULL DEFAULT '',
+  realizado VARCHAR(1) NOT NULL DEFAULT '',
   error_consulta VARCHAR(500) NOT NULL DEFAULT '',
   respuesta_json JSON NULL,
   ejecutado_por VARCHAR(255) NOT NULL DEFAULT '',
@@ -295,9 +305,9 @@ CREATE TABLE IF NOT EXISTS dbn_consulta (
   KEY idx_dbn_consulta_id_mensaje (id_mensaje)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
--- Si la tabla ya existía de una instalación anterior a estos 8 campos
--- (correr este archivo es idempotente: CREATE TABLE IF NOT EXISTS no la
--- toca si ya existe), esto la pone al día sin perder los datos que ya tenía.
+-- Si la tabla ya existía de una instalación anterior a estos campos (correr
+-- este archivo es idempotente: CREATE TABLE IF NOT EXISTS no la toca si ya
+-- existe), esto la pone al día sin perder los datos que ya tenía.
 ALTER TABLE dbn_consulta ADD COLUMN IF NOT EXISTS credito_cuit VARCHAR(50) NOT NULL DEFAULT '';
 ALTER TABLE dbn_consulta ADD COLUMN IF NOT EXISTS credito_cbu VARCHAR(50) NOT NULL DEFAULT '';
 ALTER TABLE dbn_consulta ADD COLUMN IF NOT EXISTS credito_titular VARCHAR(255) NOT NULL DEFAULT '';
@@ -306,3 +316,6 @@ ALTER TABLE dbn_consulta ADD COLUMN IF NOT EXISTS debito_cbu VARCHAR(50) NOT NUL
 ALTER TABLE dbn_consulta ADD COLUMN IF NOT EXISTS debito_titular VARCHAR(255) NOT NULL DEFAULT '';
 ALTER TABLE dbn_consulta ADD COLUMN IF NOT EXISTS moneda VARCHAR(20) NOT NULL DEFAULT '';
 ALTER TABLE dbn_consulta ADD COLUMN IF NOT EXISTS importe VARCHAR(50) NOT NULL DEFAULT '';
+ALTER TABLE dbn_consulta ADD COLUMN IF NOT EXISTS codigo_respuesta VARCHAR(100) NOT NULL DEFAULT '';
+ALTER TABLE dbn_consulta ADD COLUMN IF NOT EXISTS descripcion_respuesta VARCHAR(500) NOT NULL DEFAULT '';
+ALTER TABLE dbn_consulta ADD COLUMN IF NOT EXISTS realizado VARCHAR(1) NOT NULL DEFAULT '';

@@ -129,6 +129,13 @@ async function addDbnConsultaRows(rootDir, csvContent, username) {
         creditoCuit, creditoCbu, creditoTitular,
         debitoCuit, debitoCbu, debitoTitular,
         moneda, importe,
+        // Resultado de la transferencia ORIGINAL (no el de la consulta de
+        // estado, que sigue viniendo en DEBIN_CONSULTA_COLUMNS y cae en
+        // "rest" más abajo) — nombres distintos (sufijo "Transferencia")
+        // a propósito, para no colisionar con los codigoRespuesta/
+        // descripcionRespuesta de la consulta (ver DEBIN_CONSULTA_COLUMNS
+        // en wwwroot/app.js).
+        codigoRespuestaTransferencia, descripcionRespuestaTransferencia, realizado,
         ...rest
       } = record;
       await connection.query(
@@ -137,9 +144,10 @@ async function addDbnConsultaRows(rootDir, csvContent, username) {
            credito_cuit, credito_cbu, credito_titular,
            debito_cuit, debito_cbu, debito_titular,
            moneda, importe,
+           codigo_respuesta, descripcion_respuesta, realizado,
            error_consulta, respuesta_json,
            ejecutado_por, ejecutado_en
-         ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+         ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
         [
           idMensaje || '',
           idComprobante || '',
@@ -152,6 +160,9 @@ async function addDbnConsultaRows(rootDir, csvContent, username) {
           debitoTitular || '',
           moneda || '',
           importe || '',
+          codigoRespuestaTransferencia || '',
+          descripcionRespuestaTransferencia || '',
+          realizado || '',
           errorConsulta || '',
           JSON.stringify(rest),
           username,
