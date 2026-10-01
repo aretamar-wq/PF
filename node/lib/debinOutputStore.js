@@ -124,13 +124,39 @@ async function addDbnConsultaRows(rootDir, csvContent, username) {
   try {
     await connection.beginTransaction();
     for (const record of records) {
-      const { idMensaje, idComprobante, idOperacion, errorConsulta, ...rest } = record;
+      const {
+        idMensaje, idComprobante, idOperacion, errorConsulta,
+        creditoCuit, creditoCbu, creditoTitular,
+        debitoCuit, debitoCbu, debitoTitular,
+        moneda, importe,
+        ...rest
+      } = record;
       await connection.query(
         `INSERT INTO dbn_consulta (
-           id_mensaje, id_comprobante, id_operacion, error_consulta, respuesta_json,
+           id_mensaje, id_comprobante, id_operacion,
+           credito_cuit, credito_cbu, credito_titular,
+           debito_cuit, debito_cbu, debito_titular,
+           moneda, importe,
+           error_consulta, respuesta_json,
            ejecutado_por, ejecutado_en
-         ) VALUES (?, ?, ?, ?, ?, ?, ?)`,
-        [idMensaje || '', idComprobante || '', idOperacion || '', errorConsulta || '', JSON.stringify(rest), username, now]
+         ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        [
+          idMensaje || '',
+          idComprobante || '',
+          idOperacion || '',
+          creditoCuit || '',
+          creditoCbu || '',
+          creditoTitular || '',
+          debitoCuit || '',
+          debitoCbu || '',
+          debitoTitular || '',
+          moneda || '',
+          importe || '',
+          errorConsulta || '',
+          JSON.stringify(rest),
+          username,
+          now,
+        ]
       );
     }
     await connection.commit();

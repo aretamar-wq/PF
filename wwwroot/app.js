@@ -1299,6 +1299,18 @@ async function runFlowFromCsv() {
             idMensaje: rowIdMensaje,
             idComprobante: row[6] || '',
             idOperacion: '',
+            // Datos del archivo de entrada (mismo orden de columnas que el
+            // resto del código usa para esta fila, ver debinDetailRows más
+            // arriba) — se guardan además de compradorCuentaCbu/etc. de
+            // abajo, no en su reemplazo.
+            creditoCuit: row[0] || '',
+            creditoCbu: row[1] || '',
+            creditoTitular: row[2] || '',
+            debitoCuit: row[3] || '',
+            debitoCbu: row[4] || '',
+            debitoTitular: row[5] || '',
+            moneda: row[7] || '',
+            importe: row[8] || '',
             errorConsulta: '',
           };
           for (const col of DEBIN_CONSULTA_COLUMNS) consultaRow[col] = '';
@@ -1377,6 +1389,16 @@ async function runFlowFromCsv() {
           idMensaje: detailRow.idMensaje,
           idComprobante: detailRow.idComprobante,
           idOperacion: detailRow.idRespuesta,
+          // Datos del archivo de entrada: detailRow ya los tiene (ver
+          // debinDetailRows más arriba), se copian tal cual.
+          creditoCuit: detailRow.creditoCuit || '',
+          creditoCbu: detailRow.creditoCbu || '',
+          creditoTitular: detailRow.creditoTitular || '',
+          debitoCuit: detailRow.debitoCuit || '',
+          debitoCbu: detailRow.debitoCbu || '',
+          debitoTitular: detailRow.debitoTitular || '',
+          moneda: detailRow.moneda || '',
+          importe: detailRow.importe || '',
           errorConsulta: '',
         };
         for (const col of DEBIN_CONSULTA_COLUMNS) consultaRow[col] = '';
@@ -1853,7 +1875,13 @@ async function saveOutputFiles(flow, batchLogFileName) {
 
   if (state.debinConsultaRows.length > 0) {
     const consultaRunId = deriveRunId(null, DEBIN_CONSULTAR_FLOW_NAME);
-    const headers = ['idMensaje', 'idComprobante', 'idOperacion', ...DEBIN_CONSULTA_COLUMNS, 'errorConsulta'];
+    const headers = [
+      'idMensaje', 'idComprobante', 'idOperacion',
+      'creditoCuit', 'creditoCbu', 'creditoTitular',
+      'debitoCuit', 'debitoCbu', 'debitoTitular',
+      'moneda', 'importe',
+      ...DEBIN_CONSULTA_COLUMNS, 'errorConsulta',
+    ];
     const lines = [headers.join(',')];
     for (const row of state.debinConsultaRows) {
       lines.push(headers.map((h) => csvEscape(row[h])).join(','));
