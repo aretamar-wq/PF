@@ -1186,6 +1186,8 @@ async function runFlowFromCsv() {
                 apellidoNombre: (row[1] || '').trim(),
                 monto: (row[2] || '').trim(),
                 plazo: (row[3] || '').trim(),
+                operacion: first.operacion,
+                tna: first.tna,
               });
             }
           } catch (err) {
