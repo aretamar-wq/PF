@@ -1184,6 +1184,8 @@ async function runFlowFromCsv() {
                 tipoCircuito: (row[row.length - 1] || '').trim(),
                 pfPagado: false,
                 apellidoNombre: (row[1] || '').trim(),
+                monto: (row[2] || '').trim(),
+                plazo: (row[3] || '').trim(),
               });
             }
           } catch (err) {

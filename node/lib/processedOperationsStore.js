@@ -25,6 +25,8 @@ function mapOperationRow(row) {
     tipoCircuito: row.tipo_circuito,
     pfPagado: !!row.pf_pagado,
     apellidoNombre: row.apellido_nombre,
+    monto: row.monto,
+    plazo: row.plazo,
     processedAt: row.processed_at,
     processedBy: row.processed_by,
   };
@@ -78,9 +80,9 @@ async function addProcessedOperations(rootDir, operations, username) {
         `INSERT INTO operaciones_procesadas (
            cuit, numero_comprobante, id_mensaje,
            caja_ahorro, importe_neto, fecha_vencimiento, tipo_circuito, pf_pagado,
-           apellido_nombre, processed_at, processed_by
+           apellido_nombre, monto, plazo, processed_at, processed_by
          )
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
          ON DUPLICATE KEY UPDATE id = id`,
         [
           String(op.cuit),
@@ -92,6 +94,8 @@ async function addProcessedOperations(rootDir, operations, username) {
           String(op.tipoCircuito || ''),
           op.pfPagado ? 1 : 0,
           String(op.apellidoNombre || ''),
+          String(op.monto || ''),
+          String(op.plazo || ''),
           now,
           username,
         ]
