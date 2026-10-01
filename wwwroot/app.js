@@ -1295,6 +1295,26 @@ async function runFlowFromCsv() {
         const mismatchEntry = rowEntries.find((entry) => entry.isVariableMismatch);
         const businessRejectionEntry = rowEntries.find((entry) => entry.isBusinessRejection);
         if (mismatchEntry || businessRejectionEntry) {
+          // Si fue un rechazo de negocio, el step "2. Transferencia DEBIN" sí
+          // llegó a correr y responseSummary ya tiene el body completo (se
+          // guarda ANTES de evaluar failIfEquals, ver invokeHttpStep en
+          // flowEngine.js) — se puede sacar codigo/descripcion de la
+          // transferencia en sí de ahí, igual que el bloque de éxito más
+          // arriba. Si fue un mismatch de CUIT/CBU, el step 2 nunca corrió:
+          // no hay respuesta de transferencia que parsear, quedan en blanco.
+          let codigoRespuestaTransferencia = '';
+          let descripcionRespuestaTransferencia = '';
+          if (businessRejectionEntry && businessRejectionEntry.responseSummary) {
+            try {
+              const parsed = JSON.parse(businessRejectionEntry.responseSummary);
+              const respuesta = (parsed.params && parsed.params.response && parsed.params.response.respuesta) || {};
+              codigoRespuestaTransferencia = respuesta.codigo != null ? respuesta.codigo : '';
+              descripcionRespuestaTransferencia = respuesta.descripcion != null ? respuesta.descripcion : '';
+            } catch (err) {
+              // Respuesta no vino en el formato esperado; quedan en blanco.
+            }
+          }
+
           const consultaRow = {
             idMensaje: rowIdMensaje,
             idComprobante: row[6] || '',
@@ -1311,6 +1331,12 @@ async function runFlowFromCsv() {
             debitoTitular: row[5] || '',
             moneda: row[7] || '',
             importe: row[8] || '',
+            // Resultado de la transferencia original (no el de la consulta
+            // de estado, que son los campos sueltos más abajo) — la fila
+            // nunca llegó a transferirse con éxito, así que realizado = 'n'.
+            codigoRespuestaTransferencia,
+            descripcionRespuestaTransferencia,
+            realizado: 'n',
             errorConsulta: '',
           };
           for (const col of DEBIN_CONSULTA_COLUMNS) consultaRow[col] = '';
@@ -1399,6 +1425,12 @@ async function runFlowFromCsv() {
           debitoTitular: detailRow.debitoTitular || '',
           moneda: detailRow.moneda || '',
           importe: detailRow.importe || '',
+          // Resultado de la transferencia original (detailRow ya lo tiene,
+          // viene de la respuesta del POST credin) — esta fila solo llega
+          // acá si realizado ya era 's' (ver el filtro de toQuery).
+          codigoRespuestaTransferencia: detailRow.codigoRespuesta || '',
+          descripcionRespuestaTransferencia: detailRow.descripcionRespuesta || '',
+          realizado: 's',
           errorConsulta: '',
         };
         for (const col of DEBIN_CONSULTA_COLUMNS) consultaRow[col] = '';
@@ -1880,6 +1912,7 @@ async function saveOutputFiles(flow, batchLogFileName) {
       'creditoCuit', 'creditoCbu', 'creditoTitular',
       'debitoCuit', 'debitoCbu', 'debitoTitular',
       'moneda', 'importe',
+      'codigoRespuestaTransferencia', 'descripcionRespuestaTransferencia', 'realizado',
       ...DEBIN_CONSULTA_COLUMNS, 'errorConsulta',
     ];
     const lines = [headers.join(',')];
