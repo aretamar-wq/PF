@@ -475,11 +475,20 @@ columnas):
   deduplicación, puramente de auditoría) del contenido de
   `dbnout-...csv`/`dbnconsulta-...csv` (ver "Archivos de salida (`files/`)"
   más abajo), una fila por fila del `.csv` correspondiente, con quién
-  ejecutó la carga (`ejecutado_por`) y cuándo (`ejecutado_en`). En
-  `dbn_consulta`, las ~58 columnas que trae la respuesta de "Consulta DEBIN
-  (solo)" (ver `DEBIN_CONSULTA_COLUMNS` en `wwwroot/app.js`) se guardan
-  enteras en `respuesta_json`, no una por columna — mismo criterio que
-  `token_extra_json` en `perfiles`. Se llenan desde `POST
+  ejecutó la carga (`ejecutado_por`) y cuándo (`ejecutado_en`). Las dos
+  tablas guardan, como columnas propias, los datos del archivo de
+  **entrada** de "Transferencia DEBIN - File" — `credito_cuit`,
+  `credito_cbu`, `credito_titular` (CUIT/CBU/Nombre destino),
+  `debito_cuit`, `debito_cbu`, `debito_titular` (CUIT/CBU/Nombre origen),
+  `moneda`, `importe` (Monto) y `id_comprobante` (Nro_Comprobante) — además
+  de lo que le es propio a cada una (`dbn_out`: `codigo_respuesta`/
+  `descripcion_respuesta`/`id_respuesta`/`realizado`, el resultado de la
+  transferencia en sí; `dbn_consulta`: `id_operacion`/`error_consulta`). En
+  `dbn_consulta`, el resto de las ~58 columnas que trae la respuesta de
+  "Consulta DEBIN (solo)" (ver `DEBIN_CONSULTA_COLUMNS` en
+  `wwwroot/app.js`) se guardan enteras en `respuesta_json`, no una por
+  columna — mismo criterio que `token_extra_json` en `perfiles`. Se llenan
+  desde `POST
   /api/save-output` (`node/lib/debinOutputStore.js` /
   `modules/DebinOutputStore.psm1`, según el backend), en el mismo momento
   en que se guarda el `.csv` en `files/`; si el `INSERT` falla (ej.
