@@ -321,10 +321,13 @@ columnas):
   chequeo. Para "Alta de Plazo Fijos - File" también guarda `caja_ahorro`
   (cuenta usada para fondear el plazo fijo), `importe_neto`,
   `fecha_vencimiento` y `apellido_nombre` (mismos valores que
-  `pfout-...csv`, devueltos por el banco al dar de alta), `monto` y `plazo`
-  (`Monto`/`Plazo` tal como vinieron en el CSV de **entrada** — distintos de
-  `importe_neto`/`fecha_vencimiento`, que son lo que el banco calculó y
-  devolvió), `tipo_circuito` (el valor de Circuito de esa fila) y
+  `pfout-...csv`, devueltos por el banco al dar de alta), `operacion` y
+  `tna` (también del archivo de **salida**, `pfout-...csv`/`pfDetailRows`:
+  número de operación y tasa nominal anual que devolvió el banco), `monto`
+  y `plazo` (`Monto`/`Plazo` tal como vinieron en el CSV de **entrada** —
+  distintos de `importe_neto`/`fecha_vencimiento`/`operacion`/`tna`, que
+  son lo que el banco calculó y devolvió), `tipo_circuito` (el valor de
+  Circuito de esa fila) y
   `pf_pagado` (flag binario de si el plazo fijo se pagó — arranca siempre
   en 0 al registrar la operación; el flow "Pago de Plazo Fijos" es el
   "proceso posterior" que lo pasa a 1, ver más abajo) — vacíos/en 0 para

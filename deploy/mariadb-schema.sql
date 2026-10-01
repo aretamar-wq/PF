@@ -200,6 +200,12 @@ CREATE TABLE IF NOT EXISTS operaciones_procesadas (
   -- dar de alta el plazo fijo, estos 2 son lo que se PIDIÓ en el archivo.
   monto VARCHAR(50) NOT NULL DEFAULT '',
   plazo VARCHAR(10) NOT NULL DEFAULT '',
+  -- "operacion" y "tna" del archivo de SALIDA (pfout-...csv/pfDetailRows) —
+  -- número de operación del plazo fijo y tasa nominal anual, tal como los
+  -- devolvió el banco al dar de alta (mismo "first" del output del banco
+  -- que ya completa importe_neto/fecha_vencimiento).
+  operacion VARCHAR(50) NOT NULL DEFAULT '',
+  tna VARCHAR(50) NOT NULL DEFAULT '',
   processed_at DATETIME NOT NULL,
   processed_by VARCHAR(255) NOT NULL DEFAULT '',
   PRIMARY KEY (id),
@@ -217,6 +223,8 @@ ALTER TABLE operaciones_procesadas ADD COLUMN IF NOT EXISTS pf_pagado TINYINT(1)
 ALTER TABLE operaciones_procesadas ADD COLUMN IF NOT EXISTS apellido_nombre VARCHAR(255) NOT NULL DEFAULT '';
 ALTER TABLE operaciones_procesadas ADD COLUMN IF NOT EXISTS monto VARCHAR(50) NOT NULL DEFAULT '';
 ALTER TABLE operaciones_procesadas ADD COLUMN IF NOT EXISTS plazo VARCHAR(10) NOT NULL DEFAULT '';
+ALTER TABLE operaciones_procesadas ADD COLUMN IF NOT EXISTS operacion VARCHAR(50) NOT NULL DEFAULT '';
+ALTER TABLE operaciones_procesadas ADD COLUMN IF NOT EXISTS tna VARCHAR(50) NOT NULL DEFAULT '';
 
 -- Índice para el flow "Pago de Plazo Fijos" (findOperationsToPay en
 -- processedOperationsStore.js): busca por fecha_vencimiento + tipo_circuito
