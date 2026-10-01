@@ -641,6 +641,8 @@ async function handleRegisterOperations(req, res, session) {
     apellidoNombre: op.apellidoNombre != null ? String(op.apellidoNombre) : '',
     monto: op.monto != null ? String(op.monto) : '',
     plazo: op.plazo != null ? String(op.plazo) : '',
+    operacion: op.operacion != null ? String(op.operacion) : '',
+    tna: op.tna != null ? String(op.tna) : '',
   }));
   if (operations.length > 0) {
     await processedOperationsStore.addProcessedOperations(rootDir, operations, session.username);
