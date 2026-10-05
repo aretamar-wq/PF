@@ -112,9 +112,25 @@ Pasos:
   `sudo dnf install -y unixODBC freetds` (freetds puede requerir el repo
   EPEL: `sudo dnf install -y epel-release` antes).
 - **Ubicación del config de nginx**: RHEL no trae `sites-available`/
-  `sites-enabled` por defecto — copiar `deploy/nginx-apicore.conf`
-  directo a `/etc/nginx/conf.d/apicore.conf` (nginx.conf ya
-  incluye todo `/etc/nginx/conf.d/*.conf`), sin symlink.
+  `sites-enabled` por defecto (la convención stock es `/etc/nginx/conf.d/`,
+  que `nginx.conf` ya incluye entero) — **pero en este servidor de
+  producción sí se usa el patrón `sites-available`/`sites-enabled`** (el
+  mismo que Debian/Ubuntu, configurado a mano acá para tener todos los
+  sitios ordenados de la misma forma): los `.conf` originales de cada sitio
+  viven en `/etc/nginx/sites-available/`, y lo que nginx realmente carga es
+  `/etc/nginx/sites-enabled/`, donde cada sitio activo es un symlink al
+  `.conf` real. Para este deploy:
+  ```bash
+  sudo cp deploy/nginx-apicore.conf /etc/nginx/sites-available/apicore.conf
+  sudo ln -s /etc/nginx/sites-available/apicore.conf /etc/nginx/sites-enabled/apicore.conf
+  sudo nginx -t && sudo systemctl reload nginx
+  ```
+  Para dar de baja el sitio sin perder el `.conf` (por si hay que
+  reactivarlo después): `sudo rm /etc/nginx/sites-enabled/apicore.conf &&
+  sudo systemctl reload nginx` — el original en `sites-available/` queda
+  intacto. (Si en algún otro servidor no está armado este patrón y se usa
+  el `conf.d/` stock de RHEL, copiar `deploy/nginx-apicore.conf` directo a
+  `/etc/nginx/conf.d/apicore.conf`, sin symlink, alcanza igual.)
 - **SELinux** (la causa más común de "nginx anda pero da 502"): por
   default, el dominio de nginx (`httpd_t`) tiene bloqueado hacer conexiones
   salientes a puertos no estándar — incluido el `proxy_pass` hacia
