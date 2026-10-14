@@ -43,7 +43,8 @@
       "failIfEquals": [
         ["descripcionRespuesta", "ERROR GENERAL GARANTIAS", "Error en Garantias"],
         ["descripcionRespuesta", "No existe saldo para efectuar el debito", "No existe saldo para efectuar el debito"],
-        ["mensaje", "EL BANCO DEBITO NO POSEE GARANTIAS SUFICIENTES", "EL BANCO DEBITO NO POSEE GARANTIAS SUFICIENTES"]
+        ["mensaje", "EL BANCO DEBITO NO POSEE GARANTIAS SUFICIENTES", "EL BANCO DEBITO NO POSEE GARANTIAS SUFICIENTES"],
+        ["mensaje", "CBU DESTINO Y ORIGEN IDENTICOS", "CBU DESTINO Y ORIGEN IDENTICOS"]
       ],
       "expectedStatusCode": 200
     }
