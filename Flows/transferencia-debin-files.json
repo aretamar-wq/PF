@@ -37,11 +37,13 @@
       "extractVariables": {
         "codigoRespuesta": "params.response.respuesta.codigo",
         "descripcionRespuesta": "params.response.respuesta.descripcion",
-        "idRespuesta": "params.response.respuesta.id"
+        "idRespuesta": "params.response.respuesta.id",
+        "mensaje": "mensaje"
       },
       "failIfEquals": [
         ["descripcionRespuesta", "ERROR GENERAL GARANTIAS", "Error en Garantias"],
-        ["descripcionRespuesta", "No existe saldo para efectuar el debito", "No existe saldo para efectuar el debito"]
+        ["descripcionRespuesta", "No existe saldo para efectuar el debito", "No existe saldo para efectuar el debito"],
+        ["mensaje", "EL BANCO DEBITO NO POSEE GARANTIAS SUFICIENTES", "EL BANCO DEBITO NO POSEE GARANTIAS SUFICIENTES"]
       ],
       "expectedStatusCode": 200
     }
