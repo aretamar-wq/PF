@@ -1097,8 +1097,12 @@ y, como cada corrida es de un solo flow, nunca se mezclan entre sí:
   resultado de `GET /api/debin/cuenta/consultar/{id}`), MÁS una fila por
   cada fila que falló puntualmente por un motivo de rechazo que el flow
   sabe nombrar (CUIT destino que no coincide con el titular real del CBU,
-  o un rechazo de negocio de Nova-Link como "ERROR GENERAL GARANTIAS" o
-  "No existe saldo para efectuar el debito" — ver `failIfEquals` en
+  o un rechazo de negocio de Nova-Link como "ERROR GENERAL GARANTIAS",
+  "No existe saldo para efectuar el debito" o "EL BANCO DEBITO NO POSEE
+  GARANTIAS SUFICIENTES" (este último viene en el campo `mensaje` de nivel
+  superior de la respuesta, no en `descripcionRespuesta` como los otros
+  dos — por eso `extractVariables` también lo extrae aparte) — ver
+  `failIfEquals` en
   `Flows/transferencia-debin-files.json`), con un formato fijo para esas
   (`compradorCuentaCbu` = CBU origen, `estadoCodigo` = `"Error"`,
   `estadoDescripcion` = el motivo) — ver "Flow 'Transferencia DEBIN -
