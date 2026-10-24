@@ -1574,6 +1574,17 @@ compara por igualdad exacta de string, no como fecha, así que una
 instalación cuyo banco devuelva `fecha_vencimiento` en otro formato
 necesita ajustar esa función o el estilo del `CONVERT`.
 
+Esa misma fecha de proceso (convertida a `yyyy-MM-dd` con `convertDMYToISO`
+en `dateUtil.js`, como `fechaProcesoISO` en la respuesta de
+`GET /api/plazos-fijos-a-pagar`) viaja como input `fechaProceso` al correr
+cada fila — **no** es la fecha del reloj del servidor al momento de
+"Confirmar y pagar" (que puede ser más tarde que la búsqueda, o directamente
+otro día): `FechaMovimiento`/`FechaNegocio` del débito y el crédito usan
+`{{fechaProceso}}` en vez de `{{nowDate}}`, y `FechayHoraMensaje` combina
+esa fecha con la hora real del momento (`{{fechaProceso}} {{nowTime}}`) —
+mismo criterio que el resto de los flows para la hora del mensaje en sí,
+pero sin perder la fecha de negocio correcta.
+
 En la UI, seleccionar este flow en la lista muestra un panel propio (no el
 form genérico ni la carga de CSV): un botón **"Buscar plazos fijos a
 pagar"** trae la lista y la muestra en una tabla (CUIT, Apellido y Nombre,

@@ -9,6 +9,7 @@ const state = {
   errorRows: [],
   successfulOperations: [],
   pagoPlazoFijosRows: [],
+  pagoPlazoFijosFechaProcesoISO: null,
   token: sessionStorage.getItem('pf_token') || null,
   currentUser: null, // { username, role, displayName, canManageUsers } — se completa en loadMe()
 };
@@ -181,6 +182,7 @@ function selectFlow(name) {
   state.errorRows = [];
   state.successfulOperations = [];
   state.pagoPlazoFijosRows = [];
+  state.pagoPlazoFijosFechaProcesoISO = null;
   document.getElementById('pagoPlazoFijosProgress').textContent = '';
   document.getElementById('pagoPlazoFijosResult').style.display = 'none';
   document.getElementById('confirmarPagoPlazoFijosBtn').disabled = true;
@@ -1510,9 +1512,17 @@ async function buscarPlazosFijosAPagar() {
     const data = await res.json();
     if (!res.ok) throw new Error((data && data.error) || 'Error buscando plazos fijos a pagar.');
 
-    state.pagoPlazoFijosRows = data;
+    const rows = data.operaciones || [];
+    // fechaProcesoISO (yyyy-MM-dd) es la fecha de PROCESO bancaria que ya usó
+    // el servidor para esta misma búsqueda (ver handlePlazosFijosAPagarGet) —
+    // se guarda acá para mandarla de vuelta como input "fechaProceso" al
+    // correr cada fila (FechaMovimiento/FechaNegocio del débito y el crédito
+    // tienen que ser esta fecha, no la del reloj del navegador ni la del
+    // servidor al momento de "Confirmar y pagar", que puede ser más tarde).
+    state.pagoPlazoFijosFechaProcesoISO = data.fechaProcesoISO;
+    state.pagoPlazoFijosRows = rows;
     tbody.innerHTML = '';
-    for (const row of data) {
+    for (const row of rows) {
       const tr = document.createElement('tr');
       tr.innerHTML = `
         <td>${escapeHtml(row.cuit)}</td>
@@ -1524,9 +1534,9 @@ async function buscarPlazosFijosAPagar() {
       `;
       tbody.appendChild(tr);
     }
-    progressEl.textContent = `${data.length} plazo(s) fijo(s) a pagar.`;
+    progressEl.textContent = `${rows.length} plazo(s) fijo(s) a pagar (fecha de proceso: ${data.fechaProceso}).`;
     resultDiv.style.display = '';
-    confirmBtn.disabled = data.length === 0;
+    confirmBtn.disabled = rows.length === 0;
   } catch (err) {
     progressEl.textContent = '';
     alert('Error buscando plazos fijos a pagar: ' + err.message);
@@ -1610,6 +1620,12 @@ async function confirmarPagoPlazoFijos() {
         importe: row.importeNeto || '',
         cajaAhorro: row.cajaAhorro,
         idMensajeGenerado: rowIdMensaje,
+        // FechaMovimiento/FechaNegocio/FechayHoraMensaje del débito y el
+        // crédito tienen que ser la fecha de PROCESO bancaria (la misma que
+        // ya se usó para buscar esta fila, ver buscarPlazosFijosAPagar), no
+        // la del reloj al momento de "Confirmar y pagar" — por eso viaja
+        // como input en vez de dejar que el flow use {{nowDate}}.
+        fechaProceso: state.pagoPlazoFijosFechaProcesoISO,
       };
       try {
         rowEntries = await runFlowByName(flow.name, inputs, batchLogFileName);

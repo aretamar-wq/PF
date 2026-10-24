@@ -49,6 +49,21 @@ function formatDateOnlyDMY(date = new Date()) {
   return `${pad(date.getDate())}/${pad(date.getMonth() + 1)}/${date.getFullYear()}`;
 }
 
+// dd/mm/yyyy -> yyyy-MM-dd — conversión de texto pura (sin pasar por un
+// objeto Date, que podría reinterpretar la fecha en otra zona horaria): la
+// fecha de proceso bancaria viene de Sybase en dd/mm/yyyy (ver
+// FECHA_PROCESO_QUERY en server.js, CONVERT(..., 103)), pero el resto de
+// los flows (FechaMovimiento/FechaNegocio del body hacia el banco) esperan
+// el mismo formato yyyy-MM-dd que ya usa {{nowDate}} en todos lados.
+function convertDMYToISO(dmy) {
+  const match = /^(\d{2})\/(\d{2})\/(\d{4})$/.exec(String(dmy || '').trim());
+  if (!match) {
+    throw new Error(`Fecha '${dmy}' no tiene el formato esperado dd/mm/yyyy.`);
+  }
+  const [, day, month, year] = match;
+  return `${year}-${month}-${day}`;
+}
+
 module.exports = {
   formatLocal,
   formatDateOnly,
@@ -57,4 +72,5 @@ module.exports = {
   formatCompactMillis,
   formatCompactDMY,
   formatDateOnlyDMY,
+  convertDMYToISO,
 };
