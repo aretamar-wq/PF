@@ -25,6 +25,7 @@ const securityStore = require('./lib/securityStore');
 const processedOperationsStore = require('./lib/processedOperationsStore');
 const debinOutputStore = require('./lib/debinOutputStore');
 const sybaseClient = require('./lib/sybaseClient');
+const { convertDMYToISO } = require('./lib/dateUtil');
 
 function parsePort() {
   const args = process.argv.slice(2);
@@ -704,7 +705,12 @@ async function handlePlazosFijosAPagarGet(res, session) {
   }
 
   const operations = await processedOperationsStore.findOperationsToPay(rootDir, fechaProceso);
-  writeJsonResponse(res, 200, operations);
+  // fechaProcesoISO (yyyy-MM-dd, igual formato que {{nowDate}}) es la que el
+  // cliente manda de vuelta como input "fechaProceso" al correr cada fila del
+  // flow — FechaMovimiento/FechaNegocio del débito y el crédito tienen que
+  // ser la fecha de PROCESO bancaria, no la del reloj del servidor (ver
+  // Flows/pago-plazo-fijos.json).
+  writeJsonResponse(res, 200, { fechaProceso, fechaProcesoISO: convertDMYToISO(fechaProceso), operaciones: operations });
 }
 
 // Se llama al final de una corrida de "Pago de Plazo Fijos", solo con las
