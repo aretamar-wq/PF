@@ -534,6 +534,197 @@ function handleOutputFilesGet(res) {
   writeJsonResponse(res, 200, runs);
 }
 
+// Nombres de flow que puede mostrar el Dashboard (los 3 que mueven plata) —
+// los mismos 3 nombres exactos que usan los .json de Flows/ (ver
+// parseRunSummary/summary.flowName), para filtrar las corridas de
+// handleOutputFilesGet que no son de ninguno de estos 3 (ej. "Consultar
+// CBU" u otros flows auxiliares).
+const DASHBOARD_FLOW_NAMES = ['Alta de Plazo Fijos - File', 'Pago de Plazo Fijos', 'Transferencia DEBIN - File'];
+
+// Copia local de parseCsvLine/parseCsvText — mismo caso que
+// node/lib/debinOutputStore.js y wwwroot/app.js (ver comentario ahí): no
+// vale la pena un módulo compartido para un parser de 2 funciones.
+function parseCsvLine(line) {
+  const cells = [];
+  let cell = '';
+  let inQuotes = false;
+  for (let i = 0; i < line.length; i++) {
+    const ch = line[i];
+    if (inQuotes) {
+      if (ch === '"') {
+        if (line[i + 1] === '"') {
+          cell += '"';
+          i++;
+        } else {
+          inQuotes = false;
+        }
+      } else {
+        cell += ch;
+      }
+    } else if (ch === '"' && cell === '') {
+      inQuotes = true;
+    } else if (ch === ',') {
+      cells.push(cell);
+      cell = '';
+    } else {
+      cell += ch;
+    }
+  }
+  cells.push(cell);
+  return cells;
+}
+
+function parseCsvText(text) {
+  return text
+    .split(/\r\n|\r|\n/)
+    .filter((line) => line.length > 0)
+    .map(parseCsvLine);
+}
+
+// De cada archivo de error (files/<runId>-error.csv) solo nos interesan 3
+// datos por fila: con qué comprobante buscar en el log, el CUIT para
+// identificar al cliente, y el motivo del rechazo. El layout de columnas
+// difiere por flow (ver comentario en wwwroot/app.js sobre
+// state.errorRows.push, y el armado de errorRows de "Pago de Plazo
+// Fijos"): "Alta de Plazo Fijos - File" y "Transferencia DEBIN - File" no
+// llevan encabezado (son la fila de entrada tal cual + idMensaje + motivo),
+// "Pago de Plazo Fijos" sí.
+function parseErrorFileRows(flowName, csvContent) {
+  const lines = parseCsvText(csvContent);
+  if (lines.length === 0) return [];
+
+  if (flowName === 'Alta de Plazo Fijos - File') {
+    // cuit, apellidoNombre, importe, plazo, numeroComprobante, circuito, idMensaje, motivo
+    return lines.map((cols) => ({
+      numeroComprobante: cols[4] || '',
+      cuit: cols[0] || '',
+      motivo: cols[cols.length - 1] || '',
+    }));
+  }
+
+  if (flowName === 'Transferencia DEBIN - File') {
+    // creditoCuit, creditoCbu, creditoTitular, debitoCuit, debitoCbu, debitoTitular, idComprobante, moneda, importe, idMensaje, motivo
+    return lines.map((cols) => ({
+      numeroComprobante: cols[6] || '',
+      cuit: cols[0] || '',
+      motivo: cols[cols.length - 1] || '',
+    }));
+  }
+
+  if (flowName === 'Pago de Plazo Fijos') {
+    // Con encabezado: idMensaje,cuit,apellidoNombre,numeroComprobante,importe,cajaAhorro,fechaVencimiento,motivo
+    const header = lines[0];
+    const idx = (col) => header.indexOf(col);
+    return lines.slice(1).map((cols) => ({
+      numeroComprobante: cols[idx('numeroComprobante')] || '',
+      cuit: cols[idx('cuit')] || '',
+      motivo: cols[idx('motivo')] || '',
+    }));
+  }
+
+  return [];
+}
+
+// Agrupa por día local (no UTC) el mismo criterio que usa "Archivos de
+// salida" para su filtro de fechas en wwwroot/app.js
+// (formatDateOnlyLocal): año-mes-día de la hora local del servidor, no de
+// toISOString() (que es UTC y puede correr la fecha de corridas hechas
+// cerca de medianoche).
+function formatDateOnlyLocal(date) {
+  const y = date.getFullYear();
+  const m = String(date.getMonth() + 1).padStart(2, '0');
+  const d = String(date.getDate()).padStart(2, '0');
+  return `${y}-${m}-${d}`;
+}
+
+// GET /api/dashboard?from=yyyy-MM-dd&to=yyyy-MM-dd — resumen del día (o del
+// rango pedido) de los 3 flows que mueven plata, para el panel de
+// Dashboard. Reusa el mismo escaneo de logs/http/ que handleOutputFilesGet
+// (mismo resumen por corrida, ver appendRunSummary/parseRunSummary), pero
+// además abre cada errorFileName para sacar comprobante+motivo por fila:
+// el resumen de la corrida (pasosOk/pasosError) no alcanza para eso, hay
+// que leer el CSV de error ya guardado en files/.
+function handleDashboardGet(parsedUrl, res) {
+  const from = parsedUrl.searchParams.get('from') || '';
+  const to = parsedUrl.searchParams.get('to') || '';
+
+  const httpLogsDir = path.join(logsDir, HTTP_LOG_SUBDIR);
+  if (!fs.existsSync(httpLogsDir)) {
+    writeJsonResponse(res, 200, { porFlow: [], errores: [] });
+    return;
+  }
+
+  const runs = fs
+    .readdirSync(httpLogsDir)
+    .filter((name) => HTTP_LOG_FILE_NAME_PATTERN.test(name))
+    .map((name) => {
+      const filePath = path.join(httpLogsDir, name);
+      const stat = fs.statSync(filePath);
+      const runId = name.replace(/\.log$/, '');
+
+      let summary = null;
+      try {
+        summary = flowEngine.parseRunSummary(fs.readFileSync(filePath, 'utf8'));
+      } catch (err) {
+        // Log corrupto o ilegible: se descarta para el Dashboard (igual que
+        // una corrida sin resumen no aporta flowName/pasosOk/pasosError).
+      }
+      if (!summary || !summary.flowName) return null;
+
+      const errorFileName = `${runId}-error.csv`;
+      return {
+        logFileName: name,
+        mtime: stat.mtime,
+        flowName: summary.flowName,
+        pasosOk: summary.pasosOk || 0,
+        pasosError: summary.pasosError || 0,
+        errorFileName: fs.existsSync(path.join(filesDir, errorFileName)) ? errorFileName : null,
+      };
+    })
+    .filter((run) => run && DASHBOARD_FLOW_NAMES.includes(run.flowName))
+    .filter((run) => {
+      const day = formatDateOnlyLocal(run.mtime);
+      if (from && day < from) return false;
+      if (to && day > to) return false;
+      return true;
+    });
+
+  const porFlowMap = new Map();
+  for (const flowName of DASHBOARD_FLOW_NAMES) {
+    porFlowMap.set(flowName, { flowName, corridas: 0, ok: 0, error: 0 });
+  }
+  for (const run of runs) {
+    const entry = porFlowMap.get(run.flowName);
+    entry.corridas++;
+    entry.ok += run.pasosOk;
+    entry.error += run.pasosError;
+  }
+
+  const errores = [];
+  for (const run of runs) {
+    if (!run.errorFileName) continue;
+    let csvContent = '';
+    try {
+      csvContent = fs.readFileSync(path.join(filesDir, run.errorFileName), 'utf8');
+    } catch (err) {
+      continue; // Archivo listado pero ya no accesible (borrado a mano, etc.): se omite.
+    }
+    for (const row of parseErrorFileRows(run.flowName, csvContent)) {
+      errores.push({
+        hora: run.mtime.toISOString(),
+        flowName: run.flowName,
+        logFileName: run.logFileName,
+        numeroComprobante: row.numeroComprobante,
+        cuit: row.cuit,
+        motivo: row.motivo,
+      });
+    }
+  }
+  errores.sort((a, b) => b.hora.localeCompare(a.hora));
+
+  writeJsonResponse(res, 200, { porFlow: Array.from(porFlowMap.values()), errores });
+}
+
 function handleOutputFileContentGet(parsedUrl, res, session) {
   const name = parsedUrl.searchParams.get('name') || '';
   if (!OUTPUT_FILE_NAME_PATTERN.test(name)) {
@@ -875,6 +1066,7 @@ async function handleRequest(req, res) {
     if (method === 'POST' && pathname === '/api/save-output') return void (await handleSaveOutput(req, res, session));
     if (method === 'POST' && pathname === '/api/run-summary') return void (await handleRunSummaryPost(req, res, session));
     if (method === 'GET' && pathname === '/api/output-files') return void handleOutputFilesGet(res);
+    if (method === 'GET' && pathname === '/api/dashboard') return void handleDashboardGet(parsedUrl, res);
     if (method === 'GET' && pathname === '/api/output-files/content') return void handleOutputFileContentGet(parsedUrl, res, session);
     if (method === 'GET' && pathname === '/api/http-logs/content') return void handleHttpLogContentGet(parsedUrl, res, session);
     if (method === 'GET' && pathname === '/api/certs-browse') return void handleCertsBrowseGet(parsedUrl, res, session);
