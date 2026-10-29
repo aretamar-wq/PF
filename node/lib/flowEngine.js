@@ -474,6 +474,31 @@ async function querySybaseRows(parametriaSybase, queryText) {
   return sybaseClient.querySybase(parametriaSybase, queryText);
 }
 
+// IBS (ServicioIBS, ej. RegistrarPlazoFijoCompleto) devuelve, para un error
+// de regla de negocio (no una falla técnica), HTTP 500 con un body JSON
+// tipo {"exceptionType":"Censys.Utilities.Exceptions.ExcepcionDeNegocio",
+// "exceptionMessage":"51100: Se intenta ingresar un movimiento en un día no
+// hábil", ...} — mismo patrón ya visto con otros códigos (ej. "125303:
+// Cuenta inexistente..."). Usado por invokeHttpStep cuando el step opta vía
+// extractBusinessExceptionMessage. Se saca el código numérico inicial
+// ("51100: ") del mensaje porque no aporta nada al usuario que lee el
+// archivo de error o el Dashboard — a diferencia de los rechazos de
+// Nova-Link (failIfEquals), acá no hace falta matchear un literal exacto:
+// el propio exceptionType ya dice "esto es un rechazo de negocio".
+function extractIbsBusinessException(responseBody) {
+  if (!responseBody || !responseBody.trim()) return null;
+  let parsed;
+  try {
+    parsed = JSON.parse(responseBody);
+  } catch (err) {
+    return null;
+  }
+  if (!parsed || parsed.exceptionType !== 'Censys.Utilities.Exceptions.ExcepcionDeNegocio') return null;
+  const message = typeof parsed.exceptionMessage === 'string' ? parsed.exceptionMessage.trim() : '';
+  if (!message) return null;
+  return message.replace(/^\d+:\s*/, '');
+}
+
 async function invokeHttpStep(step, flowObj, variables, profileObj, logsDir, runLogFileName, entry, stepStartedAt, username) {
   const stepPath = expandTemplate(step.pathTemplate, variables);
   let url;
@@ -608,7 +633,29 @@ async function invokeHttpStep(step, flowObj, variables, profileObj, logsDir, run
 
   if (response.status !== expectedStatus) {
     entry.status = 'Error';
-    entry.errorMessage = `Se esperaba HTTP ${expectedStatus} y se recibió HTTP ${response.status}.`;
+    // extractBusinessExceptionMessage (opcional): IBS (ServicioIBS) devuelve,
+    // para un error de regla de negocio (ej. "no se puede dar de alta un
+    // movimiento en un día no hábil", o "la cuenta ingresada no pertenece al
+    // cliente"), HTTP 500 con un body JSON reconocible (ver
+    // extractIbsBusinessException) — a diferencia de Nova-Link (failIfEquals
+    // más abajo), acá el rechazo SÍ coincide con un status inesperado, así
+    // que si no se opta por esto el motivo guardado queda en el genérico
+    // "Se esperaba HTTP 200 y se recibió HTTP 500", que no sirve para nada
+    // en el archivo de error ni en el Dashboard. Un step que no declare esto
+    // sigue con el mensaje genérico de siempre.
+    const businessException = step.extractBusinessExceptionMessage ? extractIbsBusinessException(responseBody) : null;
+    if (businessException) {
+      entry.errorMessage = `IBS devolvió un error de negocio (HTTP ${response.status}): '${businessException}' — no un error de transporte.`;
+      entry.isBusinessRejection = true;
+      entry.businessRejectionMessage = businessException;
+      const rejectionLogText = [
+        `<<< ERROR [${formatLocal(new Date(), true)}] Flow=${flowObj.name} | Step=${step.name} | ${entry.errorMessage} (${Date.now() - stepStartedAt} ms)`,
+        '---',
+      ].join('\n');
+      writeHttpLog(logsDir, runLogFileName, rejectionLogText);
+    } else {
+      entry.errorMessage = `Se esperaba HTTP ${expectedStatus} y se recibió HTTP ${response.status}.`;
+    }
     return;
   }
 
