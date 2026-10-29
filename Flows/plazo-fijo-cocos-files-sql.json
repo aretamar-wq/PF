@@ -50,6 +50,7 @@
       "extractVariables": {},
       "omitIfNull": ["codigoCuenta"],
       "expectedStatusCode": 200,
+      "extractBusinessExceptionMessage": true,
       "onFailureSteps": [
         {
           "name": "4. Contra-asiento: Crédito en Caja de Ahorro (reversión por alta de PF fallida)",
