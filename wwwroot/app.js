@@ -1191,6 +1191,20 @@ async function runFlowFromCsv() {
               // eso lo marca otro proceso más adelante.
               const rowCuit = (row[0] || '').trim();
               const rowAccounts = accountsByCuit ? accountsByCuit.get(rowCuit) : null;
+              // La respuesta de un alta OK trae en output[].codigoCuenta la
+              // cuenta de Plazo Fijo (sist 4) recién creada por IBS. Si este
+              // CUIT no tenía cuenta de PF al arrancar la corrida (quedó sin
+              // cuecodSistema4 en el Map que arma fetchAccountsByCuit, UNA
+              // sola vez para todo el archivo), hay que completarla ACÁ: si
+              // no, una segunda fila del mismo CUIT en el mismo archivo
+              // seguiría mandando "codigoCuenta" vacío (ver omitIfNull en el
+              // step "3. Alta de Plazo Fijo") e IBS la rechaza con "la cuenta
+              // ingresada no pertenece al cliente", porque ya le creó una
+              // cuenta de PF con la fila anterior pero este alta no la
+              // referencia.
+              if (rowAccounts && first.codigoCuenta != null && String(first.codigoCuenta) !== '') {
+                rowAccounts.cuecodSistema4 = String(first.codigoCuenta);
+              }
               state.successfulOperations.push({
                 cuit: rowCuit,
                 numeroComprobante: (row[4] || '').trim(),
