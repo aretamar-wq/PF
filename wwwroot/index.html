@@ -43,6 +43,7 @@
             <li><button type="button" id="parametriaBtn">Parametría</button></li>
             <li><button type="button" id="usersBtn" style="display: none;">Usuarios</button></li>
             <li><button type="button" id="outputFilesBtn">Archivos de salida</button></li>
+            <li><button type="button" id="dashboardBtn">Dashboard</button></li>
             <li><button type="button" id="logoutBtn">Cerrar sesión</button></li>
           </ul>
         </div>
@@ -124,6 +125,52 @@
             <tr><th>Fecha</th><th>Flow</th><th>Usuario</th><th>Pasos OK/Error</th><th>Acciones</th></tr>
           </thead>
           <tbody id="outputFilesTableBody"></tbody>
+        </table>
+      </section>
+
+      <section id="dashboardSection" style="display: none;">
+        <div class="section-head">
+          <h2>Dashboard</h2>
+          <button type="button" id="closeDashboardBtn">Volver a flows</button>
+        </div>
+        <p class="muted">
+          Operaciones procesadas hoy (o en el rango elegido) en los 3 flows que mueven plata: "Alta de Plazo Fijos -
+          File", "Pago de Plazo Fijos" y "Transferencia DEBIN - File". Se arma leyendo el resumen de cada corrida
+          guardado en logs/http/ y los archivos de error ya guardados en files/ — se actualiza solo cada 5 minutos
+          mientras esta pantalla esté abierta.
+        </p>
+        <div class="actions">
+          <label>Desde <input type="date" id="dashboardFromDate" /></label>
+          <label>Hasta <input type="date" id="dashboardToDate" /></label>
+          <button type="button" id="dashboardTodayBtn">Hoy</button>
+          <button type="button" id="clearDashboardFilterBtn">Limpiar filtro</button>
+          <span class="spacer"></span>
+          <span id="dashboardLastUpdated" class="muted"></span>
+          <button type="button" id="refreshDashboardBtn">Actualizar ahora</button>
+        </div>
+
+        <div id="dashboardSummaryTiles" class="dashboard-tiles"></div>
+
+        <h3>Por flow</h3>
+        <div id="dashboardPorFlow" class="dashboard-flow-cards"></div>
+
+        <h3>Detalle de errores</h3>
+        <div class="actions">
+          <label>Flow
+            <select id="dashboardErrorFlowFilter">
+              <option value="">Todos</option>
+              <option value="Alta de Plazo Fijos - File">Alta de Plazo Fijos - File</option>
+              <option value="Pago de Plazo Fijos">Pago de Plazo Fijos</option>
+              <option value="Transferencia DEBIN - File">Transferencia DEBIN - File</option>
+            </select>
+          </label>
+        </div>
+        <p id="dashboardErroresEmptyHint" class="muted" style="display: none;">No hay errores para el rango/flow elegido.</p>
+        <table id="dashboardErroresTable">
+          <thead>
+            <tr><th>Hora</th><th>Flow</th><th>Nro. Comprobante</th><th>CUIT</th><th>Motivo</th><th>Log</th></tr>
+          </thead>
+          <tbody id="dashboardErroresBody"></tbody>
         </table>
       </section>
 

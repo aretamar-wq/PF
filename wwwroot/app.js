@@ -142,11 +142,18 @@ function isCsvFlow(flow) {
 // de flows) se muestran de una a la vez: mostrar una implica ocultar el
 // resto. Ningún panel (perfil, parametría, usuarios, archivos de salida) se
 // abre como <dialog> flotante, todos reemplazan el contenido de esta área.
-const MAIN_SECTION_IDS = ['flowDetail', 'outputFilesSection', 'profileSection', 'parametriaSection', 'usersSection'];
+const MAIN_SECTION_IDS = ['flowDetail', 'outputFilesSection', 'dashboardSection', 'profileSection', 'parametriaSection', 'usersSection'];
 
 function showMainSection(id) {
   for (const sectionId of MAIN_SECTION_IDS) {
     document.getElementById(sectionId).style.display = sectionId === id ? '' : 'none';
+  }
+  // El auto-refresh de 5 minutos del Dashboard solo tiene sentido mientras
+  // ese panel está a la vista — si se navega a cualquier otra sección hay
+  // que frenarlo (ver openDashboardSection más abajo), si no seguiría
+  // pegándole a /api/dashboard de fondo para siempre.
+  if (id !== 'dashboardSection' && typeof stopDashboardAutoRefresh === 'function') {
+    stopDashboardAutoRefresh();
   }
 }
 
@@ -1112,7 +1119,15 @@ async function runFlowFromCsv() {
       const rowFailed = rowEntries.some((entry) => entry.status !== 'Success');
       if (rowFailed && (isPlazoFijoCocosFilesSqlFlow(flow) || isTransferenciaDebinFilesFlow(flow))) {
         const failedEntry = rowEntries.find((entry) => entry.status !== 'Success' && entry.errorMessage);
-        const rowErrorMessage = failedEntry ? failedEntry.errorMessage : '';
+        // Para un rechazo de negocio (ver isBusinessRejection) se prefiere el
+        // texto limpio de businessRejectionMessage (ej. "Cuenta No Existente")
+        // en vez del errorMessage técnico/verboso — el mismo texto que ya se
+        // usa en el semáforo (classifyStepErrorType) y en dbnconsulta-...csv.
+        const rowErrorMessage = failedEntry
+          ? failedEntry.isBusinessRejection && failedEntry.businessRejectionMessage
+            ? failedEntry.businessRejectionMessage
+            : failedEntry.errorMessage
+          : '';
         state.errorRows.push([...row, rowIdMensaje, rowErrorMessage]);
       }
 
@@ -2537,6 +2552,163 @@ async function downloadHttpLog(name) {
   if (!data) return;
   downloadTextFile(data.name, data.content, 'text/plain');
 }
+
+// --- Dashboard ---------------------------------------------------------
+// Resumen del día (o del rango elegido) de los 3 flows que mueven plata —
+// ver handleDashboardGet en server.js. Mismo criterio de filtro de fechas
+// que "Archivos de salida" (requiere Desde y Hasta completos), más un
+// auto-refresh cada 5 minutos mientras este panel esté a la vista (ver
+// showMainSection, que lo frena al navegar a cualquier otro lado).
+
+const DASHBOARD_AUTO_REFRESH_MS = 5 * 60 * 1000;
+const dashboardFromDate = document.getElementById('dashboardFromDate');
+const dashboardToDate = document.getElementById('dashboardToDate');
+const dashboardErrorFlowFilter = document.getElementById('dashboardErrorFlowFilter');
+let dashboardAutoRefreshTimer = null;
+let lastDashboardData = { porFlow: [], errores: [] };
+
+function dashboardDateRangeComplete() {
+  return !!(dashboardFromDate.value && dashboardToDate.value);
+}
+
+function renderDashboardTiles(porFlow) {
+  const corridas = porFlow.reduce((sum, f) => sum + f.corridas, 0);
+  const ok = porFlow.reduce((sum, f) => sum + f.ok, 0);
+  const error = porFlow.reduce((sum, f) => sum + f.error, 0);
+  const el = document.getElementById('dashboardSummaryTiles');
+  el.innerHTML = `
+    <div class="dashboard-tile">
+      <div class="dashboard-tile-label">Corridas</div>
+      <div class="dashboard-tile-value">${corridas}</div>
+    </div>
+    <div class="dashboard-tile ok">
+      <div class="dashboard-tile-label">Operaciones OK</div>
+      <div class="dashboard-tile-value">${ok}</div>
+    </div>
+    <div class="dashboard-tile error">
+      <div class="dashboard-tile-label">Operaciones con error</div>
+      <div class="dashboard-tile-value">${error}</div>
+    </div>
+  `;
+}
+
+// Un "motivo" por fila de error (ver parseErrorFileRows en server.js) —
+// se agrupan y cuentan acá, por flow, para las pastillas de cada card.
+function countMotivos(errores, flowName) {
+  const counts = new Map();
+  for (const e of errores) {
+    if (e.flowName !== flowName) continue;
+    const motivo = e.motivo || '(sin motivo)';
+    counts.set(motivo, (counts.get(motivo) || 0) + 1);
+  }
+  return Array.from(counts.entries()).sort((a, b) => b[1] - a[1]);
+}
+
+function renderDashboardPorFlow(porFlow, errores) {
+  const el = document.getElementById('dashboardPorFlow');
+  el.innerHTML = '';
+  for (const flow of porFlow) {
+    const total = flow.ok + flow.error;
+    const okPct = total > 0 ? Math.round((flow.ok / total) * 100) : 100;
+    const motivos = countMotivos(errores, flow.flowName);
+    const pills = motivos.length
+      ? motivos.map(([motivo, count]) => `<span class="dashboard-motivo-pill">${escapeHtml(motivo)} (${count})</span>`).join('')
+      : '<span class="muted">Sin errores</span>';
+    const card = document.createElement('div');
+    card.className = 'dashboard-flow-card';
+    card.innerHTML = `
+      <div class="dashboard-flow-card-head">
+        <strong>${escapeHtml(flow.flowName)}</strong>
+        <span class="muted">${flow.corridas} corrida(s) · ${flow.ok} ok / ${flow.error} error</span>
+      </div>
+      <div class="dashboard-flow-bar"><span style="width: ${okPct}%"></span></div>
+      <div class="dashboard-motivo-pills">${pills}</div>
+    `;
+    el.appendChild(card);
+  }
+}
+
+function applyDashboardErrorFilter() {
+  const flowFilter = dashboardErrorFlowFilter.value;
+  const filtered = flowFilter ? lastDashboardData.errores.filter((e) => e.flowName === flowFilter) : lastDashboardData.errores;
+  const tbody = document.getElementById('dashboardErroresBody');
+  tbody.innerHTML = '';
+  for (const e of filtered) {
+    const tr = document.createElement('tr');
+    tr.innerHTML = `
+      <td>${new Date(e.hora).toLocaleString()}</td>
+      <td>${escapeHtml(e.flowName)}</td>
+      <td style="font-family: monospace;">${escapeHtml(e.numeroComprobante || '—')}</td>
+      <td style="font-family: monospace;">${escapeHtml(e.cuit || '—')}</td>
+      <td><span class="dashboard-motivo-pill">${escapeHtml(e.motivo || '—')}</span></td>
+      <td><button type="button" class="dashboardVerLogBtn">Descargar log</button></td>
+    `;
+    tr.querySelector('.dashboardVerLogBtn').addEventListener('click', () => downloadHttpLog(e.logFileName));
+    tbody.appendChild(tr);
+  }
+  const hint = document.getElementById('dashboardErroresEmptyHint');
+  hint.style.display = filtered.length === 0 ? '' : 'none';
+}
+
+function renderDashboard(data) {
+  lastDashboardData = data;
+  renderDashboardTiles(data.porFlow);
+  renderDashboardPorFlow(data.porFlow, data.errores);
+  applyDashboardErrorFilter();
+}
+
+async function loadDashboard() {
+  if (!dashboardDateRangeComplete()) {
+    renderDashboard({ porFlow: [], errores: [] });
+    return;
+  }
+  const params = new URLSearchParams({ from: dashboardFromDate.value, to: dashboardToDate.value });
+  const res = await apiFetch('/api/dashboard?' + params.toString());
+  if (!res.ok) return;
+  const data = await res.json();
+  renderDashboard(data);
+  document.getElementById('dashboardLastUpdated').textContent = 'Última actualización: ' + new Date().toLocaleTimeString();
+}
+
+function stopDashboardAutoRefresh() {
+  if (dashboardAutoRefreshTimer) {
+    clearInterval(dashboardAutoRefreshTimer);
+    dashboardAutoRefreshTimer = null;
+  }
+}
+
+function startDashboardAutoRefresh() {
+  stopDashboardAutoRefresh();
+  dashboardAutoRefreshTimer = setInterval(loadDashboard, DASHBOARD_AUTO_REFRESH_MS);
+}
+
+async function openDashboardSection() {
+  const today = formatDateOnlyLocal(new Date());
+  dashboardFromDate.value = today;
+  dashboardToDate.value = today;
+  dashboardErrorFlowFilter.value = '';
+  showMainSection('dashboardSection');
+  await loadDashboard();
+  startDashboardAutoRefresh();
+}
+
+document.getElementById('dashboardBtn').addEventListener('click', openDashboardSection);
+document.getElementById('closeDashboardBtn').addEventListener('click', () => showMainSection('flowDetail'));
+document.getElementById('refreshDashboardBtn').addEventListener('click', loadDashboard);
+document.getElementById('dashboardTodayBtn').addEventListener('click', () => {
+  const today = formatDateOnlyLocal(new Date());
+  dashboardFromDate.value = today;
+  dashboardToDate.value = today;
+  loadDashboard();
+});
+document.getElementById('clearDashboardFilterBtn').addEventListener('click', () => {
+  dashboardFromDate.value = '';
+  dashboardToDate.value = '';
+  renderDashboard({ porFlow: [], errores: [] });
+});
+dashboardFromDate.addEventListener('change', loadDashboard);
+dashboardToDate.addEventListener('change', loadDashboard);
+dashboardErrorFlowFilter.addEventListener('change', applyDashboardErrorFilter);
 
 // --- Login / logout ---------------------------------------------------------
 
