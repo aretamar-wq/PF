@@ -119,17 +119,20 @@ async function getProcessedOperations(rootDir) {
   return rows.map(mapOperationRow);
 }
 
-// Plazos fijos a pagar hoy (flow "Pago de Plazo Fijos"): vencimiento = hoy,
-// tipo_circuito = '0' (flujo completo — un circuito = '1', solo alta, no
-// tiene sentido pagarlo por acá) y todavía no pagados. fecha_vencimiento es
-// texto libre tal como lo devuelve el banco (dd/MM/yyyy, ver
-// formatDateOnlyDMY en dateUtil.js) — se compara por igualdad exacta de
-// string, no como fecha.
+// Plazos fijos a pagar hoy (flow "Pago de Plazo Fijos"): vencimiento = hoy y
+// todavía no pagados, sin filtrar por tipo_circuito — trae tanto los de
+// circuito='0' (a los que sí se les va a hacer débito/crédito real, ver
+// confirmarPagoPlazoFijos en wwwroot/app.js) como los de circuito='1' (solo
+// alta, sin movimiento bancario acá: se listan igual, a título informativo,
+// para que el archivo de salida del día quede completo con los dos
+// circuitos). fecha_vencimiento es texto libre tal como lo devuelve el
+// banco (dd/MM/yyyy, ver formatDateOnlyDMY en dateUtil.js) — se compara por
+// igualdad exacta de string, no como fecha.
 async function findOperationsToPay(rootDir, today = formatDateOnlyDMY()) {
   const rows = await db.query(
     rootDir,
     `SELECT * FROM operaciones_procesadas
-     WHERE fecha_vencimiento = ? AND tipo_circuito = '0' AND pf_pagado = 0
+     WHERE fecha_vencimiento = ? AND pf_pagado = 0
      ORDER BY id`,
     [today]
   );

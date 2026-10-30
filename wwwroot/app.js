@@ -1553,6 +1553,10 @@ async function buscarPlazosFijosAPagar() {
     tbody.innerHTML = '';
     for (const row of rows) {
       const tr = document.createElement('tr');
+      // Circuito '1' (solo alta) no recibe débito/crédito real al confirmar
+      // — se lista igual, a título informativo, para que quede en el mismo
+      // archivo de salida del día (ver confirmarPagoPlazoFijos más abajo).
+      const circuitoLabel = String(row.tipoCircuito) === '1' ? '1 (solo constancia, sin movimiento)' : '0';
       tr.innerHTML = `
         <td>${escapeHtml(row.cuit)}</td>
         <td>${escapeHtml(row.apellidoNombre)}</td>
@@ -1560,6 +1564,7 @@ async function buscarPlazosFijosAPagar() {
         <td>${escapeHtml(row.importeNeto)}</td>
         <td>${escapeHtml(row.cajaAhorro)}</td>
         <td>${escapeHtml(row.fechaVencimiento)}</td>
+        <td>${escapeHtml(circuitoLabel)}</td>
       `;
       tbody.appendChild(tr);
     }
@@ -1601,6 +1606,11 @@ async function confirmarPagoPlazoFijos() {
   const stepCounts = flow.steps.map(() => ({ ok: 0, error: 0, skipped: 0, errorTypes: {} }));
   let batchLogFileName = `http/${generateFallbackStamp()}-${flowLogNameFallback(flow)}.log`;
   const paidOperations = [];
+  // Filas circuito=1 listadas a título informativo (ver más abajo): cuentan
+  // como "ok" para el resumen de la corrida (no son un error), aunque no
+  // se les haya hecho ningún movimiento bancario ni se sumen a
+  // paidOperations (pf_pagado sigue en 0 para ellas).
+  let circuitoUnoCount = 0;
   // Filas para los 2 archivos de salida (ver más abajo, después del loop):
   // <runId>.csv (pago OK) y <runId>-error.csv (motivo del fallo) — mismo
   // criterio de "2 archivos, mismo runId" que pfout/pfouterror para "Alta
@@ -1612,7 +1622,15 @@ async function confirmarPagoPlazoFijos() {
   for (let i = 0; i < rows.length; i++) {
     const row = rows[i];
     const rowNumber = i + 1;
-    progressEl.textContent = `Pagando ${rowNumber} de ${rows.length} (CUIT ${row.cuit}, comprobante ${row.numeroComprobante})...`;
+    // Circuito '1' (solo alta, ver findOperationsToPay) nunca recibe débito
+    // en Caja de Ahorro ni crédito en Cuenta Corriente acá — se lista en el
+    // mismo archivo de salida del día solo a título informativo, sin llamar
+    // a ningún endpoint del banco ni marcarse pf_pagado (no hubo pago real
+    // que marcar). Solo circuito '0' corre el flow de verdad.
+    const esCircuitoUno = String(row.tipoCircuito) === '1';
+    progressEl.textContent = esCircuitoUno
+      ? `Fila ${rowNumber} de ${rows.length} (CUIT ${row.cuit}, comprobante ${row.numeroComprobante}): circuito 1, sin movimiento bancario, solo constancia...`
+      : `Pagando ${rowNumber} de ${rows.length} (CUIT ${row.cuit}, comprobante ${row.numeroComprobante})...`;
 
     // Un IdMensaje propio por fila (mismo criterio que runFlowFromCsv para
     // "Alta de Plazo Fijos - File"): generado acá para que quede disponible
@@ -1622,6 +1640,34 @@ async function confirmarPagoPlazoFijos() {
     // (idMensajeGenerado), pero entonces el cliente nunca se entera de cuál
     // usó.
     const rowIdMensaje = generateIdMensaje();
+
+    if (esCircuitoUno) {
+      const pagoRow = {
+        idMensaje: rowIdMensaje,
+        cuit: row.cuit,
+        apellidoNombre: row.apellidoNombre || '',
+        numeroComprobante: row.numeroComprobante,
+        importe: row.importeNeto || '',
+        cajaAhorro: row.cajaAhorro || '',
+        fechaVencimiento: row.fechaVencimiento || '',
+        circuito: '1',
+      };
+      okRows.push(pagoRow);
+      circuitoUnoCount++;
+      const infoEntry = {
+        name: `Fila ${rowNumber} — Circuito 1 (solo constancia, sin movimiento bancario)`,
+        status: 'Success',
+        requestSummary: null,
+        responseSummary: null,
+        httpStatusCode: null,
+        durationMs: 0,
+        errorMessage: null,
+      };
+      state.lastLog = state.lastLog.concat([infoEntry]);
+      document.getElementById('saveLogBtn').disabled = state.lastLog.length === 0;
+      renderCsvSummary(flow, rows.length, stepCounts, null, 'pagoPlazoFijosSummary');
+      continue;
+    }
 
     let rowEntries;
     if (!row.cajaAhorro) {
@@ -1698,6 +1744,7 @@ async function confirmarPagoPlazoFijos() {
       importe: row.importeNeto || '',
       cajaAhorro: row.cajaAhorro || '',
       fechaVencimiento: row.fechaVencimiento || '',
+      circuito: '0',
     };
     if (allOk) {
       paidOperations.push({ cuit: row.cuit, numeroComprobante: row.numeroComprobante });
@@ -1714,7 +1761,8 @@ async function confirmarPagoPlazoFijos() {
     document.getElementById('saveLogBtn').disabled = state.lastLog.length === 0;
   }
 
-  let doneText = `Listo: ${rows.length} plazo(s) fijo(s) procesado(s) en ${formatDurationShort(Date.now() - startedAt)}.`;
+  let doneText = `Listo: ${rows.length} plazo(s) fijo(s) procesado(s) en ${formatDurationShort(Date.now() - startedAt)}` +
+    (circuitoUnoCount > 0 ? ` (${circuitoUnoCount} de circuito 1, sin movimiento bancario, solo constancia).` : '.');
 
   // 2 archivos de salida, mismo runId (atado al log de esta corrida, igual
   // que pfout/pfouterror): <runId>.csv (pagos OK) y <runId>-error.csv
@@ -1723,13 +1771,13 @@ async function confirmarPagoPlazoFijos() {
   let okFileName = null;
   let errorFileName = null;
   if (okRows.length > 0) {
-    const headers = ['idMensaje', 'cuit', 'apellidoNombre', 'numeroComprobante', 'importe', 'cajaAhorro', 'fechaVencimiento'];
+    const headers = ['idMensaje', 'cuit', 'apellidoNombre', 'numeroComprobante', 'importe', 'cajaAhorro', 'fechaVencimiento', 'circuito'];
     const lines = [headers.join(',')];
     for (const r of okRows) lines.push(headers.map((h) => csvEscape(r[h])).join(','));
     okFileName = await saveOutputFile(runId, 'ok', null, lines.join('\r\n'));
   }
   if (errorRows.length > 0) {
-    const headers = ['idMensaje', 'cuit', 'apellidoNombre', 'numeroComprobante', 'importe', 'cajaAhorro', 'fechaVencimiento', 'motivo'];
+    const headers = ['idMensaje', 'cuit', 'apellidoNombre', 'numeroComprobante', 'importe', 'cajaAhorro', 'fechaVencimiento', 'circuito', 'motivo'];
     const lines = [headers.join(',')];
     for (const r of errorRows) lines.push(headers.map((h) => csvEscape(r[h])).join(','));
     errorFileName = await saveOutputFile(runId, 'error', null, lines.join('\r\n'));
@@ -1767,7 +1815,11 @@ async function confirmarPagoPlazoFijos() {
   }
 
   if (batchLogFileName) {
-    await postRunSummary(batchLogFileName, flow.name, okFileName, errorFileName, paidOperations.length, rows.length - paidOperations.length);
+    // pasosOk incluye las filas circuito=1 (listadas sin movimiento
+    // bancario, pero no son un error) además de las realmente pagadas —
+    // ver circuitoUnoCount más arriba.
+    const pasosOk = paidOperations.length + circuitoUnoCount;
+    await postRunSummary(batchLogFileName, flow.name, okFileName, errorFileName, pasosOk, rows.length - pasosOk);
   }
 
   progressEl.textContent = doneText;
