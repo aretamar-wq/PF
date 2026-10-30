@@ -1,6 +1,6 @@
 {
   "name": "Recupera cuentas (SQL)",
-  "description": "Trae, por cada nrodoc y sistcod (código de sistema 4/5, moneda 0, estado de cuenta 1/2), la cuecod más chica de tcl_VinculoCli_Cue + tgl_cuentas, consultando la base Sybase directamente, sin duplicados: una fila por combinación nrodoc+sistcod. Ejecuta contra la conexión Sybase configurada en Parametría. No aparece en la lista de flows (\"hidden\": true): lo usa 'Alta de Plazo Fijos - File' por atrás para buscar cuentas en bloque (ver wwwroot/app.js, función fetchAccountsByCuit) — se puede seguir ejecutando por nombre vía /api/run aunque no se vea en la UI.",
+  "description": "Trae, por cada nrodoc y sistcod (código de sistema 4/5, moneda 0, estado de cuenta 1/2), la cuecod más alta de tcl_VinculoCli_Cue + tgl_cuentas (la cuenta más nueva, si el cliente tiene más de una del mismo sistema), consultando la base Sybase directamente, sin duplicados: una fila por combinación nrodoc+sistcod. Ejecuta contra la conexión Sybase configurada en Parametría. No aparece en la lista de flows (\"hidden\": true): lo usa 'Alta de Plazo Fijos - File' por atrás para buscar cuentas en bloque (ver wwwroot/app.js, función fetchAccountsByCuit) — se puede seguir ejecutando por nombre vía /api/run aunque no se vea en la UI.",
   "hidden": true,
   "inputs": [
     { "variableName": "nrodoc", "label": "Número(s) de documento (uno o varios separados por coma)" }
@@ -9,7 +9,7 @@
     {
       "name": "Consultar vínculo cliente-cuenta",
       "type": "sql",
-      "query": "select CAST(a.nrodoc AS VARCHAR(20)) AS nrodoc, a.sistcod, CAST(MIN(a.cuecod) AS VARCHAR(20)) AS cuecod\nFROM tcl_VinculoCli_Cue a\n\tJOIN tgl_cuentas c ON  a.paiscod = c.paiscod AND a.bcocod = c.bcocod AND a.succod = c.succod AND a.sistcod = c.sistcod AND a.moncod = c.moncod AND a.cuecod = c.cuecod\n\tWHERE a.paiscod = 54 AND a.bcocod = 312 AND c.sistcod IN (5,4) and c.moncod = 0 AND a.cliclivincod IN (1,2,3) AND c.estctacod IN (1,2) and a.nrodoc IN ({{nrodoc}})\nGROUP BY a.nrodoc, a.sistcod",
+      "query": "select CAST(a.nrodoc AS VARCHAR(20)) AS nrodoc, a.sistcod, CAST(MAX(a.cuecod) AS VARCHAR(20)) AS cuecod\nFROM tcl_VinculoCli_Cue a\n\tJOIN tgl_cuentas c ON  a.paiscod = c.paiscod AND a.bcocod = c.bcocod AND a.succod = c.succod AND a.sistcod = c.sistcod AND a.moncod = c.moncod AND a.cuecod = c.cuecod\n\tWHERE a.paiscod = 54 AND a.bcocod = 312 AND c.sistcod IN (5,4) and c.moncod = 0 AND a.cliclivincod IN (1,2,3) AND c.estctacod IN (1,2) and a.nrodoc IN ({{nrodoc}})\nGROUP BY a.nrodoc, a.sistcod",
       "extractVariables": {}
     }
   ]
