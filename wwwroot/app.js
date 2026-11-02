@@ -2489,7 +2489,27 @@ userForm.addEventListener('submit', async (event) => {
 const outputFilesSection = document.getElementById('outputFilesSection');
 const outputFilesFromDate = document.getElementById('outputFilesFromDate');
 const outputFilesToDate = document.getElementById('outputFilesToDate');
-let allOutputFiles = []; // última lista traída del servidor, sin filtrar — el filtro de fecha se aplica en el cliente
+const outputFilesFlowFilter = document.getElementById('outputFilesFlowFilter');
+let allOutputFiles = []; // última lista traída del servidor, sin filtrar — los filtros de fecha/flow se aplican en el cliente
+
+// Las opciones del <select> salen de los flowName que trajo la última
+// consulta (no una lista fija): "Archivos de salida" no se limita a los 3
+// flows del Dashboard, puede haber corridas de cualquier flow con resumen
+// guardado. Se preserva la selección actual si ese flow sigue entre las
+// opciones nuevas (ej. al apretar "Actualizar"), para no resetear el
+// filtro elegido en cada refresco.
+function populateOutputFilesFlowFilter() {
+  const previousValue = outputFilesFlowFilter.value;
+  const flowNames = [...new Set(allOutputFiles.map((run) => run.flowName).filter(Boolean))].sort();
+  outputFilesFlowFilter.innerHTML = '<option value="">Todos</option>';
+  for (const flowName of flowNames) {
+    const option = document.createElement('option');
+    option.value = flowName;
+    option.textContent = flowName;
+    outputFilesFlowFilter.appendChild(option);
+  }
+  outputFilesFlowFilter.value = flowNames.includes(previousValue) ? previousValue : '';
+}
 
 // Requiere Desde Y Hasta completos para buscar — sin rango de fechas no se
 // lista nada (ni se llama a la API), a propósito: son carpetas que pueden
@@ -2542,7 +2562,9 @@ function renderOutputFilesTable(runs, emptyMessage) {
 }
 
 // Compara solo la parte de fecha (yyyy-mm-dd, hora local) de run.mtime contra
-// los <input type="date"> Desde/Hasta — ambos límites inclusive.
+// los <input type="date"> Desde/Hasta (ambos límites inclusive) y, si hay
+// uno elegido, el flow exacto del <select> — los dos filtros se aplican en
+// el cliente sobre allOutputFiles, sin volver a pedirle nada al servidor.
 function applyOutputFilesFilter() {
   if (!outputFilesDateRangeComplete()) {
     renderOutputFilesTable([], 'Elegí un rango de fechas (Desde y Hasta) para buscar.');
@@ -2550,11 +2572,14 @@ function applyOutputFilesFilter() {
   }
   const from = outputFilesFromDate.value;
   const to = outputFilesToDate.value;
+  const flowFilter = outputFilesFlowFilter.value;
   const filtered = allOutputFiles.filter((run) => {
     const runDate = formatDateOnlyLocal(new Date(run.mtime));
-    return runDate >= from && runDate <= to;
+    if (runDate < from || runDate > to) return false;
+    if (flowFilter && run.flowName !== flowFilter) return false;
+    return true;
   });
-  renderOutputFilesTable(filtered, 'No hay ninguna corrida para el rango de fechas elegido.');
+  renderOutputFilesTable(filtered, 'No hay ninguna corrida para el rango de fechas y flow elegidos.');
 }
 
 function formatDateOnlyLocal(date) {
@@ -2570,6 +2595,7 @@ async function loadOutputFilesList() {
   const res = await apiFetch('/api/output-files');
   if (!res.ok) return;
   allOutputFiles = await res.json();
+  populateOutputFilesFlowFilter();
   applyOutputFilesFilter();
 }
 
@@ -2602,11 +2628,13 @@ document.getElementById('refreshOutputFilesBtn').addEventListener('click', loadO
 document.getElementById('clearOutputFilesFilterBtn').addEventListener('click', () => {
   outputFilesFromDate.value = '';
   outputFilesToDate.value = '';
+  outputFilesFlowFilter.value = '';
   allOutputFiles = [];
   applyOutputFilesFilter();
 });
 outputFilesFromDate.addEventListener('change', loadOutputFilesList);
 outputFilesToDate.addEventListener('change', loadOutputFilesList);
+outputFilesFlowFilter.addEventListener('change', applyOutputFilesFilter);
 
 // Descarga de un log de corrida (logs/http/) — usado por el botón
 // "Descargar log" de "Archivos de salida" arriba. Ya no hay una pantalla
