@@ -47,7 +47,10 @@
         ["mensaje", "CBU DESTINO Y ORIGEN IDENTICOS", "CBU DESTINO Y ORIGEN IDENTICOS"],
         ["mensaje", "Cuenta No Existente", "Cuenta No Existente"],
         ["mensaje", "Cuenta CA Sin Fondos", "Cuenta CA Sin Fondos"],
-        ["mensaje", "OPERACION RECHAZADA - PSP CREDITO", "OPERACION RECHAZADA - PSP CREDITO"]
+        ["mensaje", "OPERACION RECHAZADA - PSP CREDITO", "OPERACION RECHAZADA - PSP CREDITO"],
+        ["mensaje", "ERROR CUENTA VIRTUAL DEL VENDEDOR", "ERROR CUENTA VIRTUAL DEL VENDEDOR"],
+        ["mensaje", "NO EXISTE EL CBU VENDEDOR", "NO EXISTE EL CBU VENDEDOR"],
+        ["mensaje", "MONEDA DEL VENDEDOR DIFERENTE A LA REQUERIDA", "MONEDA DEL VENDEDOR DIFERENTE A LA REQUERIDA"]
       ],
       "expectedStatusCode": 200
     }
