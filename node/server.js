@@ -487,14 +487,20 @@ async function handleRunSummaryPost(req, res, session) {
 const OUTPUT_FILE_NAME_PATTERN = new RegExp(`^${flowEngine.RUN_ID_PATTERN.source.slice(1, -1)}(-error)?\\.csv$`);
 
 // Una fila por CORRIDA (no por archivo suelto): el nombre del log YA ES el
-// runId (ver generateRunId en flowEngine.js), así que alcanza con mirar si
-// existen files/<runId>.csv y files/<runId>-error.csv — sin necesitar
-// parsear nada. El resumen que /api/run-summary anexa al log (ver
-// appendRunSummary/parseRunSummary) solo se usa para enriquecer la fila con
-// quién la corrió, qué flow fue y los pasos ok/error — si un log no tiene
-// resumen (corrida de antes de este feature, o un CSV que se cortó antes de
-// terminar), la fila sale igual, con esos campos en null pero los archivos
-// (si existen) siguen siendo descargables.
+// runId (ver generateRunId en flowEngine.js). Casi siempre el archivo ok/
+// error comparte ese runId (files/<runId>.csv / <runId>-error.csv, ver
+// handleSaveOutput), así que de entrada se asume ese patrón — pero
+// "Transferencia DEBIN - File" guarda su archivo "ok" (dbnconsulta-..., el
+// detalle completo) con un runId PROPIO, no el de la corrida (ver
+// saveOutputFiles/consultaOkFileName en wwwroot/app.js): para esos casos
+// hay que confiar en summary.okFileName/errorFileName (lo que la corrida
+// reportó de verdad que guardó, ver postRunSummary) en vez del patrón fijo.
+// El resumen que /api/run-summary anexa al log (ver appendRunSummary/
+// parseRunSummary) también enriquece la fila con quién la corrió, qué flow
+// fue y los pasos ok/error — si un log no tiene resumen (corrida de antes
+// de este feature, o un CSV que se cortó antes de terminar), la fila sale
+// igual, con esos campos en null pero el archivo por patrón (si existe)
+// sigue siendo descargable.
 function handleOutputFilesGet(res) {
   const httpLogsDir = path.join(logsDir, HTTP_LOG_SUBDIR);
   if (!fs.existsSync(httpLogsDir)) {
@@ -516,8 +522,18 @@ function handleOutputFilesGet(res) {
         // Log corrupto o ilegible: la corrida sale igual en la lista, solo sin resumen.
       }
 
-      const okFileName = `${runId}.csv`;
-      const errorFileName = `${runId}-error.csv`;
+      // OUTPUT_FILE_NAME_PATTERN valida summary.okFileName/errorFileName
+      // antes de confiar en ellos (mismo chequeo anti path-traversal que ya
+      // hace handleOutputFileContentGet): un valor fuera de ese formato
+      // (log corrupto, instalación vieja) cae al patrón fijo de siempre.
+      const okFileName =
+        summary && summary.okFileName && OUTPUT_FILE_NAME_PATTERN.test(summary.okFileName)
+          ? summary.okFileName
+          : `${runId}.csv`;
+      const errorFileName =
+        summary && summary.errorFileName && OUTPUT_FILE_NAME_PATTERN.test(summary.errorFileName)
+          ? summary.errorFileName
+          : `${runId}-error.csv`;
 
       return {
         logFileName: name,
