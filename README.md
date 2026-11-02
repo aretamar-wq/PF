@@ -273,6 +273,7 @@ node/
   package.json           Dependencias externas: ldapts (bind LDAP), mysql2 (MariaDB)
   scripts/
     migrate-json-to-mariadb.js  Migración única de *.local.json a MariaDB, ver "Base de datos (MariaDB)"
+    repair-dbn-consulta-summaries.js  Reparación única del ArchivoOK de corridas viejas de "Transferencia DEBIN - File" (dry-run por default, --apply para aplicar)
   lib/
     jsonPath.js               Port de modules/JsonPath.psm1
     variableSubstitution.js   Port de modules/VariableSubstitution.psm1
