@@ -1101,9 +1101,11 @@ y, como cada corrida es de un solo flow, nunca se mezclan entre sí:
   "No existe saldo para efectuar el debito" (ambos en
   `descripcionRespuesta`), o "EL BANCO DEBITO NO POSEE GARANTIAS
   SUFICIENTES", "CBU DESTINO Y ORIGEN IDENTICOS", "Cuenta No Existente",
-  "Cuenta CA Sin Fondos" u "OPERACION RECHAZADA - PSP CREDITO" (estos 5 en
-  el campo `mensaje` de nivel superior de la respuesta — por eso
-  `extractVariables` también lo extrae aparte) — ver `failIfEquals` en
+  "Cuenta CA Sin Fondos", "OPERACION RECHAZADA - PSP CREDITO", "ERROR
+  CUENTA VIRTUAL DEL VENDEDOR", "NO EXISTE EL CBU VENDEDOR" o "MONEDA DEL
+  VENDEDOR DIFERENTE A LA REQUERIDA" (estos 8 en el campo `mensaje` de
+  nivel superior de la respuesta — por eso `extractVariables` también lo
+  extrae aparte) — ver `failIfEquals` en
   `Flows/transferencia-debin-files.json`), con un formato fijo para esas
   (`compradorCuentaCbu` = CBU origen, `estadoCodigo` = `"Error"`,
   `estadoDescripcion` = el motivo) — ver "Flow 'Transferencia DEBIN -
