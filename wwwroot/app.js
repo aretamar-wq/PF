@@ -1506,8 +1506,17 @@ async function runFlowFromCsv() {
       state.pfDetailRows.filter((r) => r.realizado === 's').length +
       state.debinDetailRows.filter((r) => r.realizado === 's').length;
     const pasosError = state.errorRows.length;
+    // "Transferencia DEBIN - File" no guarda su propio archivo "ok" bajo el
+    // runId de la corrida (batchOkFileName siempre queda null para ese
+    // flow, ver saveOutputFiles): el archivo con el detalle completo
+    // (dbnconsulta-..., incluidos los rechazos de negocio) se guarda con un
+    // runId PROPIO (consultaOkFileName). Como cada corrida es de un solo
+    // flow CSV, nunca se llenan los dos a la vez — hay que reportar el que
+    // haya, para que "Archivos de salida" (y el botón "Descargar OK") sepan
+    // de qué archivo se trata.
+    const reportedOkFileName = saved.consultaOkFileName || saved.batchOkFileName;
     if (batchLogFileName) {
-      await postRunSummary(batchLogFileName, flow.name, saved.batchOkFileName, saved.batchErrorFileName, pasosOk, pasosError);
+      await postRunSummary(batchLogFileName, flow.name, reportedOkFileName, saved.batchErrorFileName, pasosOk, pasosError);
     }
     progressEl.textContent = doneText;
   } catch (err) {
