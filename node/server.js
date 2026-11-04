@@ -920,6 +920,36 @@ async function handlePlazosFijosAPagarGet(res, session) {
   writeJsonResponse(res, 200, { fechaProceso, fechaProcesoISO: convertDMYToISO(fechaProceso), operaciones: operations });
 }
 
+// Límite diario de transferencias por CUIT origen (Parametría >
+// debin.limiteDiarioPorCuit, ver fetchTransferenciasLimite en
+// wwwroot/app.js): UNA sola consulta con todos los CUIT origen del archivo
+// antes de procesar ninguna fila. "limite" sale null si el campo de
+// Parametría está vacío o no es un número positivo — en ese caso el
+// cliente no bloquea nada, mismo comportamiento que antes de este feature.
+// Mismo requisito de rol que /api/plazos-fijos-a-pagar: es de solo lectura,
+// pero es el primer paso de una corrida que va a mover dinero real.
+async function handleTransferenciasLimiteGet(parsedUrl, res, session) {
+  if (!securityStore.testRoleCanRunFlow(session.role)) {
+    writeJsonResponse(res, 403, { error: `Tu rol ('${session.role}') no tiene permiso para ejecutar flows.` });
+    return;
+  }
+
+  const cuits = (parsedUrl.searchParams.get('cuits') || '')
+    .split(',')
+    .map((c) => c.trim())
+    .filter(Boolean);
+
+  const parametria = await parametriaStore.getParametria(rootDir);
+  const limiteConfigurado = parametria.debin ? Number(parametria.debin.limiteDiarioPorCuit) : NaN;
+  const limite = Number.isFinite(limiteConfigurado) && limiteConfigurado > 0 ? limiteConfigurado : null;
+
+  const acumuladoMap = await debinOutputStore.getTransferidoHoyPorCuit(rootDir, cuits);
+  const acumulado = {};
+  for (const [cuit, monto] of acumuladoMap) acumulado[cuit] = monto;
+
+  writeJsonResponse(res, 200, { limite, acumulado });
+}
+
 // Se llama al final de una corrida de "Pago de Plazo Fijos", solo con las
 // operaciones cuyo débito en Caja de Ahorro Y crédito en Cuenta Corriente
 // salieron bien (ver runPagoPlazoFijos en wwwroot/app.js) — acá no se vuelve
@@ -1089,6 +1119,7 @@ async function handleRequest(req, res) {
     if (method === 'POST' && pathname === '/api/check-operations') return void (await handleCheckOperations(req, res, session));
     if (method === 'POST' && pathname === '/api/register-operations') return void (await handleRegisterOperations(req, res, session));
     if (method === 'GET' && pathname === '/api/plazos-fijos-a-pagar') return void (await handlePlazosFijosAPagarGet(res, session));
+    if (method === 'GET' && pathname === '/api/transferencias-limite') return void (await handleTransferenciasLimiteGet(parsedUrl, res, session));
     if (method === 'POST' && pathname === '/api/plazos-fijos-pagados') return void (await handlePlazosFijosPagadosPost(req, res, session));
     if (method === 'GET' && pathname === '/api/parametria') return void (await handleParametriaGet(res, session));
     if (method === 'POST' && pathname === '/api/parametria') return void (await handleParametriaPost(req, res, session));
