@@ -920,14 +920,15 @@ async function handlePlazosFijosAPagarGet(res, session) {
   writeJsonResponse(res, 200, { fechaProceso, fechaProcesoISO: convertDMYToISO(fechaProceso), operaciones: operations });
 }
 
-// Límite diario de transferencias por CUIT origen (Parametría >
-// debin.limiteDiarioPorCuit, ver fetchTransferenciasLimite en
+// Límite diario de transferencias por CUIT origen y moneda (Parametría >
+// debin.limiteDiarioArs/Usd, ver fetchTransferenciasLimite en
 // wwwroot/app.js): UNA sola consulta con todos los CUIT origen del archivo
-// antes de procesar ninguna fila. "limite" sale null si el campo de
-// Parametría está vacío o no es un número positivo — en ese caso el
-// cliente no bloquea nada, mismo comportamiento que antes de este feature.
-// Mismo requisito de rol que /api/plazos-fijos-a-pagar: es de solo lectura,
-// pero es el primer paso de una corrida que va a mover dinero real.
+// antes de procesar ninguna fila. "limites.ARS"/"limites.USD" salen null si
+// el campo de Parametría de esa moneda está vacío o no es un número
+// positivo — en ese caso el cliente no bloquea nada en esa moneda, mismo
+// comportamiento que antes de este feature. Mismo requisito de rol que
+// /api/plazos-fijos-a-pagar: es de solo lectura, pero es el primer paso de
+// una corrida que va a mover dinero real.
 async function handleTransferenciasLimiteGet(parsedUrl, res, session) {
   if (!securityStore.testRoleCanRunFlow(session.role)) {
     writeJsonResponse(res, 403, { error: `Tu rol ('${session.role}') no tiene permiso para ejecutar flows.` });
@@ -939,15 +940,26 @@ async function handleTransferenciasLimiteGet(parsedUrl, res, session) {
     .map((c) => c.trim())
     .filter(Boolean);
 
-  const parametria = await parametriaStore.getParametria(rootDir);
-  const limiteConfigurado = parametria.debin ? Number(parametria.debin.limiteDiarioPorCuit) : NaN;
-  const limite = Number.isFinite(limiteConfigurado) && limiteConfigurado > 0 ? limiteConfigurado : null;
+  // Un límite independiente por moneda (ver Parametría > "Límite diario de
+  // transferencias"): vacío/0/no numérico = sin límite para esa moneda, no
+  // bloquea nada.
+  function limiteDe(raw) {
+    const n = Number(raw);
+    return Number.isFinite(n) && n > 0 ? n : null;
+  }
+  const debin = (await parametriaStore.getParametria(rootDir)).debin || {};
+  const limites = { ARS: limiteDe(debin.limiteDiarioArs), USD: limiteDe(debin.limiteDiarioUsd) };
 
   const acumuladoMap = await debinOutputStore.getTransferidoHoyPorCuit(rootDir, cuits);
   const acumulado = {};
-  for (const [cuit, monto] of acumuladoMap) acumulado[cuit] = monto;
+  for (const cuit of cuits) {
+    acumulado[cuit] = {
+      ARS: acumuladoMap.get(debinOutputStore.transferidoHoyKey(cuit, 'ARS')) || 0,
+      USD: acumuladoMap.get(debinOutputStore.transferidoHoyKey(cuit, 'USD')) || 0,
+    };
+  }
 
-  writeJsonResponse(res, 200, { limite, acumulado });
+  writeJsonResponse(res, 200, { limites, acumulado });
 }
 
 // Se llama al final de una corrida de "Pago de Plazo Fijos", solo con las
