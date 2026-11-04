@@ -1752,9 +1752,21 @@ la mayoría de los campos del body salen de tres fuentes distintas:
   en blanco; `tipoDispositivo` = `"04"`; `lat`/`lng` = `"0"`) — son datos de
   un cliente final que no existen en una carga por archivo.
 
-**Límite diario por CUIT origen, moneda y destinatario.** Antes de procesar
-ninguna fila, `runFlowFromCsv` junta los CUIT origen (`debitoCuit`) únicos
-de todo el archivo y hace una sola consulta a `GET
+**Límite diario por CUIT origen, moneda y destinatario.** La columna
+"Moneda" del CSV (y la que queda guardada en `dbn_consulta`) no trae el
+texto "ARS"/"USD": trae el código numérico que espera Nova-Link (ISO
+4217 — `"032"`/`"32"` = ARS, `"840"` = USD, ver `defaultValue` de
+`"moneda"` en `Flows/transferencia-debin.json`). Los límites de Parametría
+están pensados en ARS/USD, así que `normalizeMonedaCodigo`/
+`normalizeMonedaCodigoLocal` (en `node/lib/debinOutputStore.js` y
+`wwwroot/app.js` respectivamente) traducen el código antes de comparar o
+de armar cualquier clave de acumulado — sin esto, `"32"` nunca matcheaba
+la clave `"ARS"` y el límite quedaba sin aplicarse nunca (fail-open, pero
+por el motivo equivocado: no porque no hubiera límite configurado, sino
+porque la comparación nunca encontraba la moneda).
+
+Antes de procesar ninguna fila, `runFlowFromCsv` junta los CUIT origen
+(`debitoCuit`) únicos de todo el archivo y hace una sola consulta a `GET
 /api/transferencias-limite` (ver `handleTransferenciasLimiteGet` en
 `node/server.js`): trae el límite diario configurado en Parametría, 4
 valores totalmente independientes — moneda (ARS/USD) × destinatario (mismo
@@ -1762,8 +1774,8 @@ CUIT o terceros, según `mismoTitular`: `debin.limiteDiarioArsMismoCuit`/
 `ArsTerceros`/`UsdMismoCuit`/`UsdTerceros` — vacío o `0` = sin límite para
 esa combinación, no bloquea nada) y, para cada CUIT, cada moneda y cada
 destinatario, cuánto ya transfirió hoy (`realizado = 's'` en
-`dbn_consulta`, agrupado por `debito_cuit` + `moneda` + si `credito_cuit =
-debito_cuit`, fecha local del servidor, ver
+`dbn_consulta`, agrupado por `debito_cuit` + moneda normalizada + si
+`credito_cuit = debito_cuit`, fecha local del servidor, ver
 `getTransferidoHoyPorCuit`/`transferidoHoyKey` en
 `node/lib/debinOutputStore.js`). Por cada fila, si el importe sumado al
 acumulado de esa combinación exacta (CUIT + moneda + destinatario) supera
