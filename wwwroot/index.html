@@ -276,16 +276,22 @@
           <fieldset>
             <legend>Límite diario de transferencias (Transferencia DEBIN - File)</legend>
             <p class="muted">
-              Monto máximo que un mismo CUIT origen puede transferir por día, por moneda — una fila que lo
-              supere queda bloqueada sin llamar al banco. Cada moneda se controla por separado (lo transferido
-              en ARS no afecta el límite de USD, ni viceversa). Dejá un campo vacío para no aplicar límite en
-              esa moneda.
+              Monto máximo que un mismo CUIT origen puede transferir por día — una fila que lo supere queda
+              bloqueada sin llamar al banco. 4 topes totalmente independientes entre sí (moneda × destinatario):
+              lo transferido a terceros no afecta el límite de mismo CUIT, ni ARS afecta a USD. Dejá un campo
+              vacío para no aplicar límite en esa combinación.
             </p>
-            <label>Límite diario ARS
-              <input name="debin.limiteDiarioArs" type="number" min="0" step="0.01" placeholder="Sin límite" />
+            <label>Límite diario ARS — mismo CUIT
+              <input name="debin.limiteDiarioArsMismoCuit" type="number" min="0" step="0.01" placeholder="Sin límite" />
             </label>
-            <label>Límite diario USD
-              <input name="debin.limiteDiarioUsd" type="number" min="0" step="0.01" placeholder="Sin límite" />
+            <label>Límite diario ARS — terceros
+              <input name="debin.limiteDiarioArsTerceros" type="number" min="0" step="0.01" placeholder="Sin límite" />
+            </label>
+            <label>Límite diario USD — mismo CUIT
+              <input name="debin.limiteDiarioUsdMismoCuit" type="number" min="0" step="0.01" placeholder="Sin límite" />
+            </label>
+            <label>Límite diario USD — terceros
+              <input name="debin.limiteDiarioUsdTerceros" type="number" min="0" step="0.01" placeholder="Sin límite" />
             </label>
           </fieldset>
           <fieldset>
