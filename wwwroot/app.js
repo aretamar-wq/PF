@@ -660,26 +660,30 @@ async function fetchAccountsByCuit(rows, runLogFileName) {
 }
 
 // Mismo criterio que transferidoHoyKey en node/lib/debinOutputStore.js: un
-// acumulado independiente por CUIT Y por moneda (ARS/USD no se mezclan, ver
-// Parametría > "Límite diario de transferencias"). Mayúsculas a propósito,
-// para que "ars"/"ARS"/"Ars" en el CSV pisen el mismo acumulado.
-function transferidoHoyKeyLocal(cuit, moneda) {
-  return `${cuit}|${String(moneda || '').trim().toUpperCase()}`;
+// acumulado independiente por CUIT, moneda Y destinatario (ARS/USD y
+// mismo-CUIT/terceros no se mezclan entre sí, ver Parametría > "Límite
+// diario de transferencias"). Moneda en mayúsculas a propósito, para que
+// "ars"/"ARS"/"Ars" en el CSV pisen el mismo acumulado. destinatario es
+// literalmente 'mismo' o 'terceros'.
+function transferidoHoyKeyLocal(cuit, moneda, destinatario) {
+  return `${cuit}|${String(moneda || '').trim().toUpperCase()}|${destinatario}`;
 }
 
 // Junta los CUIT origen únicos de todas las filas (columna 4, debitoCuit) y
 // hace UNA sola consulta al servidor (GET /api/transferencias-limite, ver
-// handleTransferenciasLimiteGet en server.js) para traer, por moneda
-// (ARS/USD), el límite diario configurado en Parametría y cuánto transfirió
-// cada CUIT hoy — en vez de una consulta por fila. limites.ARS/limites.USD
-// quedan en null si no hay límite configurado para esa moneda.
+// handleTransferenciasLimiteGet en server.js) para traer, por moneda y
+// destinatario (ARS/USD × mismo/terceros), el límite diario configurado en
+// Parametría y cuánto transfirió cada CUIT hoy — en vez de una consulta por
+// fila. limites.ARS.mismo/.terceros (e ídem USD) quedan en null si no hay
+// límite configurado para esa combinación.
 async function fetchTransferenciasLimite(rows) {
   const cuits = new Set();
   for (const row of rows) {
     const debitoCuit = (row[3] || '').trim();
     if (debitoCuit) cuits.add(debitoCuit);
   }
-  if (cuits.size === 0) return { limites: { ARS: null, USD: null }, acumulado: new Map() };
+  const limitesVacios = { ARS: { mismo: null, terceros: null }, USD: { mismo: null, terceros: null } };
+  if (cuits.size === 0) return { limites: limitesVacios, acumulado: new Map() };
 
   const res = await apiFetch('/api/transferencias-limite?cuits=' + encodeURIComponent(Array.from(cuits).join(',')));
   const data = await res.json();
@@ -687,16 +691,23 @@ async function fetchTransferenciasLimite(rows) {
     throw new Error(data.error || 'No se pudo consultar el límite diario de transferencias.');
   }
 
+  function limiteNum(v) {
+    return v == null ? null : Number(v);
+  }
   const limitesData = data.limites || {};
   const limites = {
-    ARS: limitesData.ARS == null ? null : Number(limitesData.ARS),
-    USD: limitesData.USD == null ? null : Number(limitesData.USD),
+    ARS: { mismo: limiteNum((limitesData.ARS || {}).mismo), terceros: limiteNum((limitesData.ARS || {}).terceros) },
+    USD: { mismo: limiteNum((limitesData.USD || {}).mismo), terceros: limiteNum((limitesData.USD || {}).terceros) },
   };
   const acumulado = new Map();
   for (const cuit of cuits) {
-    const porMoneda = (data.acumulado || {})[cuit] || {};
-    acumulado.set(transferidoHoyKeyLocal(cuit, 'ARS'), Number(porMoneda.ARS) || 0);
-    acumulado.set(transferidoHoyKeyLocal(cuit, 'USD'), Number(porMoneda.USD) || 0);
+    const porCuit = (data.acumulado || {})[cuit] || {};
+    for (const moneda of ['ARS', 'USD']) {
+      const porMoneda = porCuit[moneda] || {};
+      for (const destinatario of ['mismo', 'terceros']) {
+        acumulado.set(transferidoHoyKeyLocal(cuit, moneda, destinatario), Number(porMoneda[destinatario]) || 0);
+      }
+    }
   }
   return { limites, acumulado };
 }
@@ -952,13 +963,15 @@ async function runFlowFromCsv() {
     }
 
     // Para "Transferencia DEBIN - File": límite diario configurable por
-    // CUIT origen y moneda (debitoCuit + moneda, ver Parametría > "Límite
-    // diario de transferencias") — UNA sola consulta al servidor con todos
-    // los CUIT origen del archivo (cuánto ya transfirió cada uno hoy, por
-    // moneda, ver getTransferidoHoyPorCuit en debinOutputStore.js), antes
-    // de procesar ninguna fila. limitesDiarioTransferencias.ARS/.USD quedan
-    // en null si no hay límite configurado para esa moneda — en ese caso no
-    // se bloquea nada ahí, mismo comportamiento que antes de este feature.
+    // CUIT origen, moneda Y destinatario (debitoCuit + moneda + mismo/
+    // terceros, ver Parametría > "Límite diario de transferencias") — UNA
+    // sola consulta al servidor con todos los CUIT origen del archivo
+    // (cuánto ya transfirió cada uno hoy, por moneda y destinatario, ver
+    // getTransferidoHoyPorCuit en debinOutputStore.js), antes de procesar
+    // ninguna fila. limitesDiarioTransferencias.ARS.mismo/.terceros (e ídem
+    // USD) quedan en null si no hay límite configurado para esa combinación
+    // — en ese caso no se bloquea nada ahí, mismo comportamiento que antes
+    // de este feature.
     let transferidoHoyPorCuit = null;
     let limitesDiarioTransferencias = null;
     if (isTransferenciaDebinFilesFlow(flow)) {
@@ -1038,26 +1051,31 @@ async function runFlowFromCsv() {
           }
         }
 
-        // Límite diario de transferencias por CUIT origen Y moneda
-        // (Parametría > debin.limiteDiarioArs/Usd) — un acumulado y un tope
-        // independientes por moneda, no se mezclan ARS con USD. Si no hay
-        // límite configurado para la moneda de esta fila no se bloquea
-        // nada. Solo se evalúa si el CBU ya es válido: no tiene sentido
-        // sumar el importe de una fila con CBU inválido (que ni va a
-        // intentar transferirse) al acumulado del CUIT.
+        // Límite diario de transferencias por CUIT origen, moneda Y
+        // destinatario (Parametría > debin.limiteDiarioArs/UsdMismoCuit/
+        // Terceros) — 4 acumulados y topes totalmente independientes entre
+        // sí, no se mezclan ARS con USD ni mismo CUIT con terceros. Si no
+        // hay límite configurado para la combinación de esta fila no se
+        // bloquea nada. Solo se evalúa si el CBU ya es válido (de donde
+        // sale inputs.mismoTitular): no tiene sentido sumar el importe de
+        // una fila con CBU inválido (que ni va a intentar transferirse) al
+        // acumulado del CUIT.
         let limiteDiarioError = null;
         if (!debinCbuError && isTransferenciaDebinFilesFlow(flow)) {
           const debitoCuit = (inputs.debitoCuit || '').trim();
           const moneda = String(inputs.moneda || '').trim().toUpperCase();
-          const limiteMoneda = limitesDiarioTransferencias ? limitesDiarioTransferencias[moneda] : null;
-          if (limiteMoneda != null) {
+          const destinatario = inputs.mismoTitular === '1' ? 'mismo' : 'terceros';
+          const limitesMoneda = limitesDiarioTransferencias ? limitesDiarioTransferencias[moneda] : null;
+          const limiteValor = limitesMoneda ? limitesMoneda[destinatario] : null;
+          if (limiteValor != null) {
             const importeFila = Number(inputs.importe) || 0;
-            const yaTransferido = transferidoHoyPorCuit.get(transferidoHoyKeyLocal(debitoCuit, moneda)) || 0;
-            if (yaTransferido + importeFila > limiteMoneda) {
+            const yaTransferido = transferidoHoyPorCuit.get(transferidoHoyKeyLocal(debitoCuit, moneda, destinatario)) || 0;
+            if (yaTransferido + importeFila > limiteValor) {
+              const destinatarioLabel = destinatario === 'mismo' ? 'mismo CUIT' : 'terceros';
               limiteDiarioError =
-                `Límite diario de transferencias en ${moneda} superado para el CUIT ${debitoCuit}: ya transfirió ` +
-                `${yaTransferido.toFixed(2)} hoy, esta fila (${importeFila.toFixed(2)}) superaría el límite de ` +
-                `${limiteMoneda.toFixed(2)}.`;
+                `Límite diario de transferencias en ${moneda} a ${destinatarioLabel} superado para el CUIT ` +
+                `${debitoCuit}: ya transfirió ${yaTransferido.toFixed(2)} hoy, esta fila (${importeFila.toFixed(2)}) ` +
+                `superaría el límite de ${limiteValor.toFixed(2)}.`;
             }
           }
         }
@@ -1347,18 +1365,21 @@ async function runFlowFromCsv() {
               idMensaje: rowIdMensaje,
               realizado: 's',
             });
-            // Se suma al acumulado EN MEMORIA del CUIT origen + moneda (no
-            // alcanza con lo que ya traía el servidor al arrancar la
-            // corrida, ver fetchTransferenciasLimite): si el mismo CUIT
-            // aparece en otra fila más abajo de este mismo archivo CON LA
-            // MISMA MONEDA, tiene que ver este importe ya sumado — mismo
-            // criterio que el Map de cuentas de "Alta de Plazo Fijos -
-            // File" (ver fetchAccountsByCuit).
+            // Se suma al acumulado EN MEMORIA del CUIT origen + moneda +
+            // destinatario (no alcanza con lo que ya traía el servidor al
+            // arrancar la corrida, ver fetchTransferenciasLimite): si el
+            // mismo CUIT aparece en otra fila más abajo de este mismo
+            // archivo CON LA MISMA MONEDA Y EL MISMO DESTINATARIO, tiene que
+            // ver este importe ya sumado — mismo criterio que el Map de
+            // cuentas de "Alta de Plazo Fijos - File" (ver
+            // fetchAccountsByCuit).
             if (transferidoHoyPorCuit) {
+              const creditoCuit = (row[0] || '').trim();
               const debitoCuit = (row[3] || '').trim();
               const moneda = String(row[7] || '').trim().toUpperCase();
               const importeFila = Number(row[8]) || 0;
-              const key = transferidoHoyKeyLocal(debitoCuit, moneda);
+              const destinatario = creditoCuit === debitoCuit ? 'mismo' : 'terceros';
+              const key = transferidoHoyKeyLocal(debitoCuit, moneda, destinatario);
               transferidoHoyPorCuit.set(key, (transferidoHoyPorCuit.get(key) || 0) + importeFila);
             }
           } catch (err) {

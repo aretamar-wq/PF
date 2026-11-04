@@ -920,13 +920,14 @@ async function handlePlazosFijosAPagarGet(res, session) {
   writeJsonResponse(res, 200, { fechaProceso, fechaProcesoISO: convertDMYToISO(fechaProceso), operaciones: operations });
 }
 
-// Límite diario de transferencias por CUIT origen y moneda (Parametría >
-// debin.limiteDiarioArs/Usd, ver fetchTransferenciasLimite en
-// wwwroot/app.js): UNA sola consulta con todos los CUIT origen del archivo
-// antes de procesar ninguna fila. "limites.ARS"/"limites.USD" salen null si
-// el campo de Parametría de esa moneda está vacío o no es un número
-// positivo — en ese caso el cliente no bloquea nada en esa moneda, mismo
-// comportamiento que antes de este feature. Mismo requisito de rol que
+// Límite diario de transferencias por CUIT origen, moneda y destinatario
+// (Parametría > debin.limiteDiarioArs/UsdMismoCuit/Terceros, ver
+// fetchTransferenciasLimite en wwwroot/app.js): UNA sola consulta con
+// todos los CUIT origen del archivo antes de procesar ninguna fila.
+// "limites.ARS.mismo/terceros" (e ídem USD) salen null si el campo de
+// Parametría de esa combinación está vacío o no es un número positivo —
+// en ese caso el cliente no bloquea nada ahí, mismo comportamiento que
+// antes de este feature. Mismo requisito de rol que
 // /api/plazos-fijos-a-pagar: es de solo lectura, pero es el primer paso de
 // una corrida que va a mover dinero real.
 async function handleTransferenciasLimiteGet(parsedUrl, res, session) {
@@ -940,22 +941,31 @@ async function handleTransferenciasLimiteGet(parsedUrl, res, session) {
     .map((c) => c.trim())
     .filter(Boolean);
 
-  // Un límite independiente por moneda (ver Parametría > "Límite diario de
-  // transferencias"): vacío/0/no numérico = sin límite para esa moneda, no
-  // bloquea nada.
+  // 4 límites totalmente independientes (moneda × destinatario, ver
+  // Parametría > "Límite diario de transferencias"): vacío/0/no numérico =
+  // sin límite para esa combinación, no bloquea nada ahí.
   function limiteDe(raw) {
     const n = Number(raw);
     return Number.isFinite(n) && n > 0 ? n : null;
   }
   const debin = (await parametriaStore.getParametria(rootDir)).debin || {};
-  const limites = { ARS: limiteDe(debin.limiteDiarioArs), USD: limiteDe(debin.limiteDiarioUsd) };
+  const limites = {
+    ARS: { mismo: limiteDe(debin.limiteDiarioArsMismoCuit), terceros: limiteDe(debin.limiteDiarioArsTerceros) },
+    USD: { mismo: limiteDe(debin.limiteDiarioUsdMismoCuit), terceros: limiteDe(debin.limiteDiarioUsdTerceros) },
+  };
 
   const acumuladoMap = await debinOutputStore.getTransferidoHoyPorCuit(rootDir, cuits);
   const acumulado = {};
   for (const cuit of cuits) {
     acumulado[cuit] = {
-      ARS: acumuladoMap.get(debinOutputStore.transferidoHoyKey(cuit, 'ARS')) || 0,
-      USD: acumuladoMap.get(debinOutputStore.transferidoHoyKey(cuit, 'USD')) || 0,
+      ARS: {
+        mismo: acumuladoMap.get(debinOutputStore.transferidoHoyKey(cuit, 'ARS', 'mismo')) || 0,
+        terceros: acumuladoMap.get(debinOutputStore.transferidoHoyKey(cuit, 'ARS', 'terceros')) || 0,
+      },
+      USD: {
+        mismo: acumuladoMap.get(debinOutputStore.transferidoHoyKey(cuit, 'USD', 'mismo')) || 0,
+        terceros: acumuladoMap.get(debinOutputStore.transferidoHoyKey(cuit, 'USD', 'terceros')) || 0,
+      },
     };
   }
 

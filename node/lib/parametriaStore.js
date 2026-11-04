@@ -35,7 +35,12 @@ function getDefaultParametria() {
       password: '',
     },
     consultaCbu: { baseUrl: DEFAULT_CONSULTA_CBU_BASE_URL },
-    debin: { limiteDiarioArs: '', limiteDiarioUsd: '' },
+    debin: {
+      limiteDiarioArsMismoCuit: '',
+      limiteDiarioArsTerceros: '',
+      limiteDiarioUsdMismoCuit: '',
+      limiteDiarioUsdTerceros: '',
+    },
   };
 }
 
@@ -65,12 +70,15 @@ function mapParametriaRow(row) {
       baseUrl: row.consulta_cbu_base_url || DEFAULT_CONSULTA_CBU_BASE_URL,
     },
     debin: {
-      // Un límite por moneda, independiente uno del otro — vacío (no '0')
-      // significa "sin límite configurado para esa moneda" (ver
-      // handleTransferenciasLimiteGet en server.js, que lo deja en null en
-      // ese caso, sin bloquear ninguna fila en esa moneda).
-      limiteDiarioArs: row.debin_limite_diario_ars || '',
-      limiteDiarioUsd: row.debin_limite_diario_usd || '',
+      // 4 límites totalmente independientes (moneda × destinatario: mismo
+      // CUIT o terceros, ver mismoTitular en Flows/transferencia-debin-files.json)
+      // — vacío (no '0') significa "sin límite configurado para esa
+      // combinación" (ver handleTransferenciasLimiteGet en server.js, que
+      // lo deja en null en ese caso, sin bloquear ninguna fila ahí).
+      limiteDiarioArsMismoCuit: row.debin_limite_diario_ars_mismo_cuit || '',
+      limiteDiarioArsTerceros: row.debin_limite_diario_ars_terceros || '',
+      limiteDiarioUsdMismoCuit: row.debin_limite_diario_usd_mismo_cuit || '',
+      limiteDiarioUsdTerceros: row.debin_limite_diario_usd_terceros || '',
     },
   };
 }
@@ -104,8 +112,10 @@ async function saveParametria(rootDir, parametria) {
        ca_codigo_sistema, ca_transaccion_credito, ca_transaccion_debito,
        pf_codigo_producto, pf_codigo_movimiento,
        sybase_connection_string, sybase_usuario, sybase_password,
-       consulta_cbu_base_url, debin_limite_diario_ars, debin_limite_diario_usd
-     ) VALUES (1, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+       consulta_cbu_base_url,
+       debin_limite_diario_ars_mismo_cuit, debin_limite_diario_ars_terceros,
+       debin_limite_diario_usd_mismo_cuit, debin_limite_diario_usd_terceros
+     ) VALUES (1, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
      ON DUPLICATE KEY UPDATE
        cc_codigo_cuenta = VALUES(cc_codigo_cuenta),
        cc_codigo_sistema = VALUES(cc_codigo_sistema),
@@ -120,8 +130,10 @@ async function saveParametria(rootDir, parametria) {
        sybase_usuario = VALUES(sybase_usuario),
        sybase_password = VALUES(sybase_password),
        consulta_cbu_base_url = VALUES(consulta_cbu_base_url),
-       debin_limite_diario_ars = VALUES(debin_limite_diario_ars),
-       debin_limite_diario_usd = VALUES(debin_limite_diario_usd)`,
+       debin_limite_diario_ars_mismo_cuit = VALUES(debin_limite_diario_ars_mismo_cuit),
+       debin_limite_diario_ars_terceros = VALUES(debin_limite_diario_ars_terceros),
+       debin_limite_diario_usd_mismo_cuit = VALUES(debin_limite_diario_usd_mismo_cuit),
+       debin_limite_diario_usd_terceros = VALUES(debin_limite_diario_usd_terceros)`,
     [
       cc.codigoCuenta || '',
       cc.codigoSistema || '',
@@ -136,8 +148,10 @@ async function saveParametria(rootDir, parametria) {
       sybase.usuario || '',
       encryptedPassword,
       consultaCbu.baseUrl || '',
-      debin.limiteDiarioArs || '',
-      debin.limiteDiarioUsd || '',
+      debin.limiteDiarioArsMismoCuit || '',
+      debin.limiteDiarioArsTerceros || '',
+      debin.limiteDiarioUsdMismoCuit || '',
+      debin.limiteDiarioUsdTerceros || '',
     ]
   );
 }

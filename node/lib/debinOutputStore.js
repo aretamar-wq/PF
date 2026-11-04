@@ -180,45 +180,55 @@ async function addDbnConsultaRows(rootDir, csvContent, username) {
 }
 
 // Clave del Map que devuelve getTransferidoHoyPorCuit: un acumulado
-// independiente por CUIT Y por moneda (lo transferido en ARS no afecta el
-// límite de USD, ni viceversa — ver Parametría, debin.limiteDiarioArs/Usd).
-// Mayúsculas a propósito: la columna "moneda" de dbn_consulta es texto
-// libre tal como vino en el CSV, así que "ars"/"ARS"/"Ars" tienen que
-// pisar el mismo acumulado.
-function transferidoHoyKey(cuit, moneda) {
-  return `${cuit}|${String(moneda || '').trim().toUpperCase()}`;
+// independiente por CUIT, moneda Y destinatario — lo transferido en ARS no
+// afecta el límite de USD, ni lo transferido a terceros afecta el límite de
+// mismo CUIT (ver Parametría, debin.limiteDiarioArs/UsdMismoCuit/Terceros).
+// Moneda en mayúsculas a propósito: es texto libre tal como vino en el CSV,
+// así que "ars"/"ARS"/"Ars" tienen que pisar el mismo acumulado.
+// destinatario es literalmente 'mismo' o 'terceros' (ver mismoTitular en
+// Flows/transferencia-debin-files.json: "1" si CUIT destino = CUIT origen).
+function transferidoHoyKey(cuit, moneda, destinatario) {
+  return `${cuit}|${String(moneda || '').trim().toUpperCase()}|${destinatario}`;
 }
 
-// Para el límite diario de transferencias por CUIT origen y moneda
-// (Parametría, debin.limiteDiarioArs/Usd, ver
+// Para el límite diario de transferencias por CUIT origen, moneda y
+// destinatario (Parametría, debin.limiteDiarioArs/UsdMismoCuit/Terceros, ver
 // handleTransferenciasLimiteGet en server.js): suma, para cada
-// (debito_cuit, moneda) pedido, el importe de las transferencias YA
-// CONFIRMADAS (realizado = 's') de HOY (fecha local del servidor vía
-// CURDATE(), no la fecha de proceso bancaria — a diferencia de "Pago de
-// Plazo Fijos", acá no hay ningún requisito de que coincida con el cierre
-// de Sybase) en dbn_consulta — mismo criterio de "verdad" que ya usa el
-// resto de esta tabla, sin necesitar una tabla nueva solo para esto. Una
-// combinación sin ninguna transferencia hoy queda en 0, no ausente del Map.
+// (debito_cuit, moneda, destinatario) pedido, el importe de las
+// transferencias YA CONFIRMADAS (realizado = 's') de HOY (fecha local del
+// servidor vía CURDATE(), no la fecha de proceso bancaria — a diferencia de
+// "Pago de Plazo Fijos", acá no hay ningún requisito de que coincida con el
+// cierre de Sybase) en dbn_consulta — mismo criterio de "verdad" que ya usa
+// el resto de esta tabla, sin necesitar una tabla nueva solo para esto.
+// destinatario sale de comparar credito_cuit = debito_cuit en la propia
+// query (CASE), no de una columna propia — dbn_consulta no guarda
+// "mismoTitular" como tal. Una combinación sin ninguna transferencia hoy
+// queda en 0, no ausente del Map.
 async function getTransferidoHoyPorCuit(rootDir, cuits) {
   const uniqueCuits = [...new Set((cuits || []).map((c) => String(c || '').trim()).filter(Boolean))];
   const result = new Map();
   for (const cuit of uniqueCuits) {
-    result.set(transferidoHoyKey(cuit, 'ARS'), 0);
-    result.set(transferidoHoyKey(cuit, 'USD'), 0);
+    for (const moneda of ['ARS', 'USD']) {
+      for (const destinatario of ['mismo', 'terceros']) {
+        result.set(transferidoHoyKey(cuit, moneda, destinatario), 0);
+      }
+    }
   }
   if (uniqueCuits.length === 0) return result;
 
   const placeholders = uniqueCuits.map(() => '?').join(',');
   const rows = await db.query(
     rootDir,
-    `SELECT debito_cuit, moneda, SUM(CAST(importe AS DECIMAL(18,2))) AS total
+    `SELECT debito_cuit, moneda,
+            CASE WHEN credito_cuit = debito_cuit THEN 'mismo' ELSE 'terceros' END AS destinatario,
+            SUM(CAST(importe AS DECIMAL(18,2))) AS total
      FROM dbn_consulta
      WHERE realizado = 's' AND DATE(ejecutado_en) = CURDATE() AND debito_cuit IN (${placeholders})
-     GROUP BY debito_cuit, moneda`,
+     GROUP BY debito_cuit, moneda, destinatario`,
     uniqueCuits
   );
   for (const row of rows) {
-    result.set(transferidoHoyKey(row.debito_cuit, row.moneda), Number(row.total) || 0);
+    result.set(transferidoHoyKey(row.debito_cuit, row.moneda, row.destinatario), Number(row.total) || 0);
   }
   return result;
 }
