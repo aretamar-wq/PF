@@ -1778,6 +1778,20 @@ archivo con la misma moneda y el mismo destinatario, la segunda fila ya ve
 sumado el importe de la primera — mismo criterio que el Map de cuentas de
 "Alta de Plazo Fijos - File" (ver `fetchAccountsByCuit`).
 
+A diferencia de un CBU inválido o una operación duplicada (que solo dejan
+constancia en `dbnouterror-...csv`), una fila bloqueada por el límite
+diario **también** agrega una fila a `dbnconsulta-<timestamp>.csv` (y de
+ahí a `dbn_consulta` en MariaDB) con `estadoCodigo = "Error"` y
+`estadoDescripcion = "Transferencia no realizada, supera el límite
+diario"` (`realizado = "n"`, sin `codigoRespuestaTransferencia`/
+`idOperacion`: el step "2. Transferencia DEBIN" nunca llegó a correr) —
+mismo criterio que un rechazo de negocio o un mismatch de CUIT/CBU, para
+que el límite diario quede visible en el mismo lugar que el resto de los
+rechazos en vez de solo en el archivo de error. Al tener `realizado = "n"`,
+esta fila nunca se suma al acumulado de `getTransferidoHoyPorCuit` (que
+filtra `realizado = 's'`), así que no hay riesgo de que una fila bloqueada
+infle el consumo real del CUIT.
+
 Al terminar, genera hasta 2 archivos de salida (no 3: ya no genera su
 propio `dbnout-...csv`, ver "Archivos de salida (`files/`)" más abajo) con
 el mismo timestamp que el log de la corrida: `dbnouterror-<timestamp>.csv`
