@@ -179,4 +179,33 @@ async function addDbnConsultaRows(rootDir, csvContent, username) {
   }
 }
 
-module.exports = { addDbnOutRows, addDbnConsultaRows };
+// Para el límite diario de transferencias por CUIT origen (Parametría,
+// debin.limiteDiarioPorCuit, ver handleTransferenciasLimiteGet en
+// server.js): suma, para cada debito_cuit pedido, el importe de las
+// transferencias YA CONFIRMADAS (realizado = 's') de HOY (fecha local del
+// servidor vía CURDATE(), no la fecha de proceso bancaria — a diferencia de
+// "Pago de Plazo Fijos", acá no hay ningún requisito de que coincida con el
+// cierre de Sybase) en dbn_consulta — mismo criterio de "verdad" que ya usa
+// el resto de esta tabla, sin necesitar una tabla nueva solo para esto. Un
+// CUIT sin ninguna transferencia hoy queda en 0, no ausente del Map.
+async function getTransferidoHoyPorCuit(rootDir, cuits) {
+  const uniqueCuits = [...new Set((cuits || []).map((c) => String(c || '').trim()).filter(Boolean))];
+  const result = new Map(uniqueCuits.map((cuit) => [cuit, 0]));
+  if (uniqueCuits.length === 0) return result;
+
+  const placeholders = uniqueCuits.map(() => '?').join(',');
+  const rows = await db.query(
+    rootDir,
+    `SELECT debito_cuit, SUM(CAST(importe AS DECIMAL(18,2))) AS total
+     FROM dbn_consulta
+     WHERE realizado = 's' AND DATE(ejecutado_en) = CURDATE() AND debito_cuit IN (${placeholders})
+     GROUP BY debito_cuit`,
+    uniqueCuits
+  );
+  for (const row of rows) {
+    result.set(String(row.debito_cuit), Number(row.total) || 0);
+  }
+  return result;
+}
+
+module.exports = { addDbnOutRows, addDbnConsultaRows, getTransferidoHoyPorCuit };

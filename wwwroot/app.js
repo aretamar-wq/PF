@@ -659,6 +659,33 @@ async function fetchAccountsByCuit(rows, runLogFileName) {
   return accountsByCuit;
 }
 
+// Junta los CUIT origen únicos de todas las filas (columna 4, debitoCuit) y
+// hace UNA sola consulta al servidor (GET /api/transferencias-limite, ver
+// handleTransferenciasLimiteGet en server.js) para traer el límite diario
+// configurado en Parametría y cuánto transfirió cada uno hoy — en vez de
+// una consulta por fila. limite queda en null si no hay límite configurado
+// (campo vacío en Parametría).
+async function fetchTransferenciasLimite(rows) {
+  const cuits = new Set();
+  for (const row of rows) {
+    const debitoCuit = (row[3] || '').trim();
+    if (debitoCuit) cuits.add(debitoCuit);
+  }
+  if (cuits.size === 0) return { limite: null, acumulado: new Map() };
+
+  const res = await apiFetch('/api/transferencias-limite?cuits=' + encodeURIComponent(Array.from(cuits).join(',')));
+  const data = await res.json();
+  if (!res.ok) {
+    throw new Error(data.error || 'No se pudo consultar el límite diario de transferencias.');
+  }
+
+  const acumulado = new Map();
+  for (const cuit of cuits) {
+    acumulado.set(cuit, Number((data.acumulado || {})[cuit]) || 0);
+  }
+  return { limite: data.limite == null ? null : Number(data.limite), acumulado };
+}
+
 function hideSqlResult() {
   const el = document.getElementById('sqlResultPanel');
   el.style.display = 'none';
@@ -909,6 +936,28 @@ async function runFlowFromCsv() {
       }
     }
 
+    // Para "Transferencia DEBIN - File": límite diario configurable por
+    // CUIT origen (debitoCuit, ver Parametría > "Límite diario de
+    // transferencias") — UNA sola consulta al servidor con todos los CUIT
+    // origen del archivo (cuánto ya transfirió cada uno hoy, ver
+    // getTransferidoHoyPorCuit en debinOutputStore.js), antes de procesar
+    // ninguna fila. limiteDiarioTransferencias queda en null si no hay
+    // límite configurado — en ese caso no se bloquea nada, mismo
+    // comportamiento que antes de este feature.
+    let transferidoHoyPorCuit = null;
+    let limiteDiarioTransferencias = null;
+    if (isTransferenciaDebinFilesFlow(flow)) {
+      progressEl.textContent = 'Consultando límite diario de transferencias...';
+      try {
+        const limiteInfo = await fetchTransferenciasLimite(rows);
+        transferidoHoyPorCuit = limiteInfo.acumulado;
+        limiteDiarioTransferencias = limiteInfo.limite;
+      } catch (err) {
+        alert('Error consultando el límite diario de transferencias: ' + err.message);
+        return;
+      }
+    }
+
     const startedAt = Date.now();
 
     for (let i = 0; i < rows.length; i++) {
@@ -974,6 +1023,25 @@ async function runFlowFromCsv() {
           }
         }
 
+        // Límite diario de transferencias por CUIT origen (Parametría >
+        // debin.limiteDiarioPorCuit) — si no hay límite configurado
+        // (limiteDiarioTransferencias == null) no se bloquea nada. Solo se
+        // evalúa si el CBU ya es válido: no tiene sentido sumar el importe
+        // de una fila con CBU inválido (que ni va a intentar transferirse)
+        // al acumulado del CUIT.
+        let limiteDiarioError = null;
+        if (!debinCbuError && isTransferenciaDebinFilesFlow(flow) && limiteDiarioTransferencias != null) {
+          const debitoCuit = (inputs.debitoCuit || '').trim();
+          const importeFila = Number(inputs.importe) || 0;
+          const yaTransferido = transferidoHoyPorCuit.get(debitoCuit) || 0;
+          if (yaTransferido + importeFila > limiteDiarioTransferencias) {
+            limiteDiarioError =
+              `Límite diario de transferencias superado para el CUIT ${debitoCuit}: ya transfirió ` +
+              `${yaTransferido.toFixed(2)} hoy, esta fila (${importeFila.toFixed(2)}) superaría el límite de ` +
+              `${limiteDiarioTransferencias.toFixed(2)}.`;
+          }
+        }
+
         // Circuito = 0: flujo completo (débito CC + crédito CA + alta de PF,
         // como siempre). Circuito = 1: solo se recuperan las cuentas (ya
         // resueltas para todas las filas por fetchAccountsByCuit) y se
@@ -1031,7 +1099,7 @@ async function runFlowFromCsv() {
           }
         }
 
-        if (duplicateError || accountLookupError || circuitoError || debinCbuError) {
+        if (duplicateError || accountLookupError || circuitoError || debinCbuError || limiteDiarioError) {
           rowEntries = [
             {
               name: `Fila ${rowNumber}`,
@@ -1040,7 +1108,7 @@ async function runFlowFromCsv() {
               responseSummary: null,
               httpStatusCode: null,
               durationMs: 0,
-              errorMessage: duplicateError || accountLookupError || circuitoError || debinCbuError,
+              errorMessage: duplicateError || accountLookupError || circuitoError || debinCbuError || limiteDiarioError,
             },
           ];
         } else {
@@ -1259,6 +1327,17 @@ async function runFlowFromCsv() {
               idMensaje: rowIdMensaje,
               realizado: 's',
             });
+            // Se suma al acumulado EN MEMORIA del CUIT origen (no alcanza
+            // con lo que ya traía el servidor al arrancar la corrida, ver
+            // fetchTransferenciasLimite): si el mismo CUIT aparece en otra
+            // fila más abajo de este mismo archivo, tiene que ver este
+            // importe ya sumado — mismo criterio que el Map de cuentas de
+            // "Alta de Plazo Fijos - File" (ver fetchAccountsByCuit).
+            if (transferidoHoyPorCuit) {
+              const debitoCuit = (row[3] || '').trim();
+              const importeFila = Number(row[8]) || 0;
+              transferidoHoyPorCuit.set(debitoCuit, (transferidoHoyPorCuit.get(debitoCuit) || 0) + importeFila);
+            }
           } catch (err) {
             // La respuesta no vino en el formato esperado; no se agrega
             // detalle de esta fila, pero la fila sigue contando como éxito

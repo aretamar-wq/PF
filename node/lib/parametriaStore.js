@@ -35,6 +35,7 @@ function getDefaultParametria() {
       password: '',
     },
     consultaCbu: { baseUrl: DEFAULT_CONSULTA_CBU_BASE_URL },
+    debin: { limiteDiarioPorCuit: '' },
   };
 }
 
@@ -63,6 +64,13 @@ function mapParametriaRow(row) {
     consultaCbu: {
       baseUrl: row.consulta_cbu_base_url || DEFAULT_CONSULTA_CBU_BASE_URL,
     },
+    debin: {
+      // Vacío (no '0') significa "sin límite configurado" — ver
+      // handleTransferenciasLimiteGet en server.js, que lo deja en null en
+      // ese caso, sin bloquear ninguna fila (mismo comportamiento que antes
+      // de este campo existir).
+      limiteDiarioPorCuit: row.debin_limite_diario_por_cuit || '',
+    },
   };
 }
 
@@ -84,6 +92,7 @@ async function saveParametria(rootDir, parametria) {
   const pf = p.plazoFijo || {};
   const sybase = p.sybase || {};
   const consultaCbu = p.consultaCbu || {};
+  const debin = p.debin || {};
 
   const encryptedPassword = sybase.password ? encrypt(sybase.password, getEncryptionKey(rootDir)) : '';
 
@@ -94,8 +103,8 @@ async function saveParametria(rootDir, parametria) {
        ca_codigo_sistema, ca_transaccion_credito, ca_transaccion_debito,
        pf_codigo_producto, pf_codigo_movimiento,
        sybase_connection_string, sybase_usuario, sybase_password,
-       consulta_cbu_base_url
-     ) VALUES (1, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+       consulta_cbu_base_url, debin_limite_diario_por_cuit
+     ) VALUES (1, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
      ON DUPLICATE KEY UPDATE
        cc_codigo_cuenta = VALUES(cc_codigo_cuenta),
        cc_codigo_sistema = VALUES(cc_codigo_sistema),
@@ -109,7 +118,8 @@ async function saveParametria(rootDir, parametria) {
        sybase_connection_string = VALUES(sybase_connection_string),
        sybase_usuario = VALUES(sybase_usuario),
        sybase_password = VALUES(sybase_password),
-       consulta_cbu_base_url = VALUES(consulta_cbu_base_url)`,
+       consulta_cbu_base_url = VALUES(consulta_cbu_base_url),
+       debin_limite_diario_por_cuit = VALUES(debin_limite_diario_por_cuit)`,
     [
       cc.codigoCuenta || '',
       cc.codigoSistema || '',
@@ -124,6 +134,7 @@ async function saveParametria(rootDir, parametria) {
       sybase.usuario || '',
       encryptedPassword,
       consultaCbu.baseUrl || '',
+      debin.limiteDiarioPorCuit || '',
     ]
   );
 }

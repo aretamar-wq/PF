@@ -274,6 +274,16 @@
             </label>
           </fieldset>
           <fieldset>
+            <legend>Límite diario de transferencias (Transferencia DEBIN - File)</legend>
+            <p class="muted">
+              Monto máximo que un mismo CUIT origen puede transferir por día — una fila que lo supere queda
+              bloqueada sin llamar al banco. Dejá este campo vacío para no aplicar ningún límite.
+            </p>
+            <label>Límite diario por CUIT
+              <input name="debin.limiteDiarioPorCuit" type="number" min="0" step="0.01" placeholder="Sin límite" />
+            </label>
+          </fieldset>
+          <fieldset>
             <legend>Token del perfil</legend>
             <p class="muted">Prueba la obtención de token OAuth2 client_credentials del perfil elegido arriba a la izquierda (solo aplica si su tipo de autenticación es OAuth2ClientCredentials).</p>
             <div class="dialog-actions">
