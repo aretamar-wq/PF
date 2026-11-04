@@ -1794,8 +1794,11 @@ A diferencia de un CBU inválido o una operación duplicada (que solo dejan
 constancia en `dbnouterror-...csv`), una fila bloqueada por el límite
 diario **también** agrega una fila a `dbnconsulta-<timestamp>.csv` (y de
 ahí a `dbn_consulta` en MariaDB) con `estadoCodigo = "Error"` y
-`estadoDescripcion = "Transferencia no realizada, supera el límite
-diario"` (`realizado = "n"`, sin `codigoRespuestaTransferencia`/
+`estadoDescripcion = "Transferencia no realizada, supera el limite
+diario"` (sin tilde, a propósito — mismo criterio que el resto de los
+motivos de este archivo, para evitar problemas de encoding al abrirlo en
+Excel u otra herramienta que no detecte UTF-8 sin BOM) (`realizado = "n"`,
+sin `codigoRespuestaTransferencia`/
 `idOperacion`: el step "2. Transferencia DEBIN" nunca llegó a correr) —
 mismo criterio que un rechazo de negocio o un mismatch de CUIT/CBU, para
 que el límite diario quede visible en el mismo lugar que el resto de los

@@ -1527,7 +1527,7 @@ async function runFlowFromCsv() {
           consultaRow.estadoDescripcion = mismatchEntry
             ? 'El CUIT no coincide con el CBU Destino'
             : limiteDiarioEntry
-              ? 'Transferencia no realizada, supera el límite diario'
+              ? 'Transferencia no realizada, supera el limite diario'
               : businessRejectionEntry.businessRejectionMessage;
           state.debinConsultaRows.push(consultaRow);
         }
