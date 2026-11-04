@@ -1147,6 +1147,11 @@ async function runFlowFromCsv() {
               httpStatusCode: null,
               durationMs: 0,
               errorMessage: duplicateError || accountLookupError || circuitoError || debinCbuError || limiteDiarioError,
+              // Marca este motivo puntual (ver más abajo, bloque de
+              // dbnconsulta-...csv): a diferencia de un CBU inválido o una
+              // operación duplicada, el límite diario sí tiene que quedar
+              // registrado en dbnconsulta, igual que un rechazo de negocio.
+              isLimiteDiarioExceeded: !!limiteDiarioError,
             },
           ];
         } else {
@@ -1437,25 +1442,32 @@ async function runFlowFromCsv() {
 
         // Si la fila falló puntualmente porque (a) el titular real del CBU
         // destino (ConsultaCBU) no coincide con el CUIT destino del
-        // archivo, o (b) Nova-Link rechazó la transferencia por un motivo
-        // de negocio (HTTP 200 con una descripcionRespuesta puntual — ver
+        // archivo, (b) Nova-Link rechazó la transferencia por un motivo de
+        // negocio (HTTP 200 con una descripcionRespuesta puntual — ver
         // failIfEquals en el step "2. Transferencia DEBIN": hoy cubre
         // "ERROR GENERAL GARANTIAS" y "No existe saldo para efectuar el
-        // debito", agregar otro motivo es solo otra tupla ahí), también se
-        // agrega una fila a dbnconsulta-...csv (además de
-        // dbnouterror-...csv) con el mismo formato fijo para todos los
+        // debito", agregar otro motivo es solo otra tupla ahí), o (c) se
+        // bloqueó por superar el límite diario (ver limiteDiarioError más
+        // arriba) — también se agrega una fila a dbnconsulta-...csv (además
+        // de dbnouterror-...csv) con el mismo formato fijo para todos los
         // casos (compradorCuentaCbu/estadoCodigo/estadoDescripcion, no
-        // errorConsulta) — solo cambia el texto de estadoDescripcion.
+        // errorConsulta) — solo cambia el texto de estadoDescripcion. A
+        // diferencia de un CBU inválido o una operación duplicada (que NO
+        // generan fila en dbnconsulta, solo en dbnouterror), el límite
+        // diario sí queda acá: es un rechazo que vale la pena ver en el
+        // mismo lugar que el resto de los rechazos de negocio.
         const mismatchEntry = rowEntries.find((entry) => entry.isVariableMismatch);
         const businessRejectionEntry = rowEntries.find((entry) => entry.isBusinessRejection);
-        if (mismatchEntry || businessRejectionEntry) {
+        const limiteDiarioEntry = rowEntries.find((entry) => entry.isLimiteDiarioExceeded);
+        if (mismatchEntry || businessRejectionEntry || limiteDiarioEntry) {
           // Si fue un rechazo de negocio, el step "2. Transferencia DEBIN" sí
           // llegó a correr y responseSummary ya tiene el body completo (se
           // guarda ANTES de evaluar failIfEquals, ver invokeHttpStep en
           // flowEngine.js) — se puede sacar codigo/descripcion de la
           // transferencia en sí de ahí, igual que el bloque de éxito más
-          // arriba. Si fue un mismatch de CUIT/CBU, el step 2 nunca corrió:
-          // no hay respuesta de transferencia que parsear, quedan en blanco.
+          // arriba. Si fue un mismatch de CUIT/CBU o se bloqueó por el
+          // límite diario, el step 2 nunca corrió: no hay respuesta de
+          // transferencia que parsear, quedan en blanco.
           let codigoRespuestaTransferencia = '';
           let descripcionRespuestaTransferencia = '';
           if (businessRejectionEntry && businessRejectionEntry.responseSummary) {
@@ -1498,7 +1510,9 @@ async function runFlowFromCsv() {
           consultaRow.estadoCodigo = 'Error';
           consultaRow.estadoDescripcion = mismatchEntry
             ? 'El CUIT no coincide con el CBU Destino'
-            : businessRejectionEntry.businessRejectionMessage;
+            : limiteDiarioEntry
+              ? 'Transferencia no realizada, supera el límite diario'
+              : businessRejectionEntry.businessRejectionMessage;
           state.debinConsultaRows.push(consultaRow);
         }
       }
