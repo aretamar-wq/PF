@@ -659,14 +659,29 @@ async function fetchAccountsByCuit(rows, runLogFileName) {
   return accountsByCuit;
 }
 
+// Mismo criterio que normalizeMonedaCodigo en node/lib/debinOutputStore.js:
+// la columna Moneda del CSV no trae "ARS"/"USD", trae el código numérico
+// que espera Nova-Link (ISO 4217 — "032"/"32" = ARS, "840" = USD, ver
+// defaultValue de "moneda" en Flows/transferencia-debin.json). Los límites
+// de Parametría están en ARS/USD, así que hay que traducir el código antes
+// de comparar — si no, "32" nunca matchea la clave "ARS" y el límite queda
+// sin aplicarse.
+function normalizeMonedaCodigoLocal(raw) {
+  const value = String(raw || '').trim();
+  const numeric = value.replace(/^0+(?=\d)/, '');
+  if (numeric === '32') return 'ARS';
+  if (numeric === '840') return 'USD';
+  return value.toUpperCase();
+}
+
 // Mismo criterio que transferidoHoyKey en node/lib/debinOutputStore.js: un
 // acumulado independiente por CUIT, moneda Y destinatario (ARS/USD y
 // mismo-CUIT/terceros no se mezclan entre sí, ver Parametría > "Límite
-// diario de transferencias"). Moneda en mayúsculas a propósito, para que
-// "ars"/"ARS"/"Ars" en el CSV pisen el mismo acumulado. destinatario es
+// diario de transferencias"). moneda pasa por normalizeMonedaCodigoLocal
+// (código numérico -> ARS/USD) antes de armar la clave. destinatario es
 // literalmente 'mismo' o 'terceros'.
 function transferidoHoyKeyLocal(cuit, moneda, destinatario) {
-  return `${cuit}|${String(moneda || '').trim().toUpperCase()}|${destinatario}`;
+  return `${cuit}|${normalizeMonedaCodigoLocal(moneda)}|${destinatario}`;
 }
 
 // Junta los CUIT origen únicos de todas las filas (columna 4, debitoCuit) y
@@ -1063,7 +1078,7 @@ async function runFlowFromCsv() {
         let limiteDiarioError = null;
         if (!debinCbuError && isTransferenciaDebinFilesFlow(flow)) {
           const debitoCuit = (inputs.debitoCuit || '').trim();
-          const moneda = String(inputs.moneda || '').trim().toUpperCase();
+          const moneda = normalizeMonedaCodigoLocal(inputs.moneda);
           const destinatario = inputs.mismoTitular === '1' ? 'mismo' : 'terceros';
           const limitesMoneda = limitesDiarioTransferencias ? limitesDiarioTransferencias[moneda] : null;
           const limiteValor = limitesMoneda ? limitesMoneda[destinatario] : null;
@@ -1381,10 +1396,11 @@ async function runFlowFromCsv() {
             if (transferidoHoyPorCuit) {
               const creditoCuit = (row[0] || '').trim();
               const debitoCuit = (row[3] || '').trim();
-              const moneda = String(row[7] || '').trim().toUpperCase();
               const importeFila = Number(row[8]) || 0;
               const destinatario = creditoCuit === debitoCuit ? 'mismo' : 'terceros';
-              const key = transferidoHoyKeyLocal(debitoCuit, moneda, destinatario);
+              // row[7] (moneda) va tal cual: transferidoHoyKeyLocal ya
+              // normaliza el código numérico (32/032 -> ARS, 840 -> USD).
+              const key = transferidoHoyKeyLocal(debitoCuit, row[7], destinatario);
               transferidoHoyPorCuit.set(key, (transferidoHoyPorCuit.get(key) || 0) + importeFila);
             }
           } catch (err) {

@@ -179,16 +179,32 @@ async function addDbnConsultaRows(rootDir, csvContent, username) {
   }
 }
 
+// La columna "moneda" de dbn_consulta/el CSV de entrada no trae el texto
+// "ARS"/"USD": trae el código numérico que espera Nova-Link (ISO 4217 —
+// "032"/"32" = ARS, "840" = USD, ver defaultValue de "moneda" en
+// Flows/transferencia-debin.json). Los límites de Parametría sí están
+// pensados en ARS/USD (son los que entiende un humano al cargarlos), así
+// que hay que traducir el código antes de comparar — si no, "32" nunca
+// matchea la clave "ARS" y el límite queda sin aplicarse (fail-open, pero
+// por el motivo equivocado).
+function normalizeMonedaCodigo(raw) {
+  const value = String(raw || '').trim();
+  const numeric = value.replace(/^0+(?=\d)/, ''); // "032" -> "32", para no depender de los ceros a la izquierda
+  if (numeric === '32') return 'ARS';
+  if (numeric === '840') return 'USD';
+  return value.toUpperCase(); // ya viene como texto (ARS/USD) o es un código no reconocido — ver getTransferidoHoyPorCuit
+}
+
 // Clave del Map que devuelve getTransferidoHoyPorCuit: un acumulado
 // independiente por CUIT, moneda Y destinatario — lo transferido en ARS no
 // afecta el límite de USD, ni lo transferido a terceros afecta el límite de
 // mismo CUIT (ver Parametría, debin.limiteDiarioArs/UsdMismoCuit/Terceros).
-// Moneda en mayúsculas a propósito: es texto libre tal como vino en el CSV,
-// así que "ars"/"ARS"/"Ars" tienen que pisar el mismo acumulado.
+// moneda pasa por normalizeMonedaCodigo (código numérico -> ARS/USD) antes
+// de armar la clave, así "32"/"032"/"ars"/"ARS" pisan el mismo acumulado.
 // destinatario es literalmente 'mismo' o 'terceros' (ver mismoTitular en
 // Flows/transferencia-debin-files.json: "1" si CUIT destino = CUIT origen).
 function transferidoHoyKey(cuit, moneda, destinatario) {
-  return `${cuit}|${String(moneda || '').trim().toUpperCase()}|${destinatario}`;
+  return `${cuit}|${normalizeMonedaCodigo(moneda)}|${destinatario}`;
 }
 
 // Para el límite diario de transferencias por CUIT origen, moneda y
