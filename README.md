@@ -967,12 +967,13 @@ cambian de una ejecución a otra, agrupados por tipo de cuenta:
   transferir, que el titular real del CBU destino coincida con el CUIT
   destino de la fila. Si queda vacía, se usa un default fijo (la URL que
   tenía hardcodeada antes de que esto fuera configurable).
-- **Límite diario de transferencias (Transferencia DEBIN - File)**: dos
-  campos, uno por moneda (ARS y USD) — monto máximo que un mismo CUIT
-  origen (debitoCuit) puede transferir por día en esa moneda, totalmente
-  independiente del tope de la otra. Vacío = sin límite para esa moneda (no
-  bloquea nada). Ver "Límite diario por CUIT origen y moneda" en "Flow
-  'Transferencia DEBIN - File'" más abajo para el detalle completo.
+- **Límite diario de transferencias (Transferencia DEBIN - File)**: cuatro
+  campos — moneda (ARS/USD) × destinatario (mismo CUIT/terceros) — monto
+  máximo que un mismo CUIT origen (debitoCuit) puede transferir por día en
+  esa combinación, totalmente independiente de las otras tres. Vacío = sin
+  límite para esa combinación (no bloquea nada). Ver "Límite diario por
+  CUIT origen, moneda y destinatario" en "Flow 'Transferencia DEBIN - File'"
+  más abajo para el detalle completo.
 
 Se guardan en la tabla `parametria` de MariaDB (fila singleton, ver "Base de
 datos (MariaDB)") — la contraseña de Sybase se guarda cifrada (ver "Campos
@@ -1751,27 +1752,31 @@ la mayoría de los campos del body salen de tres fuentes distintas:
   en blanco; `tipoDispositivo` = `"04"`; `lat`/`lng` = `"0"`) — son datos de
   un cliente final que no existen en una carga por archivo.
 
-**Límite diario por CUIT origen y moneda.** Antes de procesar ninguna fila,
-`runFlowFromCsv` junta los CUIT origen (`debitoCuit`) únicos de todo el
-archivo y hace una sola consulta a `GET /api/transferencias-limite` (ver
-`handleTransferenciasLimiteGet` en `node/server.js`): trae el límite
-diario configurado en Parametría, un valor independiente por moneda
-(`debin.limiteDiarioArs`/`debin.limiteDiarioUsd` — vacío o `0` = sin límite
-para esa moneda, no bloquea nada) y, para cada CUIT y cada moneda, cuánto
-ya transfirió hoy (`realizado = 's'` en `dbn_consulta`, agrupado por
-`debito_cuit` + `moneda`, fecha local del servidor, ver
+**Límite diario por CUIT origen, moneda y destinatario.** Antes de procesar
+ninguna fila, `runFlowFromCsv` junta los CUIT origen (`debitoCuit`) únicos
+de todo el archivo y hace una sola consulta a `GET
+/api/transferencias-limite` (ver `handleTransferenciasLimiteGet` en
+`node/server.js`): trae el límite diario configurado en Parametría, 4
+valores totalmente independientes — moneda (ARS/USD) × destinatario (mismo
+CUIT o terceros, según `mismoTitular`: `debin.limiteDiarioArsMismoCuit`/
+`ArsTerceros`/`UsdMismoCuit`/`UsdTerceros` — vacío o `0` = sin límite para
+esa combinación, no bloquea nada) y, para cada CUIT, cada moneda y cada
+destinatario, cuánto ya transfirió hoy (`realizado = 's'` en
+`dbn_consulta`, agrupado por `debito_cuit` + `moneda` + si `credito_cuit =
+debito_cuit`, fecha local del servidor, ver
 `getTransferidoHoyPorCuit`/`transferidoHoyKey` en
 `node/lib/debinOutputStore.js`). Por cada fila, si el importe sumado al
-acumulado de ese CUIT **en esa moneda** supera el límite de esa moneda, la
-fila queda en error (`Límite diario de transferencias en ARS/USD
-superado...`) sin llamar a Nova-Link — mismo criterio que un CBU inválido.
-Una fila en ARS nunca afecta el acumulado/límite de USD, ni viceversa. El
-acumulado se actualiza EN MEMORIA tras cada transferencia exitosa (no
-alcanza con lo que ya traía el servidor al arrancar la corrida): si el
-mismo CUIT origen aparece dos veces en el mismo archivo con la misma
-moneda, la segunda fila ya ve sumado el importe de la primera — mismo
-criterio que el Map de cuentas de "Alta de Plazo Fijos - File" (ver
-`fetchAccountsByCuit`).
+acumulado de esa combinación exacta (CUIT + moneda + destinatario) supera
+su límite, la fila queda en error (`Límite diario de transferencias en
+ARS/USD a mismo CUIT/terceros superado...`) sin llamar a Nova-Link — mismo
+criterio que un CBU inválido. Una fila en ARS a terceros nunca afecta el
+acumulado/límite de, por ejemplo, USD a mismo CUIT (ni ninguna de las otras
+3 combinaciones). El acumulado se actualiza EN MEMORIA tras cada
+transferencia exitosa (no alcanza con lo que ya traía el servidor al
+arrancar la corrida): si el mismo CUIT origen aparece dos veces en el mismo
+archivo con la misma moneda y el mismo destinatario, la segunda fila ya ve
+sumado el importe de la primera — mismo criterio que el Map de cuentas de
+"Alta de Plazo Fijos - File" (ver `fetchAccountsByCuit`).
 
 Al terminar, genera hasta 2 archivos de salida (no 3: ya no genera su
 propio `dbnout-...csv`, ver "Archivos de salida (`files/`)" más abajo) con
