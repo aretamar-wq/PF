@@ -93,12 +93,15 @@ CREATE TABLE IF NOT EXISTS parametria (
   -- "/ConsultaCBU/{{creditoCbu}}" (ver Flows/transferencia-debin-files.json).
   consulta_cbu_base_url VARCHAR(500) NOT NULL DEFAULT '',
   -- Tope diario (monto acumulado) que puede transferir un mismo CUIT origen
-  -- (debitoCuit) en "Transferencia DEBIN - File" — vacío = sin límite (no
-  -- bloquea nada, mismo comportamiento que antes de este campo existir). Se
-  -- guarda como texto libre (igual que los "importe" de dbn_out/dbn_consulta)
-  -- y se castea a número recién al compararlo, ver
-  -- getTransferidoHoyPorCuit en node/lib/debinOutputStore.js.
-  debin_limite_diario_por_cuit VARCHAR(50) NOT NULL DEFAULT '',
+  -- (debitoCuit) en "Transferencia DEBIN - File" — un límite independiente
+  -- por moneda (lo transferido en ARS no afecta el tope de USD, ni
+  -- viceversa, ver getTransferidoHoyPorCuit en
+  -- node/lib/debinOutputStore.js). Vacío = sin límite para esa moneda (no
+  -- bloquea nada, mismo comportamiento que antes de que este campo
+  -- existiera). Se guarda como texto libre (igual que los "importe" de
+  -- dbn_out/dbn_consulta) y se castea a número recién al compararlo.
+  debin_limite_diario_ars VARCHAR(50) NOT NULL DEFAULT '',
+  debin_limite_diario_usd VARCHAR(50) NOT NULL DEFAULT '',
   updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
   PRIMARY KEY (id),
   CONSTRAINT chk_parametria_singleton CHECK (id = 1)
@@ -108,7 +111,8 @@ CREATE TABLE IF NOT EXISTS parametria (
 -- este archivo es idempotente: CREATE TABLE IF NOT EXISTS no la toca si ya
 -- existe), esto la pone al día sin perder los datos que ya tenía.
 ALTER TABLE parametria ADD COLUMN IF NOT EXISTS consulta_cbu_base_url VARCHAR(500) NOT NULL DEFAULT '';
-ALTER TABLE parametria ADD COLUMN IF NOT EXISTS debin_limite_diario_por_cuit VARCHAR(50) NOT NULL DEFAULT '';
+ALTER TABLE parametria ADD COLUMN IF NOT EXISTS debin_limite_diario_ars VARCHAR(50) NOT NULL DEFAULT '';
+ALTER TABLE parametria ADD COLUMN IF NOT EXISTS debin_limite_diario_usd VARCHAR(50) NOT NULL DEFAULT '';
 
 -- Migración: cc_transaccion / ca_transaccion pasan a ser cc_transaccion_debito
 -- / ca_transaccion_credito (mismo valor que ya tenían cargado, solo cambia el
