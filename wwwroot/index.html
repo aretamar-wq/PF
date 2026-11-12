@@ -150,16 +150,19 @@
           <button type="button" id="closeConciliacionIbsBtn">Volver a flows</button>
         </div>
         <p class="muted">
-          Cruza las altas de Plazo Fijo registradas en ApiCore ese día contra el extracto de movimientos de IBS
-          (sistcod, moncod, cuecod, Fecha_Mov, comnro, movcod, signo, accimp, Importe). Circuito 0: débito en Cuenta
+          Cruza las altas de Plazo Fijo registradas en ApiCore ese día contra los movimientos de IBS: "Conciliar contra
+          IBS" los consulta directo en Sybase (sin contra-asientos), o se puede subir un extracto con las columnas
+          sistcod, moncod, cuecod, Fecha_Mov, comnro, movcod, signo, accimp, Importe. Circuito 0: débito en Cuenta
           Corriente (25020) y crédito en Caja de Ahorro (25021) por número de comprobante, y alta del PF (152) por
           número de operación. Circuito 1: solo el 152.
         </p>
-        <div class="actions">
+        <div class="actions conciliacion-actions">
           <label>Fecha <input type="date" id="conciliacionIbsFecha" /></label>
-          <label>Extracto de IBS <input type="file" id="conciliacionIbsFile" accept=".csv,text/csv" /></label>
-          <button type="button" id="conciliacionIbsRunBtn">Conciliar</button>
-          <span class="spacer"></span>
+          <button type="button" id="conciliacionIbsRunBtn">Conciliar contra IBS</button>
+        </div>
+        <div class="actions conciliacion-actions">
+          <label>o con un extracto <input type="file" id="conciliacionIbsFile" accept=".csv,text/csv" /></label>
+          <button type="button" id="conciliacionIbsFileBtn">Conciliar con archivo</button>
           <button type="button" id="conciliacionIbsDownloadBtn" disabled>Descargar diferencias (CSV)</button>
         </div>
         <div id="conciliacionIbsResultado" style="display: none;">
