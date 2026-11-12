@@ -3114,24 +3114,33 @@ dashboardErrorFlowFilter.addEventListener('change', applyDashboardErrorFilter);
 const conciliacionIbsFecha = document.getElementById('conciliacionIbsFecha');
 const conciliacionIbsFile = document.getElementById('conciliacionIbsFile');
 const conciliacionIbsTipoFilter = document.getElementById('conciliacionIbsTipoFilter');
+const conciliacionIbsTipo = document.getElementById('conciliacionIbsTipo');
 let lastConciliacionIbs = null;
 
 function formatImporte(value) {
   return Number(value || 0).toLocaleString('es-AR', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 }
 
-function renderConciliacionIbsTiles(resumen) {
+function renderConciliacionIbsTiles(tipo, resumen) {
   const tile = (label, value, cls) => `
     <div class="dashboard-tile ${cls || ''}">
       <div class="dashboard-tile-label">${escapeHtml(label)}</div>
       <div class="dashboard-tile-value">${escapeHtml(String(value))}</div>
     </div>`;
-  document.getElementById('conciliacionIbsTiles').innerHTML =
-    tile('Altas en ApiCore', resumen.altasApicore) +
-    tile('Movimientos en IBS', resumen.movimientosIbs) +
-    tile('Altas conciliadas OK', resumen.altasOk, 'ok') +
-    tile('Altas con diferencias', resumen.altasConDiferencias, resumen.altasConDiferencias > 0 ? 'error' : 'ok') +
-    tile('Movimientos solo en IBS', resumen.soloEnIbs, resumen.soloEnIbs > 0 ? 'error' : 'ok');
+  const malo = (n) => (n > 0 ? 'error' : 'ok');
+  document.getElementById('conciliacionIbsTiles').innerHTML = tipo === 'pagos'
+    ? tile('PF que vencían (circuito 0)', resumen.vencenCircuito0) +
+      tile('Pagados en ApiCore', resumen.pagadosApicore) +
+      tile('Pagos conciliados OK', resumen.pagosOk, 'ok') +
+      tile('Pagos con diferencias', resumen.pagosConDiferencias, malo(resumen.pagosConDiferencias)) +
+      tile('Pagados en IBS sin marcar en ApiCore', resumen.pagadosEnIbsNoApicore, malo(resumen.pagadosEnIbsNoApicore)) +
+      tile('Movimientos solo en IBS', resumen.soloEnIbs, malo(resumen.soloEnIbs)) +
+      tile('Sin pagar (pendientes)', resumen.pendientes)
+    : tile('Altas en ApiCore', resumen.altasApicore) +
+      tile('Movimientos en IBS', resumen.movimientosIbs) +
+      tile('Altas conciliadas OK', resumen.altasOk, 'ok') +
+      tile('Altas con diferencias', resumen.altasConDiferencias, malo(resumen.altasConDiferencias)) +
+      tile('Movimientos solo en IBS', resumen.soloEnIbs, malo(resumen.soloEnIbs));
 }
 
 function renderConciliacionIbsTotales(totales) {
@@ -3181,24 +3190,35 @@ function applyConciliacionIbsFilter() {
 
 function renderConciliacionIbs(data) {
   lastConciliacionIbs = data;
+  const esPagos = data.tipo === 'pagos';
   const r = data.resumen;
   const conDiferencias = data.diferencias.length > 0;
 
   const estado = document.getElementById('conciliacionIbsEstado');
   estado.className = 'conciliacion-estado ' + (conDiferencias ? 'error' : 'ok');
-  estado.textContent = (conDiferencias
-    ? `Hay diferencias: ${r.altasConDiferencias} alta(s) de ApiCore con diferencias y ${r.soloEnIbs} movimiento(s) de IBS sin su alta en ApiCore.`
-    : `Concilia: las ${r.altasApicore} altas de ApiCore (${r.altasCircuito0} de circuito 0, ${r.altasCircuito1} de circuito 1) están en IBS con la misma cuenta e importe.`) +
-    (data.origen ? ` (IBS: ${data.origen})` : '');
+  let texto;
+  if (esPagos) {
+    texto = conDiferencias
+      ? `Hay diferencias: ${r.pagosConDiferencias} pago(s) de ApiCore con diferencias, ${r.pagadosEnIbsNoApicore} pago(s) que IBS tiene y ApiCore no marcó como pagados, y ${r.soloEnIbs} movimiento(s) de IBS sin su plazo fijo en ApiCore.`
+      : `Concilia: los ${r.pagadosApicore} plazos fijos pagados por ApiCore están en IBS con la misma cuenta e importe, y IBS no tiene ningún otro pago.`;
+  } else {
+    texto = conDiferencias
+      ? `Hay diferencias: ${r.altasConDiferencias} alta(s) de ApiCore con diferencias y ${r.soloEnIbs} movimiento(s) de IBS sin su alta en ApiCore.`
+      : `Concilia: las ${r.altasApicore} altas de ApiCore (${r.altasCircuito0} de circuito 0, ${r.altasCircuito1} de circuito 1) están en IBS con la misma cuenta e importe.`;
+  }
+  estado.textContent = texto + (data.origen ? ` (IBS: ${data.origen})` : '');
 
   const aviso = document.getElementById('conciliacionIbsAviso');
   const avisos = [];
-  if (r.altasApicore === 0) avisos.push('ApiCore no tiene altas registradas en esa fecha: revisá que la fecha elegida sea la del extracto.');
+  if (esPagos && r.vencenCircuito0 + r.vencenCircuito1 === 0) {
+    avisos.push('ApiCore no tiene plazos fijos que venzan en esa fecha: para pagos la fecha es la de proceso bancaria (la del vencimiento).');
+  }
+  if (!esPagos && r.altasApicore === 0) avisos.push('ApiCore no tiene altas registradas en esa fecha: revisá que la fecha elegida sea la del extracto.');
   if (r.filasOtraFecha > 0) avisos.push(`Se ignoraron ${r.filasOtraFecha} movimiento(s) del extracto con una fecha distinta a la elegida.`);
   aviso.textContent = avisos.join(' ');
   aviso.style.display = avisos.length ? '' : 'none';
 
-  renderConciliacionIbsTiles(r);
+  renderConciliacionIbsTiles(data.tipo, r);
   renderConciliacionIbsTotales(data.totales);
 
   const tipos = [...new Set(data.diferencias.map((d) => d.tipo))].sort();
@@ -3211,6 +3231,31 @@ function renderConciliacionIbs(data) {
     conciliacionIbsTipoFilter.appendChild(option);
   }
   applyConciliacionIbsFilter();
+
+  const pendientes = data.pendientes || [];
+  const pendientesBox = document.getElementById('conciliacionIbsPendientesBox');
+  if (esPagos && pendientes.length > 0) {
+    document.getElementById('conciliacionIbsPendientesTexto').textContent =
+      `${pendientes.length} plazo(s) fijo(s) de circuito 0 por $ ${formatImporte(r.pendientesImporte)} vencían ese día y no figuran como pagados en ApiCore ` +
+      '(y IBS tampoco tiene su pago): no es una diferencia, pero siguen sin pagarse.';
+    const tbody = document.querySelector('#conciliacionIbsPendientes tbody');
+    tbody.innerHTML = '';
+    for (const p of pendientes) {
+      const tr = document.createElement('tr');
+      tr.innerHTML = `
+        <td class="mono">${escapeHtml(p.numeroComprobante || '—')}</td>
+        <td class="mono">${escapeHtml(p.operacion || '—')}</td>
+        <td class="mono">${escapeHtml(p.cuit || '—')}</td>
+        <td class="titular">${escapeHtml(p.apellidoNombre || '—')}</td>
+        <td class="mono">${escapeHtml(p.cajaAhorro || '—')}</td>
+        <td class="num">$ ${formatImporte(p.importe)}</td>
+      `;
+      tbody.appendChild(tr);
+    }
+    pendientesBox.style.display = '';
+  } else {
+    pendientesBox.style.display = 'none';
+  }
 
   const otrosBox = document.getElementById('conciliacionIbsOtrosCanalesBox');
   if (r.otrosCanales > 0) {
@@ -3242,7 +3287,7 @@ async function runConciliacionIbs(conArchivo) {
   const buttons = [document.getElementById('conciliacionIbsRunBtn'), document.getElementById('conciliacionIbsFileBtn')];
   for (const b of buttons) b.disabled = true;
   try {
-    const body = { fecha: conciliacionIbsFecha.value };
+    const body = { fecha: conciliacionIbsFecha.value, tipo: conciliacionIbsTipo.value };
     if (conArchivo) body.contenido = await file.text();
     const res = await apiFetch('/api/conciliacion/ibs', {
       method: 'POST',
@@ -3265,14 +3310,40 @@ function downloadConciliacionIbsDiferencias() {
   const headers = ['tipo', 'numeroComprobante', 'operacion', 'circuito', 'cuit', 'apellidoNombre', 'cajaAhorro', 'importe', 'detalle'];
   const lines = [headers.join(',')];
   for (const d of lastConciliacionIbs.diferencias) lines.push(headers.map((h) => csvEscape(d[h])).join(','));
-  downloadTextFile(`conciliacion-ibs-altas-pf-${lastConciliacionIbs.fecha}-diferencias.csv`, lines.join('\r\n'), 'text/csv');
+  downloadTextFile(`conciliacion-ibs-${lastConciliacionIbs.tipo === 'pagos' ? 'pagos' : 'altas'}-pf-${lastConciliacionIbs.fecha}-diferencias.csv`, lines.join('\r\n'), 'text/csv');
+}
+
+const CONCILIACION_IBS_DESCRIPCIONES = {
+  altas:
+    'Cruza las altas de Plazo Fijo registradas en ApiCore ese día contra los movimientos de IBS. Circuito 0: débito en ' +
+    'Cuenta Corriente (25020) y crédito en Caja de Ahorro (25021) por número de comprobante, y alta del PF (152) por ' +
+    'número de operación. Circuito 1: solo el 152.',
+  pagos:
+    'Cruza los plazos fijos que vencían en la fecha de proceso elegida contra los pagos en IBS: débito en la Caja de ' +
+    'Ahorro y crédito en la Cuenta Corriente (transacciones y cuenta de Parametría), por número de comprobante. Detecta ' +
+    'pagos que IBS tiene y ApiCore no marcó como pagados (por ejemplo, una corrida cortada) y pagos a medias.',
+};
+
+function updateConciliacionIbsTipo() {
+  const tipo = conciliacionIbsTipo.value;
+  document.getElementById('conciliacionIbsDescripcion').textContent =
+    CONCILIACION_IBS_DESCRIPCIONES[tipo] +
+    ' "Conciliar contra IBS" consulta los movimientos directo en Sybase (sin contra-asientos); también se puede subir un ' +
+    'extracto con las columnas sistcod, moncod, cuecod, Fecha_Mov, comnro, movcod, signo, accimp, Importe.';
+  document.getElementById('conciliacionIbsFechaLabel').textContent = tipo === 'pagos' ? 'Fecha de proceso (vencimiento)' : 'Fecha';
+  // El resultado en pantalla es del otro tipo: se oculta para no mezclarlos.
+  lastConciliacionIbs = null;
+  document.getElementById('conciliacionIbsResultado').style.display = 'none';
+  document.getElementById('conciliacionIbsDownloadBtn').disabled = true;
 }
 
 function openConciliacionIbsSection() {
   if (!conciliacionIbsFecha.value) conciliacionIbsFecha.value = formatDateOnlyLocal(new Date());
+  updateConciliacionIbsTipo();
   showMainSection('conciliacionIbsSection');
 }
 
+conciliacionIbsTipo.addEventListener('change', updateConciliacionIbsTipo);
 document.getElementById('conciliacionIbsBtn').addEventListener('click', openConciliacionIbsSection);
 document.getElementById('closeConciliacionIbsBtn').addEventListener('click', () => showMainSection('flowDetail'));
 document.getElementById('conciliacionIbsRunBtn').addEventListener('click', () => runConciliacionIbs(false));
