@@ -351,8 +351,7 @@ columnas):
   cualquier otro flow que use esta tabla. Tiene un índice
   `(fecha_vencimiento, tipo_circuito, pf_pagado)` para que la búsqueda de
   "Pago de Plazo Fijos" no sea un full scan.
-- **`dbn_out`** y **`dbn_consulta`** — registro en base (no de
-  deduplicación, puramente de auditoría) del contenido de
+- **`dbn_out`** y **`dbn_consulta`** — registro en base del contenido de
   `dbnout-...csv`/`dbnconsulta-...csv` (ver "Archivos de salida (`files/`)"
   más abajo), una fila por fila del `.csv` correspondiente, con quién
   ejecutó la carga (`ejecutado_por`) y cuándo (`ejecutado_en`). `dbn_out` ya
@@ -1126,8 +1125,11 @@ y, como cada corrida es de un solo flow, nunca se mezclan entre sí:
 En el backend Node.js, el contenido de `dbnconsulta-...` además queda
 registrado en MariaDB (tabla `dbn_consulta`, ver "Base de datos
 (MariaDB)") con quién ejecutó la carga y cuándo — el `.csv` en `files/`
-se sigue generando igual, esto es un registro adicional consultable sin
-tener que ir a buscar el archivo.
+se sigue generando igual. Cada fila
+se graba en la base apenas se transfiere o se rechaza (no recién al
+guardar el `.csv`), y `dbn_consulta` es además el registro antiduplicado
+de transferencias y la base del límite diario — ver "Prevención de
+operaciones duplicadas".
 
 Si no hubo ningún plazo fijo dado de alta, no se genera `pfout-...`; si no
 hubo ninguna fila fallada, no se genera `pfouterror-.../dbnouterror-...`.
@@ -1204,9 +1206,13 @@ Las filas fallidas salen de `files/<runId>-error.csv` de las corridas cuyo
 log se modificó ese día (mismo criterio que el Dashboard), incluidas las
 corridas cortadas sin resumen (se reconocen por el sufijo del runId:
 `Alta-PF` / `transferencia-debin-file`). Una corrida cortada **antes** de
-guardar sus archivos de salida no deja archivo de error, así que sus filas
-fallidas no aparecen (las altas exitosas sí, porque se registran fila por
-fila).
+guardar sus archivos de salida no deja archivo de error: de esa corrida
+aparecen las altas exitosas y las transferencias realizadas o rechazadas
+por un motivo de negocio (se registran fila por fila, ver "Prevención de
+operaciones duplicadas"), pero no las filas que fallaron por otra cosa
+(CBU inválido, error de comunicación). Una transferencia de una corrida
+cortada antes de consultar su estado queda con `realizado` = `SI` y
+`errorConsulta` = `Consulta de estado pendiente`.
 
 ### Prevención de operaciones duplicadas
 
@@ -1241,6 +1247,27 @@ archivo se vuelve a mandar el lote completo como respaldo (el `INSERT ...
 ON DUPLICATE KEY UPDATE` hace que repetir el registro no tenga efecto).
 "Pago de Plazo Fijos" hace lo mismo con `pf_pagado`
 (`POST /api/plazos-fijos-pagados`, fila por fila y de nuevo al final).
+
+**"Transferencia DEBIN - File"** tiene el mismo esquema, con `dbn_consulta`
+como registro:
+
+- Antes de procesar el archivo, `POST /api/check-transferencias` busca qué
+  pares `(debitoCuit, idComprobante)` ya tienen una transferencia
+  **realizada** (`realizado = 's'`). Esas filas se bloquean sin llamar al
+  banco y van al archivo de error con el motivo. Las rechazadas antes no
+  bloquean: se pueden reintentar. Si el chequeo falla, se aborta el archivo.
+- Cada transferencia se registra en `dbn_consulta` **apenas se hace**
+  (`POST /api/dbn-consulta-rows`, `realizado = 's'`, `errorConsulta =
+  'Consulta de estado pendiente'`), y cada rechazo de negocio / límite
+  diario / CUIT que no coincide apenas se rechaza. Al terminar el archivo,
+  el guardado de `dbnconsulta-...csv` actualiza esas mismas filas (por
+  `idMensaje`) con el resultado de la consulta de estado, en vez de
+  insertar filas nuevas. Así, si el proceso se corta, lo que ya se
+  transfirió queda protegido contra un reintento y sigue sumando al límite
+  diario y a la conciliación.
+
+Para desbloquear a mano una transferencia, hay que borrar (o pasar a
+`realizado = 'n'`) su fila en `dbn_consulta`.
 
 Cada vez que `POST /api/check-operations` encuentra una o más operaciones
 duplicadas se deja constancia en `logs/security.log`, con el usuario que

@@ -613,6 +613,44 @@ async function checkDuplicateOperations(rows) {
   return new Set((data.duplicates || []).map((d) => `${d.cuit}|${d.numeroComprobante}`));
 }
 
+// Mismo criterio para "Transferencia DEBIN - File": clave debitoCuit|idComprobante
+// (columnas 4 y 7 del archivo), contra las transferencias ya realizadas en dbn_consulta.
+async function checkDuplicateTransferencias(rows) {
+  const transferencias = rows.map((row) => ({
+    debitoCuit: (row[3] || '').trim(),
+    idComprobante: (row[6] || '').trim(),
+  }));
+
+  const res = await apiFetch('/api/check-transferencias', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ transferencias }),
+  });
+  const data = await res.json();
+  if (!res.ok) {
+    throw new Error(data.error || 'Error desconocido.');
+  }
+
+  return new Set((data.duplicates || []).map((d) => `${d.debitoCuit}|${d.idComprobante}`));
+}
+
+// Registra en dbn_consulta una transferencia apenas se hace o se rechaza, sin
+// esperar al final del archivo: si el proceso se corta, igual queda para el
+// antiduplicado, el límite diario y la conciliación. El guardado final de
+// dbnconsulta-...csv actualiza la misma fila (por idMensaje). Una falla acá
+// no corta el archivo: el guardado final la vuelve a registrar.
+async function registrarDbnConsultaRow(consultaRow) {
+  try {
+    await apiFetch('/api/dbn-consulta-rows', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ rows: [consultaRow] }),
+    });
+  } catch (err) {
+    // Ver comentario de la función.
+  }
+}
+
 // Junta los CUIT únicos de todas las filas (primera columna) y hace UNA
 // sola consulta a Sybase para todos (reusando el flow "Recupera cuentas
 // (SQL)", que ya soporta una lista de nrodoc separados por coma), en vez
@@ -939,10 +977,12 @@ async function runFlowFromCsv() {
     // comprobante en otro archivo). Si esto falla, se aborta el archivo
     // entero (fail-safe: no seguir de largo sin haber podido chequear).
     let duplicateOps = new Set();
-    if (isPlazoFijoCocosFilesSqlFlow(flow)) {
+    if (isPlazoFijoCocosFilesSqlFlow(flow) || isTransferenciaDebinFilesFlow(flow)) {
       progressEl.textContent = 'Verificando operaciones ya procesadas...';
       try {
-        duplicateOps = await checkDuplicateOperations(rows);
+        duplicateOps = isPlazoFijoCocosFilesSqlFlow(flow)
+          ? await checkDuplicateOperations(rows)
+          : await checkDuplicateTransferencias(rows);
       } catch (err) {
         alert('No se pudo verificar operaciones duplicadas, se aborta el archivo por seguridad: ' + err.message);
         return;
@@ -1130,6 +1170,11 @@ async function runFlowFromCsv() {
           if (duplicateOps.has(key)) {
             duplicateError = `Esta operación (CUIT ${row[0]}, comprobante ${row[4]}) ya fue procesada antes — se bloquea para evitar una operación bancaria duplicada.`;
           }
+        } else if (isTransferenciaDebinFilesFlow(flow)) {
+          const key = `${(row[3] || '').trim()}|${(row[6] || '').trim()}`;
+          if (duplicateOps.has(key)) {
+            duplicateError = `Esta transferencia (CUIT origen ${row[3]}, comprobante ${row[6]}) ya se realizó antes — se bloquea para evitar una transferencia duplicada.`;
+          }
         }
 
         // Cuentas ya resueltas por fetchAccountsByCuit (una sola consulta
@@ -1166,7 +1211,7 @@ async function runFlowFromCsv() {
               // dbnconsulta-...csv): a diferencia de un CBU inválido o una
               // operación duplicada, el límite diario sí tiene que quedar
               // registrado en dbnconsulta, igual que un rechazo de negocio.
-              isLimiteDiarioExceeded: !!limiteDiarioError,
+              isLimiteDiarioExceeded: !!limiteDiarioError && !duplicateError,
             },
           ];
         } else {
@@ -1430,6 +1475,28 @@ async function runFlowFromCsv() {
               const key = transferidoHoyKeyLocal(debitoCuit, row[7], destinatario);
               transferidoHoyPorCuit.set(key, (transferidoHoyPorCuit.get(key) || 0) + importeFila);
             }
+            // Mismas columnas que la fila de dbnconsulta que se arma al
+            // final (ver el loop de consultas), con la consulta de estado
+            // todavía sin hacer — si el proceso se corta, queda así en la base.
+            const pendingConsultaRow = {
+              idMensaje: rowIdMensaje,
+              idComprobante: row[6] || '',
+              idOperacion: respuesta.id != null ? respuesta.id : '',
+              creditoCuit: row[0] || '',
+              creditoCbu: row[1] || '',
+              creditoTitular: row[2] || '',
+              debitoCuit: row[3] || '',
+              debitoCbu: row[4] || '',
+              debitoTitular: row[5] || '',
+              moneda: row[7] || '',
+              importe: row[8] || '',
+              codigoRespuestaTransferencia: respuesta.codigo != null ? respuesta.codigo : '',
+              descripcionRespuestaTransferencia: respuesta.descripcion != null ? respuesta.descripcion : '',
+              realizado: 's',
+              errorConsulta: 'Consulta de estado pendiente',
+            };
+            for (const col of DEBIN_CONSULTA_COLUMNS) pendingConsultaRow[col] = '';
+            await registrarDbnConsultaRow(pendingConsultaRow);
           } catch (err) {
             // La respuesta no vino en el formato esperado; no se agrega
             // detalle de esta fila, pero la fila sigue contando como éxito
@@ -1557,6 +1624,7 @@ async function runFlowFromCsv() {
               ? 'Transferencia no realizada, supera el limite diario'
               : businessRejectionEntry.businessRejectionMessage;
           state.debinConsultaRows.push(consultaRow);
+          await registrarDbnConsultaRow(consultaRow);
         }
       }
 
