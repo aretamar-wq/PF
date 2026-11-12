@@ -1331,7 +1331,7 @@ async function runFlowFromCsv() {
               if (rowAccounts && first.codigoCuenta != null && String(first.codigoCuenta) !== '') {
                 rowAccounts.cuecodSistema4 = String(first.codigoCuenta);
               }
-              state.successfulOperations.push({
+              const operationRecord = {
                 cuit: rowCuit,
                 numeroComprobante: (row[4] || '').trim(),
                 idMensaje: rowIdMensaje,
@@ -1345,7 +1345,34 @@ async function runFlowFromCsv() {
                 plazo: (row[3] || '').trim(),
                 operacion: first.operacion,
                 tna: first.tna,
-              });
+              };
+              state.successfulOperations.push(operationRecord);
+              // Registrar ACÁ, fila por fila, no solo en el bloque final de
+              // más abajo (al terminar TODO el archivo): si el proceso se
+              // corta a mitad de camino (pestaña cerrada, red caída, página
+              // recargada) antes de llegar a ese bloque final, esta fila —
+              // que YA se dio de alta en el banco — queda igual protegida
+              // contra un reintento futuro del mismo archivo. Sin esto, un
+              // alta real que sí se había hecho quedaba sin registrar, y
+              // volver a subir el mismo CSV repetía débito/crédito/alta
+              // (caso real: comprobante 4397, dado de alta dos veces el
+              // 03/11 porque la primera corrida se cortó antes del registro
+              // final). ON DUPLICATE KEY UPDATE en addProcessedOperations
+              // (ver processedOperationsStore.js) hace que registrar la misma
+              // fila acá Y en el bloque final (si ambos llegan a correr) no
+              // sea un problema. Falla de red puntual acá no aborta el resto
+              // del archivo — el bloque final sigue siendo el respaldo del
+              // caso normal (corrida que termina sin cortarse).
+              try {
+                await apiFetch('/api/register-operations', {
+                  method: 'POST',
+                  headers: { 'Content-Type': 'application/json' },
+                  body: JSON.stringify({ operations: [operationRecord] }),
+                });
+              } catch (err) {
+                // Sin acción: el bloque final al terminar el archivo reintenta
+                // el registro de todas las operaciones exitosas igual.
+              }
             }
           } catch (err) {
             // La respuesta no vino en el formato esperado (JSON con "output": [...]);
@@ -1909,8 +1936,27 @@ async function confirmarPagoPlazoFijos() {
       circuito: '0',
     };
     if (allOk) {
-      paidOperations.push({ cuit: row.cuit, numeroComprobante: row.numeroComprobante });
+      const paidOperation = { cuit: row.cuit, numeroComprobante: row.numeroComprobante };
+      paidOperations.push(paidOperation);
       okRows.push(pagoRow);
+      // Marcar pf_pagado ACÁ, fila por fila, no solo en el bloque final de
+      // más abajo — mismo motivo que el registro incremental en
+      // runFlowFromCsv (ver comentario ahí): si el proceso se corta a mitad
+      // de camino, este pago YA hecho en el banco (débito en Caja de Ahorro)
+      // queda igual marcado, y un reintento del mismo archivo no lo vuelve a
+      // pagar. markOperationsPaid (ver processedOperationsStore.js) es un
+      // UPDATE por cuit+numeroComprobante: llamarlo de nuevo en el bloque
+      // final no tiene efecto extra.
+      try {
+        await apiFetch('/api/plazos-fijos-pagados', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ operations: [paidOperation] }),
+        });
+      } catch (err) {
+        // Sin acción: el bloque final al terminar el archivo reintenta
+        // marcar como pagadas todas las operaciones exitosas igual.
+      }
     } else {
       const failedEntry = rowEntries.find((entry) => entry.status !== 'Success' && entry.errorMessage);
       errorRows.push({ ...pagoRow, motivo: failedEntry ? failedEntry.errorMessage : '' });
