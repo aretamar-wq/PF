@@ -260,7 +260,7 @@ fieldset legend { color: var(--navy); font-weight: 600; padding: 0 6px; }
 /* Ningún panel del menú (perfil, parametría, usuarios, archivos de salida)
    es un <dialog> flotante: todos ocupan el mismo lugar que flowDetail dentro
    de <main> (ver showMainSection en app.js) — mismo criterio de layout. */
-#outputFilesSection, #dashboardSection, #profileSection, #parametriaSection, #usersSection { flex: 1; min-width: 0; }
+#outputFilesSection, #dashboardSection, #conciliacionIbsSection, #profileSection, #parametriaSection, #usersSection { flex: 1; min-width: 0; }
 .section-head {
   display: flex;
   justify-content: space-between;
@@ -314,6 +314,25 @@ fieldset legend { color: var(--navy); font-weight: 600; padding: 0 6px; }
   font-size: 0.78rem;
   white-space: nowrap;
 }
+
+/* Conciliación con IBS ---------------------------------------------------- */
+.conciliacion-estado {
+  border-radius: 10px;
+  padding: 10px 14px;
+  font-weight: 600;
+  margin: 10px 0;
+}
+.conciliacion-estado.ok { background: #e7f6ec; color: var(--success); }
+.conciliacion-estado.error { background: #fdecec; color: var(--error); }
+.conciliacion-aviso { background: #fff1e8; color: #9a3412; border-radius: 10px; padding: 8px 14px; }
+#conciliacionIbsTotales td.num, #conciliacionIbsDiferencias td.num { text-align: right; font-variant-numeric: tabular-nums; white-space: nowrap; }
+.conciliacion-table-wrap { overflow-x: auto; }
+#conciliacionIbsDiferencias th { white-space: nowrap; }
+#conciliacionIbsDiferencias td.mono { font-family: monospace; white-space: nowrap; }
+#conciliacionIbsDiferencias td.detalle { min-width: 260px; }
+#conciliacionIbsDiferencias td.titular { min-width: 170px; }
+.conciliacion-check-ok { color: var(--success); font-weight: 700; }
+.conciliacion-check-error { color: var(--error); font-weight: 700; }
 
 #adConfigForm, #userForm { display: flex; flex-direction: column; gap: 10px; margin-bottom: 12px; }
 #adConfigForm label, #userForm label { display: flex; flex-direction: column; gap: 4px; font-size: 0.9rem; }
