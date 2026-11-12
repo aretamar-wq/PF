@@ -316,6 +316,8 @@ fieldset legend { color: var(--navy); font-weight: 600; padding: 0 6px; }
 }
 
 /* Conciliación con IBS ---------------------------------------------------- */
+.conciliacion-actions { flex-wrap: wrap; align-items: center; }
+.conciliacion-actions button { white-space: nowrap; }
 .conciliacion-estado {
   border-radius: 10px;
   padding: 10px 14px;

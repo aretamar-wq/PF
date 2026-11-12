@@ -32,6 +32,39 @@ function isoToDMY(fecha) {
   return `${d}/${m}/${y}`;
 }
 
+// Extracto de IBS de un día (tgl_movimientos + tgl_movimientos_aper),
+// mismas columnas que el CSV que se puede subir a mano. concod = ' ' deja
+// afuera los movimientos con contra-asiento. Fechas como 'yyyymmdd': Sybase
+// las interpreta igual sea cual sea el dateformat de la sesión. UNION ALL
+// (no UNION) para que un mismo movimiento registrado dos veces no se
+// colapse en una sola fila y se vea como "Repetido en IBS".
+function buildIbsAltasPfQuery(fecha) {
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(fecha)) throw new Error(`Fecha inválida: '${fecha}'.`);
+  const [y, m, d] = fecha.split('-').map(Number);
+  const siguiente = new Date(Date.UTC(y, m - 1, d + 1));
+  const desde = fecha.replace(/-/g, '');
+  const hasta = siguiente.toISOString().slice(0, 10).replace(/-/g, '');
+  const select = (filtro) => `select a.sistcod, a.moncod, a.cuecod, convert(varchar, a.fecmov, 103) 'Fecha_Mov', a.comnro, a.movcod, b.signo, b.accimp, b.signo * b.accimp 'Importe'
+from tgl_movimientos a, tgl_movimientos_aper b
+where a.fecmov >= '${desde}'
+  and a.fecmov < '${hasta}'
+  and a.concod = ' '
+  and a.fecreal = b.fecreal
+  and a.tercod = b.tercod
+  and b.funcod = 1
+  and ${filtro}`;
+  return `${select('a.movcod in (25020, 25021)')}
+union all
+${select('a.movcod in (152) and a.sistcod = 5')}`;
+}
+
+// Filas de querySybase (objetos por columna) al mismo formato que un CSV
+// parseado (encabezado + filas), para pasarlas por conciliarAltasPf.
+function ibsRowsToLines(rows) {
+  const header = ['sistcod', 'moncod', 'cuecod', 'Fecha_Mov', 'comnro', 'movcod', 'signo', 'accimp', 'Importe'];
+  return [header, ...rows.map((row) => header.map((col) => (row[col] == null ? '' : String(row[col]))))];
+}
+
 function conciliarAltasPf(altas, ibsLines, fecha) {
   const [header, ...data] = ibsLines;
   const faltantes = COLUMNAS_IBS.filter((c) => !(header || []).includes(c));
@@ -188,4 +221,4 @@ function conciliarAltasPf(altas, ibsLines, fecha) {
   };
 }
 
-module.exports = { conciliarAltasPf };
+module.exports = { conciliarAltasPf, buildIbsAltasPfQuery, ibsRowsToLines };

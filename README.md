@@ -1233,12 +1233,22 @@ cortada antes de consultar su estado queda con `realizado` = `SI` y
 
 ### Conciliación con IBS (altas de Plazo Fijo)
 
-Panel **"Conciliación con IBS"** (menú): se elige la fecha y se sube el
-extracto de movimientos de IBS de ese día (CSV con encabezado
-`sistcod,moncod,cuecod,Fecha_Mov,comnro,movcod,signo,accimp,Importe`). El
-servidor (`POST /api/conciliacion/ibs` con `{ fecha, contenido }`,
-`node/lib/conciliacionIbs.js`) cruza las altas de `operaciones_procesadas`
-de ese día (`processed_at`) contra el extracto:
+Panel **"Conciliación con IBS"** (menú): se elige la fecha y hay dos formas
+de traer los movimientos de IBS de ese día:
+
+- **"Conciliar contra IBS"** (la normal): el servidor los consulta directo
+  en Sybase con la conexión de Parametría (`buildIbsAltasPfQuery` en
+  `node/lib/conciliacionIbs.js`: `tgl_movimientos` + `tgl_movimientos_aper`,
+  `concod = ' '` para dejar afuera los contra-asientos, `movcod` 25020/25021
+  y 152 solo de `sistcod = 5`). Si no se puede consultar Sybase, devuelve
+  el error (502) sin conciliar nada.
+- **"Conciliar con archivo"**: se sube un extracto CSV con encabezado
+  `sistcod,moncod,cuecod,Fecha_Mov,comnro,movcod,signo,accimp,Importe`
+  (el mismo resultado de la query), por si Sybase no está disponible.
+
+Los dos van a `POST /api/conciliacion/ibs` con `{ fecha }` o
+`{ fecha, contenido }`. El servidor cruza las altas de
+`operaciones_procesadas` de ese día (`processed_at`) contra esos movimientos:
 
 - **Circuito 0:** tiene que estar el `25020` (débito en Cuenta Corriente) y
   el `25021` (crédito en Caja de Ahorro, en `caja_ahorro`) con `comnro` =
@@ -1258,7 +1268,8 @@ movimientos solo en IBS), totales por concepto ApiCore vs IBS (cantidad e
 importe) y la tabla de diferencias (Falta en IBS, Importe distinto, Cuenta
 distinta, Movimiento de más en IBS, Solo en IBS, Repetido en IBS), con
 filtro por tipo y descarga en CSV. Queda en `logs/security.log` quién
-concilió y el resultado. No guarda nada en la base.
+concilió, de dónde salieron los movimientos de IBS y el resultado. No guarda
+nada en la base.
 
 Ojo: una alta que se hizo en el banco pero no quedó en
 `operaciones_procesadas` (corridas cortadas antes del registro fila por

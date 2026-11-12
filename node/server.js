@@ -1041,10 +1041,11 @@ async function handleConciliacionGet(parsedUrl, res, session) {
   writeJsonResponse(res, 200, { name, content: lines.join('\r\n'), filas: rows.length });
 }
 
-// POST /api/conciliacion/ibs { fecha: yyyy-MM-dd, contenido: <CSV del
+// POST /api/conciliacion/ibs { fecha: yyyy-MM-dd, contenido?: <CSV del
 // extracto de IBS> } — cruza las altas de Plazo Fijo de ese día contra el
-// extracto (ver conciliacionIbs.js) y devuelve resumen, totales y
-// diferencias para el panel "Conciliación con IBS".
+// extracto de IBS (ver conciliacionIbs.js) y devuelve resumen, totales y
+// diferencias para el panel "Conciliación con IBS". Sin "contenido", el
+// extracto se consulta directo en Sybase (buildIbsAltasPfQuery).
 async function handleConciliacionIbsPost(req, res, session) {
   const payload = await readJsonBody(req);
   const fecha = String(payload.fecha || '');
@@ -1053,15 +1054,29 @@ async function handleConciliacionIbsPost(req, res, session) {
     return;
   }
   const contenido = String(payload.contenido || '');
-  if (!contenido.trim()) {
-    writeJsonResponse(res, 400, { error: 'El archivo de IBS está vacío.' });
-    return;
+
+  let ibsLines;
+  let origen;
+  if (contenido.trim()) {
+    ibsLines = parseCsvText(contenido.replace(/^﻿/, ''));
+    origen = 'archivo';
+  } else {
+    const parametria = await parametriaStore.getParametria(rootDir);
+    try {
+      ibsLines = conciliacionIbs.ibsRowsToLines(
+        await sybaseClient.querySybase(parametria.sybase, conciliacionIbs.buildIbsAltasPfQuery(fecha))
+      );
+    } catch (err) {
+      writeJsonResponse(res, 502, { error: `No se pudo consultar IBS (Sybase): ${err.message}` });
+      return;
+    }
+    origen = 'consulta directa a IBS';
   }
 
   const altas = await processedOperationsStore.getAltasDelDia(rootDir, fecha);
   let resultado;
   try {
-    resultado = conciliacionIbs.conciliarAltasPf(altas, parseCsvText(contenido.replace(/^﻿/, '')), fecha);
+    resultado = { ...conciliacionIbs.conciliarAltasPf(altas, ibsLines, fecha), origen };
   } catch (err) {
     if (err.statusCode === 400) {
       writeJsonResponse(res, 400, { error: err.message });
@@ -1072,7 +1087,7 @@ async function handleConciliacionIbsPost(req, res, session) {
   const r = resultado.resumen;
   securityStore.writeSecurityLog(
     logsDir,
-    `CONCILIACION IBS altas PF ${fecha} por '${session.username}': ${r.altasOk}/${r.altasApicore} OK, ${r.altasConDiferencias} con diferencias, ${r.soloEnIbs} solo en IBS`
+    `CONCILIACION IBS altas PF ${fecha} (${origen}) por '${session.username}': ${r.altasOk}/${r.altasApicore} OK, ${r.altasConDiferencias} con diferencias, ${r.soloEnIbs} solo en IBS`
   );
   writeJsonResponse(res, 200, resultado);
 }
