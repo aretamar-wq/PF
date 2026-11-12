@@ -1069,6 +1069,35 @@ async function handleRegisterOperations(req, res, session) {
   writeJsonResponse(res, 200, { ok: true, registered: operations.length });
 }
 
+// Antiduplicado de "Transferencia DEBIN - File" (mismo criterio que
+// /api/check-operations para Plazo Fijo): pares (debitoCuit, idComprobante)
+// que ya tienen una transferencia realizada en dbn_consulta.
+async function handleCheckTransferencias(req, res, session) {
+  const payload = await readJsonBody(req);
+  const transferencias = (payload.transferencias || []).map((t) => ({
+    debitoCuit: String(t.debitoCuit || '').trim(),
+    idComprobante: String(t.idComprobante || '').trim(),
+  }));
+  const duplicates = await debinOutputStore.findTransferenciasRealizadas(rootDir, transferencias);
+  if (duplicates.length > 0) {
+    const detalle = duplicates.map((d) => `cuit='${d.debitoCuit}' comprobante='${d.idComprobante}'`).join('; ');
+    securityStore.writeSecurityLog(
+      logsDir,
+      `TRANSFERENCIAS DUPLICADAS DETECTADAS: ${duplicates.length} por '${session.username}' (bloqueadas, no se ejecutan) -> ${detalle}`
+    );
+  }
+  writeJsonResponse(res, 200, { duplicates });
+}
+
+// Registro en dbn_consulta de cada transferencia apenas se hace (o se
+// rechaza), sin esperar al final del archivo — ver upsertDbnConsultaRecords.
+async function handleDbnConsultaRowsPost(req, res, session) {
+  const payload = await readJsonBody(req);
+  const rows = Array.isArray(payload.rows) ? payload.rows.filter((r) => r && typeof r === 'object') : [];
+  await debinOutputStore.upsertDbnConsultaRecords(rootDir, rows, session.username);
+  writeJsonResponse(res, 200, { ok: true, registered: rows.length });
+}
+
 // La "fecha de hoy" para "Pago de Plazo Fijos" no es la fecha del sistema
 // operativo del servidor: tiene que ser la fecha de PROCESO del banco
 // (tabla tgl_fechaproceso en Sybase), que puede no coincidir con el
@@ -1351,6 +1380,8 @@ async function handleRequest(req, res) {
     if (method === 'GET' && pathname === '/api/certs-browse') return void handleCertsBrowseGet(parsedUrl, res, session);
     if (method === 'POST' && pathname === '/api/check-operations') return void (await handleCheckOperations(req, res, session));
     if (method === 'POST' && pathname === '/api/register-operations') return void (await handleRegisterOperations(req, res, session));
+    if (method === 'POST' && pathname === '/api/check-transferencias') return void (await handleCheckTransferencias(req, res, session));
+    if (method === 'POST' && pathname === '/api/dbn-consulta-rows') return void (await handleDbnConsultaRowsPost(req, res, session));
     if (method === 'GET' && pathname === '/api/plazos-fijos-a-pagar') return void (await handlePlazosFijosAPagarGet(res, session));
     if (method === 'GET' && pathname === '/api/transferencias-limite') return void (await handleTransferenciasLimiteGet(parsedUrl, res, session));
     if (method === 'POST' && pathname === '/api/plazos-fijos-pagados') return void (await handlePlazosFijosPagadosPost(req, res, session));

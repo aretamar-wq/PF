@@ -4,9 +4,9 @@
 // (ver "Archivos de salida (files/)" en el README) con quién ejecutó la
 // carga y cuándo — además del .csv que ya se guarda en files/ (ver
 // handleSaveOutput en server.js), no en reemplazo. Tablas "dbn_out" y
-// "dbn_consulta" (ver deploy/mariadb-schema.sql), puramente de
-// registro/auditoría: no se leen para deduplicar (eso lo sigue haciendo
-// processedOperationsStore).
+// "dbn_consulta" (ver deploy/mariadb-schema.sql). dbn_consulta además se lee
+// para el antiduplicado de transferencias (findTransferenciasRealizadas), el
+// límite diario y la conciliación.
 
 const { formatLocal } = require('./dateUtil');
 const db = require('./mariadbClient');
@@ -115,8 +115,18 @@ async function addDbnOutRows(rootDir, csvContent, username) {
 }
 
 async function addDbnConsultaRows(rootDir, csvContent, username) {
-  const records = rowsToRecords(csvContent);
-  if (records.length === 0) return;
+  await upsertDbnConsultaRecords(rootDir, rowsToRecords(csvContent), username);
+}
+
+// Una fila por idMensaje: el cliente registra cada transferencia apenas se
+// hace (POST /api/dbn-consulta-rows, con la consulta de estado todavía
+// pendiente) y al terminar el archivo vuelve a mandar todas con el
+// resultado de la consulta (dbnconsulta-...csv vía /api/save-output) — si
+// ese idMensaje ya está se actualiza en vez de insertar otra fila.
+// ejecutado_en/ejecutado_por quedan los del primer registro (cuándo se hizo
+// la transferencia), que es lo que usan el límite diario y la conciliación.
+async function upsertDbnConsultaRecords(rootDir, records, username) {
+  if (!records || records.length === 0) return;
 
   const now = formatLocal();
   const pool = db.getPool(rootDir);
@@ -138,37 +148,56 @@ async function addDbnConsultaRows(rootDir, csvContent, username) {
         codigoRespuestaTransferencia, descripcionRespuestaTransferencia, realizado,
         ...rest
       } = record;
-      await connection.query(
-        `INSERT INTO dbn_consulta (
-           id_mensaje, id_comprobante, id_operacion,
-           credito_cuit, credito_cbu, credito_titular,
-           debito_cuit, debito_cbu, debito_titular,
-           moneda, importe,
-           codigo_respuesta, descripcion_respuesta, realizado,
-           error_consulta, respuesta_json,
-           ejecutado_por, ejecutado_en
-         ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-        [
-          idMensaje || '',
-          idComprobante || '',
-          idOperacion || '',
-          creditoCuit || '',
-          creditoCbu || '',
-          creditoTitular || '',
-          debitoCuit || '',
-          debitoCbu || '',
-          debitoTitular || '',
-          moneda || '',
-          importe || '',
-          codigoRespuestaTransferencia || '',
-          descripcionRespuestaTransferencia || '',
-          realizado || '',
-          errorConsulta || '',
-          JSON.stringify(rest),
-          username,
-          now,
-        ]
-      );
+      const text = (value) => (value == null ? '' : String(value));
+      const values = [
+        text(idComprobante),
+        text(idOperacion),
+        text(creditoCuit),
+        text(creditoCbu),
+        text(creditoTitular),
+        text(debitoCuit),
+        text(debitoCbu),
+        text(debitoTitular),
+        text(moneda),
+        text(importe),
+        text(codigoRespuestaTransferencia),
+        text(descripcionRespuestaTransferencia),
+        text(realizado),
+        text(errorConsulta),
+        JSON.stringify(rest),
+      ];
+
+      let existe = false;
+      if (text(idMensaje)) {
+        const [found] = await connection.query('SELECT id FROM dbn_consulta WHERE id_mensaje = ? LIMIT 1', [text(idMensaje)]);
+        existe = found.length > 0;
+      }
+      if (existe) {
+        await connection.query(
+          `UPDATE dbn_consulta SET
+             id_comprobante = ?, id_operacion = ?,
+             credito_cuit = ?, credito_cbu = ?, credito_titular = ?,
+             debito_cuit = ?, debito_cbu = ?, debito_titular = ?,
+             moneda = ?, importe = ?,
+             codigo_respuesta = ?, descripcion_respuesta = ?, realizado = ?,
+             error_consulta = ?, respuesta_json = ?
+           WHERE id_mensaje = ?`,
+          [...values, text(idMensaje)]
+        );
+      } else {
+        await connection.query(
+          `INSERT INTO dbn_consulta (
+             id_comprobante, id_operacion,
+             credito_cuit, credito_cbu, credito_titular,
+             debito_cuit, debito_cbu, debito_titular,
+             moneda, importe,
+             codigo_respuesta, descripcion_respuesta, realizado,
+             error_consulta, respuesta_json,
+             id_mensaje, ejecutado_por, ejecutado_en
+           ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+          [...values, text(idMensaje), username, now]
+        );
+      }
     }
     await connection.commit();
   } catch (err) {
@@ -270,4 +299,37 @@ async function getConsultaRowsDelDia(rootDir, fecha) {
   );
 }
 
-module.exports = { addDbnOutRows, addDbnConsultaRows, getTransferidoHoyPorCuit, transferidoHoyKey, getConsultaRowsDelDia };
+// Antiduplicado de "Transferencia DEBIN - File": de los pares (debitoCuit,
+// idComprobante) pedidos, cuáles ya tienen una transferencia realizada
+// (realizado = 's') en dbn_consulta. Las rechazadas no cuentan: se pueden
+// reintentar.
+async function findTransferenciasRealizadas(rootDir, transferencias) {
+  const pares = (transferencias || []).filter((t) => t.debitoCuit && t.idComprobante);
+  if (pares.length === 0) return [];
+
+  // TRIM: dbn_consulta guarda CUIT/comprobante tal como vinieron en el
+  // archivo, con espacios si los había; el cliente manda los valores recortados.
+  const conditions = pares.map(() => '(TRIM(debito_cuit) = ? AND TRIM(id_comprobante) = ?)').join(' OR ');
+  const params = [];
+  for (const t of pares) params.push(String(t.debitoCuit), String(t.idComprobante));
+
+  const rows = await db.query(
+    rootDir,
+    `SELECT TRIM(debito_cuit) AS debito_cuit, TRIM(id_comprobante) AS id_comprobante, MIN(ejecutado_en) AS ejecutado_en
+     FROM dbn_consulta
+     WHERE realizado = 's' AND (${conditions})
+     GROUP BY TRIM(debito_cuit), TRIM(id_comprobante)`,
+    params
+  );
+  return rows.map((row) => ({ debitoCuit: row.debito_cuit, idComprobante: row.id_comprobante, ejecutadoEn: row.ejecutado_en }));
+}
+
+module.exports = {
+  addDbnOutRows,
+  addDbnConsultaRows,
+  upsertDbnConsultaRecords,
+  getTransferidoHoyPorCuit,
+  transferidoHoyKey,
+  getConsultaRowsDelDia,
+  findTransferenciasRealizadas,
+};
