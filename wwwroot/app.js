@@ -2808,12 +2808,37 @@ async function downloadOutputFile(name) {
   downloadTextFile(data.name, data.content, 'text/csv');
 }
 
+const conciliacionFecha = document.getElementById('conciliacionFecha');
+
+async function downloadConciliacion(tipo) {
+  if (!conciliacionFecha.value) {
+    alert('Elegí una fecha.');
+    return;
+  }
+  const res = await apiFetch(
+    `/api/conciliacion?tipo=${encodeURIComponent(tipo)}&fecha=${encodeURIComponent(conciliacionFecha.value)}`
+  );
+  const data = await res.json();
+  if (!res.ok) {
+    alert(data.error || 'No se pudo generar el archivo de conciliación.');
+    return;
+  }
+  if (data.filas === 0 && !confirm(`No hay operaciones para el ${conciliacionFecha.value}. ¿Descargar el archivo vacío igual?`)) {
+    return;
+  }
+  downloadTextFile(data.name, data.content, 'text/csv');
+}
+
+document.getElementById('conciliacionTransferenciasBtn').addEventListener('click', () => downloadConciliacion('transferencias'));
+document.getElementById('conciliacionPlazosFijosBtn').addEventListener('click', () => downloadConciliacion('plazos-fijos'));
+
 async function openOutputFilesSection() {
   // Por default Desde/Hasta quedan en el día de hoy (rango de un solo día) —
   // así se puede ver algo apenas se abre el panel, sin tener que elegir
   // fecha a mano cada vez. Sigue siendo editable: "Limpiar filtro" los deja
   // vacíos si hace falta buscar en otro rango.
   const today = formatDateOnlyLocal(new Date());
+  conciliacionFecha.value = today;
   outputFilesFromDate.value = today;
   outputFilesToDate.value = today;
   allOutputFiles = [];

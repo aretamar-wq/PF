@@ -1168,6 +1168,46 @@ igual en los dos backends:
   misma defensa contra path traversal que `/api/save-output` — y además
   registra en el log de seguridad quién descargó qué archivo.
 
+#### Conciliación diaria
+
+Arriba de la lista de corridas, el bloque **"Conciliación diaria"** baja
+dos archivos de un día (fecha elegida, hoy por defecto) para conciliar
+contra el core, vía
+`GET /api/conciliacion?tipo=transferencias|plazos-fijos&fecha=yyyy-MM-dd`
+(devuelve `{ name, content, filas }`, igual que
+`/api/output-files/content`; queda en `logs/security.log` quién lo bajó).
+No se guardan en `files/`: se arman en el momento.
+
+- **`conciliacion-transferencias-<fecha>.csv`** — todas las
+  transferencias de "Transferencia DEBIN - File" del día, realizadas o no:
+  las de `dbn_consulta` (por `ejecutado_en`) más las del archivo de error
+  de cada corrida que nunca llegaron a `dbn_consulta` (CBU inválido, error
+  de comunicación), sin repetir por `idMensaje`. Columnas: `fecha,
+  idMensaje, idComprobante, idOperacion, debitoCuit, debitoCbu,
+  debitoTitular, creditoCuit, creditoCbu, creditoTitular, moneda, importe,
+  realizado, codigoRespuesta, descripcionRespuesta, estadoCodigo,
+  estadoDescripcion, errorConsulta, motivo, usuario`. `realizado` = `SI` si
+  la transferencia se envió con éxito; el resultado final de la acreditación
+  está en `estadoCodigo`/`estadoDescripcion` (ej. `0600 - ACREDITADO`, o
+  `0605 - ERROR BANCO CREDITO - CUENTA INEXISTENTE`). `motivo` explica por
+  qué no se realizó (`realizado` = `NO`).
+- **`conciliacion-plazos-fijos-<fecha>.csv`** — altas de "Alta de Plazo
+  Fijos - File" del día: las exitosas de `operaciones_procesadas` (por
+  `processed_at`, `realizado` = `SI`) más las fallidas del archivo de error
+  de cada corrida (`realizado` = `NO`, con `motivo`; incluye las bloqueadas
+  por duplicado). Columnas: `fecha, idMensaje, cuit, apellidoNombre,
+  numeroComprobante, circuito, monto, plazo, cajaAhorro, operacion,
+  importeNeto, tna, fechaVencimiento, realizado, motivo, usuario`. No
+  incluye pagos de Plazo Fijo.
+
+Las filas fallidas salen de `files/<runId>-error.csv` de las corridas cuyo
+log se modificó ese día (mismo criterio que el Dashboard), incluidas las
+corridas cortadas sin resumen (se reconocen por el sufijo del runId:
+`Alta-PF` / `transferencia-debin-file`). Una corrida cortada **antes** de
+guardar sus archivos de salida no deja archivo de error, así que sus filas
+fallidas no aparecen (las altas exitosas sí, porque se registran fila por
+fila).
+
 ### Prevención de operaciones duplicadas
 
 Antes de procesar ninguna fila de un CSV, la UI manda al servidor las
@@ -1192,9 +1232,15 @@ El registro (tabla `operaciones_procesadas`, ver "Base de datos
 operaciones que **realmente se dieron de alta** (mismo criterio que decide
 si una fila entra a `pfout-...`) — nunca con filas que fallaron o se
 bloquearon, así que sí se pueden reintentar sin quedar frenadas para
-siempre por su propio intento fallido. El registro se guarda en un solo
-`POST /api/register-operations` al terminar de procesar todo el archivo
-(no una llamada por fila), con todas las operaciones exitosas de ese lote.
+siempre por su propio intento fallido. Cada operación se
+registra **apenas se confirma su alta** (`POST /api/register-operations`
+con esa sola fila), no recién al terminar todo el archivo: si el proceso se
+corta a mitad de camino (pestaña cerrada, red caída), lo que ya se dio de
+alta en el banco queda igual protegido contra un reintento. Al terminar el
+archivo se vuelve a mandar el lote completo como respaldo (el `INSERT ...
+ON DUPLICATE KEY UPDATE` hace que repetir el registro no tenga efecto).
+"Pago de Plazo Fijos" hace lo mismo con `pf_pagado`
+(`POST /api/plazos-fijos-pagados`, fila por fila y de nuevo al final).
 
 Cada vez que `POST /api/check-operations` encuentra una o más operaciones
 duplicadas se deja constancia en `logs/security.log`, con el usuario que
