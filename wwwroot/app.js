@@ -3186,9 +3186,10 @@ function renderConciliacionIbs(data) {
 
   const estado = document.getElementById('conciliacionIbsEstado');
   estado.className = 'conciliacion-estado ' + (conDiferencias ? 'error' : 'ok');
-  estado.textContent = conDiferencias
+  estado.textContent = (conDiferencias
     ? `Hay diferencias: ${r.altasConDiferencias} alta(s) de ApiCore con diferencias y ${r.soloEnIbs} movimiento(s) de IBS sin su alta en ApiCore.`
-    : `Concilia: las ${r.altasApicore} altas de ApiCore (${r.altasCircuito0} de circuito 0, ${r.altasCircuito1} de circuito 1) están en IBS con la misma cuenta e importe.`;
+    : `Concilia: las ${r.altasApicore} altas de ApiCore (${r.altasCircuito0} de circuito 0, ${r.altasCircuito1} de circuito 1) están en IBS con la misma cuenta e importe.`) +
+    (data.origen ? ` (IBS: ${data.origen})` : '');
 
   const aviso = document.getElementById('conciliacionIbsAviso');
   const avisos = [];
@@ -3226,24 +3227,27 @@ function renderConciliacionIbs(data) {
   document.getElementById('conciliacionIbsDownloadBtn').disabled = !conDiferencias;
 }
 
-async function runConciliacionIbs() {
+// conArchivo = false: el servidor consulta los movimientos directo en IBS
+// (Sybase); true: usa el extracto CSV elegido en el input.
+async function runConciliacionIbs(conArchivo) {
   if (!conciliacionIbsFecha.value) {
-    alert('Elegí la fecha del extracto.');
+    alert('Elegí la fecha a conciliar.');
     return;
   }
   const file = conciliacionIbsFile.files[0];
-  if (!file) {
+  if (conArchivo && !file) {
     alert('Elegí el archivo del extracto de IBS.');
     return;
   }
-  const btn = document.getElementById('conciliacionIbsRunBtn');
-  btn.disabled = true;
+  const buttons = [document.getElementById('conciliacionIbsRunBtn'), document.getElementById('conciliacionIbsFileBtn')];
+  for (const b of buttons) b.disabled = true;
   try {
-    const contenido = await file.text();
+    const body = { fecha: conciliacionIbsFecha.value };
+    if (conArchivo) body.contenido = await file.text();
     const res = await apiFetch('/api/conciliacion/ibs', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ fecha: conciliacionIbsFecha.value, contenido }),
+      body: JSON.stringify(body),
     });
     const data = await res.json();
     if (!res.ok) {
@@ -3252,7 +3256,7 @@ async function runConciliacionIbs() {
     }
     renderConciliacionIbs(data);
   } finally {
-    btn.disabled = false;
+    for (const b of buttons) b.disabled = false;
   }
 }
 
@@ -3271,7 +3275,8 @@ function openConciliacionIbsSection() {
 
 document.getElementById('conciliacionIbsBtn').addEventListener('click', openConciliacionIbsSection);
 document.getElementById('closeConciliacionIbsBtn').addEventListener('click', () => showMainSection('flowDetail'));
-document.getElementById('conciliacionIbsRunBtn').addEventListener('click', runConciliacionIbs);
+document.getElementById('conciliacionIbsRunBtn').addEventListener('click', () => runConciliacionIbs(false));
+document.getElementById('conciliacionIbsFileBtn').addEventListener('click', () => runConciliacionIbs(true));
 document.getElementById('conciliacionIbsDownloadBtn').addEventListener('click', downloadConciliacionIbsDiferencias);
 conciliacionIbsTipoFilter.addEventListener('change', applyConciliacionIbsFilter);
 
