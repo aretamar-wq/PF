@@ -25,7 +25,7 @@ const securityStore = require('./lib/securityStore');
 const processedOperationsStore = require('./lib/processedOperationsStore');
 const debinOutputStore = require('./lib/debinOutputStore');
 const sybaseClient = require('./lib/sybaseClient');
-const { convertDMYToISO } = require('./lib/dateUtil');
+const { convertDMYToISO, formatLocal } = require('./lib/dateUtil');
 
 function parsePort() {
   const args = process.argv.slice(2);
@@ -741,6 +741,216 @@ function handleDashboardGet(parsedUrl, res) {
   writeJsonResponse(res, 200, { porFlow: Array.from(porFlowMap.values()), errores });
 }
 
+// Una corrida cortada antes de guardar su resumen no tiene flowName, pero sí
+// puede tener su archivo de error: se reconoce por el sufijo del runId
+// (logAlias del flow, o el slug del name si no tiene — ver flowLogName en
+// flowEngine.js).
+const CONCILIACION_RUN_ID_SUFFIXES = {
+  'Alta de Plazo Fijos - File': 'Alta-PF',
+  'Transferencia DEBIN - File': 'transferencia-debin-file',
+};
+
+function csvEscape(value) {
+  const str = value == null ? '' : String(value);
+  return /[",\r\n]/.test(str) ? '"' + str.replace(/"/g, '""') + '"' : str;
+}
+
+// Filas de files/<runId>-error.csv de cada corrida de flowName terminada ese
+// día (mtime del log, mismo criterio que el Dashboard). Son la fila de
+// entrada tal cual + idMensaje + motivo, sin encabezado.
+function readErrorRowsDelDia(flowName, fecha) {
+  const httpLogsDir = path.join(logsDir, HTTP_LOG_SUBDIR);
+  if (!fs.existsSync(httpLogsDir)) return [];
+  const runIdPattern = new RegExp(`^\\d{18}-${CONCILIACION_RUN_ID_SUFFIXES[flowName]}$`);
+  const result = [];
+  for (const name of fs.readdirSync(httpLogsDir)) {
+    if (!HTTP_LOG_FILE_NAME_PATTERN.test(name)) continue;
+    const logPath = path.join(httpLogsDir, name);
+    const mtime = fs.statSync(logPath).mtime;
+    if (formatDateOnlyLocal(mtime) !== fecha) continue;
+
+    const runId = name.replace(/\.log$/, '');
+    const errorPath = path.join(filesDir, `${runId}-error.csv`);
+    if (!fs.existsSync(errorPath)) continue;
+
+    let summary = null;
+    try {
+      summary = flowEngine.parseRunSummary(fs.readFileSync(logPath, 'utf8'));
+    } catch (err) {
+      // Sin resumen: se decide por el sufijo del runId.
+    }
+    const esDelFlow = summary && summary.flowName ? summary.flowName === flowName : runIdPattern.test(runId);
+    if (!esDelFlow) continue;
+
+    let content;
+    try {
+      content = fs.readFileSync(errorPath, 'utf8');
+    } catch (err) {
+      continue;
+    }
+    for (const cols of parseCsvText(content)) {
+      result.push({ fecha: formatLocal(mtime), usuario: summary ? summary.username : '', cols });
+    }
+  }
+  return result;
+}
+
+const CONCILIACION_TRANSFERENCIAS_HEADERS = [
+  'fecha', 'idMensaje', 'idComprobante', 'idOperacion',
+  'debitoCuit', 'debitoCbu', 'debitoTitular',
+  'creditoCuit', 'creditoCbu', 'creditoTitular',
+  'moneda', 'importe', 'realizado',
+  'codigoRespuesta', 'descripcionRespuesta', 'estadoCodigo', 'estadoDescripcion',
+  'errorConsulta', 'motivo', 'usuario',
+];
+
+// Todas las transferencias del día: las de dbn_consulta (realizadas, y las
+// rechazadas que ya quedan ahí — rechazo de negocio, límite diario, CUIT que
+// no coincide) más las del archivo de error que nunca llegaron a dbn_consulta
+// (CBU inválido, error de comunicación), sin repetir por idMensaje.
+async function buildConciliacionTransferencias(fecha) {
+  const dbRows = await debinOutputStore.getConsultaRowsDelDia(rootDir, fecha);
+  const rows = dbRows.map((r) => ({
+    fecha: r.ejecutado_en,
+    idMensaje: r.id_mensaje,
+    idComprobante: r.id_comprobante,
+    idOperacion: r.id_operacion,
+    debitoCuit: r.debito_cuit,
+    debitoCbu: r.debito_cbu,
+    debitoTitular: r.debito_titular,
+    creditoCuit: r.credito_cuit,
+    creditoCbu: r.credito_cbu,
+    creditoTitular: r.credito_titular,
+    moneda: r.moneda,
+    importe: r.importe,
+    realizado: r.realizado === 's' ? 'SI' : 'NO',
+    codigoRespuesta: r.codigo_respuesta,
+    descripcionRespuesta: r.descripcion_respuesta,
+    estadoCodigo: r.estado_codigo || '',
+    estadoDescripcion: r.estado_descripcion || '',
+    errorConsulta: r.error_consulta,
+    motivo: r.realizado === 's' ? '' : r.estado_descripcion || r.descripcion_respuesta || '',
+    usuario: r.ejecutado_por,
+  }));
+
+  const idMensajesEnBase = new Set(rows.map((r) => r.idMensaje).filter(Boolean));
+  for (const { fecha: fechaCorrida, usuario, cols } of readErrorRowsDelDia('Transferencia DEBIN - File', fecha)) {
+    // creditoCuit, creditoCbu, creditoTitular, debitoCuit, debitoCbu, debitoTitular, idComprobante, moneda, importe, idMensaje, motivo
+    const idMensaje = cols[cols.length - 2] || '';
+    if (idMensaje && idMensajesEnBase.has(idMensaje)) continue;
+    rows.push({
+      fecha: fechaCorrida,
+      idMensaje,
+      idComprobante: cols[6] || '',
+      idOperacion: '',
+      debitoCuit: cols[3] || '',
+      debitoCbu: cols[4] || '',
+      debitoTitular: cols[5] || '',
+      creditoCuit: cols[0] || '',
+      creditoCbu: cols[1] || '',
+      creditoTitular: cols[2] || '',
+      moneda: cols[7] || '',
+      importe: cols[8] || '',
+      realizado: 'NO',
+      codigoRespuesta: '',
+      descripcionRespuesta: '',
+      estadoCodigo: '',
+      estadoDescripcion: '',
+      errorConsulta: '',
+      motivo: cols[cols.length - 1] || '',
+      usuario,
+    });
+  }
+  return rows;
+}
+
+const CONCILIACION_PLAZOS_FIJOS_HEADERS = [
+  'fecha', 'idMensaje', 'cuit', 'apellidoNombre', 'numeroComprobante', 'circuito',
+  'monto', 'plazo', 'cajaAhorro', 'operacion', 'importeNeto', 'tna', 'fechaVencimiento',
+  'realizado', 'motivo', 'usuario',
+];
+
+// Altas del día: las exitosas de operaciones_procesadas más las fallidas de
+// los archivos de error de "Alta de Plazo Fijos - File".
+async function buildConciliacionPlazosFijos(fecha) {
+  const dbRows = await processedOperationsStore.getAltasDelDia(rootDir, fecha);
+  const rows = dbRows.map((r) => ({
+    fecha: r.processed_at,
+    idMensaje: r.id_mensaje,
+    cuit: r.cuit,
+    apellidoNombre: r.apellido_nombre,
+    numeroComprobante: r.numero_comprobante,
+    circuito: r.tipo_circuito,
+    monto: r.monto,
+    plazo: r.plazo,
+    cajaAhorro: r.caja_ahorro,
+    operacion: r.operacion,
+    importeNeto: r.importe_neto,
+    tna: r.tna,
+    fechaVencimiento: r.fecha_vencimiento,
+    realizado: 'SI',
+    motivo: '',
+    usuario: r.processed_by,
+  }));
+
+  const idMensajesEnBase = new Set(rows.map((r) => r.idMensaje).filter(Boolean));
+  for (const { fecha: fechaCorrida, usuario, cols } of readErrorRowsDelDia('Alta de Plazo Fijos - File', fecha)) {
+    // cuit, apellidoNombre, monto, plazo, numeroComprobante, circuito, idMensaje, motivo
+    const idMensaje = cols[cols.length - 2] || '';
+    if (idMensaje && idMensajesEnBase.has(idMensaje)) continue;
+    rows.push({
+      fecha: fechaCorrida,
+      idMensaje,
+      cuit: cols[0] || '',
+      apellidoNombre: cols[1] || '',
+      numeroComprobante: cols[4] || '',
+      circuito: cols[5] || '',
+      monto: cols[2] || '',
+      plazo: cols[3] || '',
+      cajaAhorro: '',
+      operacion: '',
+      importeNeto: '',
+      tna: '',
+      fechaVencimiento: '',
+      realizado: 'NO',
+      motivo: cols[cols.length - 1] || '',
+      usuario,
+    });
+  }
+  return rows;
+}
+
+// GET /api/conciliacion?tipo=transferencias|plazos-fijos&fecha=yyyy-MM-dd —
+// archivo diario para conciliar contra el core, con realizado SI/NO por fila.
+async function handleConciliacionGet(parsedUrl, res, session) {
+  const tipo = parsedUrl.searchParams.get('tipo') || '';
+  const fecha = parsedUrl.searchParams.get('fecha') || '';
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(fecha)) {
+    writeJsonResponse(res, 400, { error: 'Fecha inválida (formato yyyy-MM-dd).' });
+    return;
+  }
+  let headers;
+  let rows;
+  if (tipo === 'transferencias') {
+    headers = CONCILIACION_TRANSFERENCIAS_HEADERS;
+    rows = await buildConciliacionTransferencias(fecha);
+  } else if (tipo === 'plazos-fijos') {
+    headers = CONCILIACION_PLAZOS_FIJOS_HEADERS;
+    rows = await buildConciliacionPlazosFijos(fecha);
+  } else {
+    writeJsonResponse(res, 400, { error: 'Tipo inválido (transferencias o plazos-fijos).' });
+    return;
+  }
+
+  rows.sort((a, b) => String(a.fecha).localeCompare(String(b.fecha)));
+  const lines = [headers.join(',')];
+  for (const row of rows) lines.push(headers.map((h) => csvEscape(row[h])).join(','));
+
+  const name = `conciliacion-${tipo}-${fecha}.csv`;
+  securityStore.writeSecurityLog(logsDir, `CONCILIACION '${name}' descargada por '${session.username}' (${rows.length} fila(s))`);
+  writeJsonResponse(res, 200, { name, content: lines.join('\r\n'), filas: rows.length });
+}
+
 function handleOutputFileContentGet(parsedUrl, res, session) {
   const name = parsedUrl.searchParams.get('name') || '';
   if (!OUTPUT_FILE_NAME_PATTERN.test(name)) {
@@ -1136,6 +1346,7 @@ async function handleRequest(req, res) {
     if (method === 'GET' && pathname === '/api/output-files') return void handleOutputFilesGet(res);
     if (method === 'GET' && pathname === '/api/dashboard') return void handleDashboardGet(parsedUrl, res);
     if (method === 'GET' && pathname === '/api/output-files/content') return void handleOutputFileContentGet(parsedUrl, res, session);
+    if (method === 'GET' && pathname === '/api/conciliacion') return void (await handleConciliacionGet(parsedUrl, res, session));
     if (method === 'GET' && pathname === '/api/http-logs/content') return void handleHttpLogContentGet(parsedUrl, res, session);
     if (method === 'GET' && pathname === '/api/certs-browse') return void handleCertsBrowseGet(parsedUrl, res, session);
     if (method === 'POST' && pathname === '/api/check-operations') return void (await handleCheckOperations(req, res, session));

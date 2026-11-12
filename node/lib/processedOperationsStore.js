@@ -167,10 +167,27 @@ async function markOperationsPaid(rootDir, operations) {
   }
 }
 
+// Para el archivo de conciliación diaria de plazos fijos (ver
+// handleConciliacionGet en server.js): las altas registradas en un día
+// (fecha local yyyy-MM-dd de processed_at). Solo hay altas exitosas acá — las
+// fallidas salen de los archivos de error de cada corrida.
+async function getAltasDelDia(rootDir, fecha) {
+  return db.query(
+    rootDir,
+    `SELECT processed_at, processed_by, cuit, apellido_nombre, numero_comprobante, id_mensaje,
+            tipo_circuito, caja_ahorro, monto, plazo, operacion, importe_neto, tna, fecha_vencimiento
+     FROM operaciones_procesadas
+     WHERE DATE(processed_at) = ?
+     ORDER BY processed_at, id`,
+    [fecha]
+  );
+}
+
 module.exports = {
   getProcessedOperations,
   findDuplicateOperations,
   addProcessedOperations,
   findOperationsToPay,
   markOperationsPaid,
+  getAltasDelDia,
 };

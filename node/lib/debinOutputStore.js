@@ -249,4 +249,25 @@ async function getTransferidoHoyPorCuit(rootDir, cuits) {
   return result;
 }
 
-module.exports = { addDbnOutRows, addDbnConsultaRows, getTransferidoHoyPorCuit, transferidoHoyKey };
+// Para el archivo de conciliación diaria de transferencias (ver
+// handleConciliacionGet en server.js): todas las filas de dbn_consulta de un
+// día (fecha local yyyy-MM-dd de ejecutado_en), realizadas o no.
+// estadoCodigo/estadoDescripcion no tienen columna propia: quedaron dentro de
+// respuesta_json (ver addDbnConsultaRows, "...rest").
+async function getConsultaRowsDelDia(rootDir, fecha) {
+  return db.query(
+    rootDir,
+    `SELECT ejecutado_en, ejecutado_por, id_mensaje, id_comprobante, id_operacion,
+            debito_cuit, debito_cbu, debito_titular,
+            credito_cuit, credito_cbu, credito_titular,
+            moneda, importe, realizado, codigo_respuesta, descripcion_respuesta, error_consulta,
+            JSON_UNQUOTE(JSON_EXTRACT(respuesta_json, '$.estadoCodigo')) AS estado_codigo,
+            JSON_UNQUOTE(JSON_EXTRACT(respuesta_json, '$.estadoDescripcion')) AS estado_descripcion
+     FROM dbn_consulta
+     WHERE DATE(ejecutado_en) = ?
+     ORDER BY ejecutado_en, id`,
+    [fecha]
+  );
+}
+
+module.exports = { addDbnOutRows, addDbnConsultaRows, getTransferidoHoyPorCuit, transferidoHoyKey, getConsultaRowsDelDia };
