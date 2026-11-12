@@ -1231,9 +1231,10 @@ operaciones duplicadas"), pero no las filas que fallaron por otra cosa
 cortada antes de consultar su estado queda con `realizado` = `SI` y
 `errorConsulta` = `Consulta de estado pendiente`.
 
-### Conciliación con IBS (altas de Plazo Fijo)
+### Conciliación con IBS (altas y pagos de Plazo Fijo)
 
-Panel **"Conciliación con IBS"** (menú): se elige la fecha y hay dos formas
+Panel **"Conciliación con IBS"** (menú): se elige **qué conciliar** (altas o
+pagos de Plazo Fijo, ver más abajo para los pagos), la fecha y hay dos formas
 de traer los movimientos de IBS de ese día:
 
 - **"Conciliar contra IBS"** (la normal): el servidor los consulta directo
@@ -1246,8 +1247,8 @@ de traer los movimientos de IBS de ese día:
   `sistcod,moncod,cuecod,Fecha_Mov,comnro,movcod,signo,accimp,Importe`
   (el mismo resultado de la query), por si Sybase no está disponible.
 
-Los dos van a `POST /api/conciliacion/ibs` con `{ fecha }` o
-`{ fecha, contenido }`. El servidor cruza las altas de
+Los dos van a `POST /api/conciliacion/ibs` con `{ fecha, tipo }` o
+`{ fecha, tipo, contenido }` (`tipo` = `altas` o `pagos`). El servidor cruza las altas de
 `operaciones_procesadas` de ese día (`processed_at`) contra esos movimientos:
 
 - **Circuito 0:** tiene que estar el `25020` (débito en Cuenta Corriente) y
@@ -1274,6 +1275,46 @@ nada en la base.
 Ojo: una alta que se hizo en el banco pero no quedó en
 `operaciones_procesadas` (corridas cortadas antes del registro fila por
 fila) aparece como "Solo en IBS".
+
+#### Pagos de Plazo Fijo
+
+Con "Pagos de Plazo Fijo" se concilia el flow "Pago de Plazo Fijos". La fecha
+es la **fecha de proceso bancaria** (la misma con la que el flow registra el
+débito y el crédito en IBS), que es igual al **vencimiento** de los plazos
+fijos que se pagan ese día: por eso se parte de las operaciones de
+`operaciones_procesadas` con `fecha_vencimiento` = esa fecha
+(`getOperacionesPorVencimiento`), pagadas o no, y no de cuándo se pagó según
+el reloj del servidor. No depende de las columnas `pf_pagado_en`/`pf_pagado_por`.
+
+Los movimientos de IBS que se buscan salen de **Parametría** (no hay códigos
+fijos): débito en la Caja de Ahorro (`cajaDeAhorro.transaccionDebito`, en
+`cajaDeAhorro.codigoSistema`) y crédito en la Cuenta Corriente
+(`cuentaCorriente.transaccionCredito`, en `cuentaCorriente.codigoSistema` y
+`cuentaCorriente.codigoCuenta`). Si falta alguno (tienen que ser numéricos) el
+panel avisa qué configurar y no concilia — también cuando se sube un archivo,
+porque son los que definen qué movimientos son pagos.
+
+- **Circuito 0 y `pf_pagado = 1`:** tienen que estar los dos movimientos con
+  `comnro` = `numero_comprobante`, el débito en `caja_ahorro` y el crédito en
+  la Cuenta Corriente de Parametría, por `importe_neto`. Si dos CUIT
+  comparten número de comprobante se cruza primero el movimiento que coincide
+  en cuenta e importe.
+- **Circuito 0 y `pf_pagado = 0`:** no tendría que haber movimientos. Si hay
+  ambos es "Pagado en IBS, no en ApiCore" (por ejemplo, una corrida cortada
+  antes de marcar el pago); si hay solo el débito en Caja de Ahorro es "Pago
+  incompleto en IBS" (a un cliente se le debitó y no se acreditó la Cuenta
+  Corriente). Si no hay ninguno, no es una diferencia: se lista aparte como
+  "pendiente" (venció y no se pagó).
+- **Circuito 1:** ApiCore nunca lo paga; un movimiento de pago con su
+  comprobante es "Movimiento de más en IBS".
+- Lo que sobra en IBS con esos códigos y cuentas es "Solo en IBS" /
+  "Repetido en IBS". Si esas mismas transacciones se usan para otros
+  movimientos que no son de este flow, van a aparecer acá.
+
+Se muestran indicadores (PF que vencían, pagados en ApiCore, conciliados,
+con diferencias, pagados en IBS sin marcar, solo en IBS, pendientes), totales
+ApiCore vs IBS de los dos movimientos, la tabla de diferencias con filtro y
+descarga en CSV, y los pendientes.
 
 ### Prevención de operaciones duplicadas
 
