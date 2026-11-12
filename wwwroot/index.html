@@ -112,6 +112,15 @@
           <h2>Archivos de salida</h2>
           <button type="button" id="closeOutputFilesBtn">Volver a flows</button>
         </div>
+        <fieldset>
+          <legend>Conciliación diaria</legend>
+          <p class="muted">Todas las operaciones de un día, con una columna "realizado" (SI/NO) y el motivo si no se realizó, para conciliar contra el core.</p>
+          <div class="actions">
+            <label>Fecha <input type="date" id="conciliacionFecha" /></label>
+            <button type="button" id="conciliacionTransferenciasBtn">Descargar transferencias</button>
+            <button type="button" id="conciliacionPlazosFijosBtn">Descargar plazos fijos (altas)</button>
+          </div>
+        </fieldset>
         <p class="muted">Una fila por corrida de CSV: cuándo se corrió, quién la corrió, y los archivos que quedaron guardados en el servidor (se descargan automáticamente al terminar cada corrida; acá se pueden volver a descargar).</p>
         <div class="actions">
           <label>Desde <input type="date" id="outputFilesFromDate" /></label>
