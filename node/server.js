@@ -1041,11 +1041,13 @@ async function handleConciliacionGet(parsedUrl, res, session) {
   writeJsonResponse(res, 200, { name, content: lines.join('\r\n'), filas: rows.length });
 }
 
-// POST /api/conciliacion/ibs { fecha: yyyy-MM-dd, contenido?: <CSV del
-// extracto de IBS> } — cruza las altas de Plazo Fijo de ese día contra el
-// extracto de IBS (ver conciliacionIbs.js) y devuelve resumen, totales y
-// diferencias para el panel "Conciliación con IBS". Sin "contenido", el
-// extracto se consulta directo en Sybase (buildIbsAltasPfQuery).
+// POST /api/conciliacion/ibs { fecha: yyyy-MM-dd, tipo?: 'altas' | 'pagos',
+// contenido?: <CSV del extracto de IBS> } — cruza las altas (o los pagos) de
+// Plazo Fijo de ese día contra los movimientos de IBS (ver conciliacionIbs.js)
+// y devuelve resumen, totales y diferencias para el panel "Conciliación con
+// IBS". Sin "contenido", los movimientos se consultan directo en Sybase.
+// Para "pagos", la fecha es la de proceso bancaria (= vencimiento de los PF
+// que se pagan ese día, ver conciliarPagosPf).
 async function handleConciliacionIbsPost(req, res, session) {
   const payload = await readJsonBody(req);
   const fecha = String(payload.fecha || '');
@@ -1053,19 +1055,31 @@ async function handleConciliacionIbsPost(req, res, session) {
     writeJsonResponse(res, 400, { error: 'Fecha inválida (formato yyyy-MM-dd).' });
     return;
   }
+  const tipo = payload.tipo === 'pagos' ? 'pagos' : 'altas';
   const contenido = String(payload.contenido || '');
+  const parametria = await parametriaStore.getParametria(rootDir);
+
+  let pagoConfig = null;
+  if (tipo === 'pagos') {
+    try {
+      pagoConfig = conciliacionIbs.getPagoPfConfig(parametria);
+    } catch (err) {
+      writeJsonResponse(res, err.statusCode || 500, { error: err.message });
+      return;
+    }
+  }
 
   let ibsLines;
   let origen;
   if (contenido.trim()) {
-    ibsLines = parseCsvText(contenido.replace(/^﻿/, ''));
+    ibsLines = parseCsvText(contenido.replace(/^\uFEFF/, ''));
     origen = 'archivo';
   } else {
-    const parametria = await parametriaStore.getParametria(rootDir);
     try {
-      ibsLines = conciliacionIbs.ibsRowsToLines(
-        await sybaseClient.querySybase(parametria.sybase, conciliacionIbs.buildIbsAltasPfQuery(fecha))
-      );
+      const query = tipo === 'pagos'
+        ? conciliacionIbs.buildIbsPagosPfQuery(fecha, pagoConfig)
+        : conciliacionIbs.buildIbsAltasPfQuery(fecha);
+      ibsLines = conciliacionIbs.ibsRowsToLines(await sybaseClient.querySybase(parametria.sybase, query));
     } catch (err) {
       writeJsonResponse(res, 502, { error: `No se pudo consultar IBS (Sybase): ${err.message}` });
       return;
@@ -1073,10 +1087,16 @@ async function handleConciliacionIbsPost(req, res, session) {
     origen = 'consulta directa a IBS';
   }
 
-  const altas = await processedOperationsStore.getAltasDelDia(rootDir, fecha);
   let resultado;
   try {
-    resultado = { ...conciliacionIbs.conciliarAltasPf(altas, ibsLines, fecha), origen };
+    if (tipo === 'pagos') {
+      const operaciones = await processedOperationsStore.getOperacionesPorVencimiento(rootDir, formatDMY(fecha));
+      resultado = conciliacionIbs.conciliarPagosPf(operaciones, ibsLines, fecha, pagoConfig);
+    } else {
+      const altas = await processedOperationsStore.getAltasDelDia(rootDir, fecha);
+      resultado = conciliacionIbs.conciliarAltasPf(altas, ibsLines, fecha);
+    }
+    resultado.origen = origen;
   } catch (err) {
     if (err.statusCode === 400) {
       writeJsonResponse(res, 400, { error: err.message });
@@ -1085,11 +1105,20 @@ async function handleConciliacionIbsPost(req, res, session) {
     throw err;
   }
   const r = resultado.resumen;
+  const detalle = tipo === 'pagos'
+    ? `${r.pagosOk}/${r.pagadosApicore} pagos OK, ${r.pagosConDiferencias} con diferencias, ${r.pagadosEnIbsNoApicore} pagados en IBS sin marcar, ${r.soloEnIbs} solo en IBS`
+    : `${r.altasOk}/${r.altasApicore} OK, ${r.altasConDiferencias} con diferencias, ${r.soloEnIbs} solo en IBS`;
   securityStore.writeSecurityLog(
     logsDir,
-    `CONCILIACION IBS altas PF ${fecha} (${origen}) por '${session.username}': ${r.altasOk}/${r.altasApicore} OK, ${r.altasConDiferencias} con diferencias, ${r.soloEnIbs} solo en IBS`
+    `CONCILIACION IBS ${tipo} PF ${fecha} (${origen}) por '${session.username}': ${detalle}`
   );
   writeJsonResponse(res, 200, resultado);
+}
+
+// yyyy-MM-dd -> dd/MM/yyyy (formato en que operaciones_procesadas guarda fecha_vencimiento).
+function formatDMY(fechaISO) {
+  const [y, m, d] = fechaISO.split('-');
+  return `${d}/${m}/${y}`;
 }
 
 function handleOutputFileContentGet(parsedUrl, res, session) {

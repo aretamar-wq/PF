@@ -202,6 +202,23 @@ async function getAltasDelDia(rootDir, fecha) {
   );
 }
 
+// Para la conciliación con IBS de pagos de plazo fijo: TODAS las operaciones
+// que vencen en una fecha de proceso (dd/mm/yyyy, el mismo texto que guarda
+// fecha_vencimiento, ver findOperationsToPay), pagadas o no — hace falta ver
+// también las no pagadas para detectar un pago hecho en IBS que ApiCore no
+// marcó. Usa el índice (fecha_vencimiento, tipo_circuito, pf_pagado).
+async function getOperacionesPorVencimiento(rootDir, fechaDMY) {
+  return db.query(
+    rootDir,
+    `SELECT cuit, apellido_nombre, numero_comprobante, operacion, tipo_circuito,
+            caja_ahorro, importe_neto, pf_pagado
+     FROM operaciones_procesadas
+     WHERE fecha_vencimiento = ?
+     ORDER BY CAST(numero_comprobante AS UNSIGNED), id`,
+    [fechaDMY]
+  );
+}
+
 // Para el archivo de conciliación diaria de pagos de plazo fijo: los
 // marcados como pagados ese día (fecha local yyyy-MM-dd de pf_pagado_en).
 async function getPagosDelDia(rootDir, fecha) {
@@ -224,4 +241,5 @@ module.exports = {
   markOperationsPaid,
   getAltasDelDia,
   getPagosDelDia,
+  getOperacionesPorVencimiento,
 };
