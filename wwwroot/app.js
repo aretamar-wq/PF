@@ -2004,7 +2004,7 @@ async function confirmarPagoPlazoFijos() {
       circuito: '0',
     };
     if (allOk) {
-      const paidOperation = { cuit: row.cuit, numeroComprobante: row.numeroComprobante };
+      const paidOperation = { cuit: row.cuit, numeroComprobante: row.numeroComprobante, idMensaje: rowIdMensaje };
       paidOperations.push(paidOperation);
       okRows.push(pagoRow);
       // Marcar pf_pagado ACÁ, fila por fila, no solo en el bloque final de
@@ -2899,6 +2899,7 @@ async function downloadConciliacion(tipo) {
 
 document.getElementById('conciliacionTransferenciasBtn').addEventListener('click', () => downloadConciliacion('transferencias'));
 document.getElementById('conciliacionPlazosFijosBtn').addEventListener('click', () => downloadConciliacion('plazos-fijos'));
+document.getElementById('conciliacionPagosPlazosFijosBtn').addEventListener('click', () => downloadConciliacion('pagos-plazos-fijos'));
 
 async function openOutputFilesSection() {
   // Por default Desde/Hasta quedan en el día de hoy (rango de un solo día) —
