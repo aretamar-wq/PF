@@ -347,7 +347,10 @@ columnas):
   Circuito de esa fila) y
   `pf_pagado` (flag binario de si el plazo fijo se pagó — arranca siempre
   en 0 al registrar la operación; el flow "Pago de Plazo Fijos" es el
-  "proceso posterior" que lo pasa a 1, ver más abajo) — vacíos/en 0 para
+  "proceso posterior" que lo pasa a 1, ver más abajo), junto con
+  `pf_pagado_en`/`pf_pagado_por`/`pf_pago_id_mensaje` (cuándo, quién y con
+  qué IdMensaje se pagó — para la conciliación diaria de pagos; vacíos en
+  los pagados antes de existir estas columnas) — vacíos/en 0 para
   cualquier otro flow que use esta tabla. Tiene un índice
   `(fecha_vencimiento, tipo_circuito, pf_pagado)` para que la búsqueda de
   "Pago de Plazo Fijos" no sea un full scan.
@@ -1173,9 +1176,9 @@ igual en los dos backends:
 #### Conciliación diaria
 
 Arriba de la lista de corridas, el bloque **"Conciliación diaria"** baja
-dos archivos de un día (fecha elegida, hoy por defecto) para conciliar
+tres archivos de un día (fecha elegida, hoy por defecto) para conciliar
 contra el core, vía
-`GET /api/conciliacion?tipo=transferencias|plazos-fijos&fecha=yyyy-MM-dd`
+`GET /api/conciliacion?tipo=transferencias|plazos-fijos|pagos-plazos-fijos&fecha=yyyy-MM-dd`
 (devuelve `{ name, content, filas }`, igual que
 `/api/output-files/content`; queda en `logs/security.log` quién lo bajó).
 No se guardan en `files/`: se arman en el momento.
@@ -1200,7 +1203,20 @@ No se guardan en `files/`: se arman en el momento.
   por duplicado). Columnas: `fecha, idMensaje, cuit, apellidoNombre,
   numeroComprobante, circuito, monto, plazo, cajaAhorro, operacion,
   importeNeto, tna, fechaVencimiento, realizado, motivo, usuario`. No
-  incluye pagos de Plazo Fijo.
+  incluye pagos de Plazo Fijo (ver el archivo siguiente).
+- **`conciliacion-pagos-plazos-fijos-<fecha>.csv`** — pagos de "Pago de
+  Plazo Fijos" del día: los marcados como pagados ese día en
+  `operaciones_procesadas` (`pf_pagado_en`, `realizado` = `SI`; se marcan
+  fila por fila, así que están aunque la corrida se haya cortado), más del
+  archivo OK de cada corrida los de circuito 1 (`realizado` = `NO`,
+  `motivo` = sin movimiento bancario) y los pagados que no estén en la base
+  (pagos de antes de existir `pf_pagado_en`), más del archivo de error los
+  fallidos (`realizado` = `NO`, con `motivo`). Sin repetir por `idMensaje`
+  (el IdMensaje del débito/crédito del pago en el core). Columnas: `fecha,
+  idMensaje, cuit, apellidoNombre, numeroComprobante, operacion, circuito,
+  importe, cajaAhorro, fechaVencimiento, realizado, motivo, usuario`.
+  `operacion` (número de operación del Plazo Fijo) solo viene en las filas
+  que salen de la base.
 
 Las filas fallidas salen de `files/<runId>-error.csv` de las corridas cuyo
 log se modificó ese día (mismo criterio que el Dashboard), incluidas las

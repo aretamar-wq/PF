@@ -748,6 +748,7 @@ function handleDashboardGet(parsedUrl, res) {
 const CONCILIACION_RUN_ID_SUFFIXES = {
   'Alta de Plazo Fijos - File': 'Alta-PF',
   'Transferencia DEBIN - File': 'transferencia-debin-file',
+  'Pago de Plazo Fijos': 'Pago-PF',
 };
 
 function csvEscape(value) {
@@ -755,10 +756,10 @@ function csvEscape(value) {
   return /[",\r\n]/.test(str) ? '"' + str.replace(/"/g, '""') + '"' : str;
 }
 
-// Filas de files/<runId>-error.csv de cada corrida de flowName terminada ese
-// día (mtime del log, mismo criterio que el Dashboard). Son la fila de
-// entrada tal cual + idMensaje + motivo, sin encabezado.
-function readErrorRowsDelDia(flowName, fecha) {
+// files/<runId><fileSuffix>.csv ('-error' o '' para el OK) de cada corrida
+// de flowName terminada ese día (mtime del log, mismo criterio que el
+// Dashboard), ya parseado en filas.
+function readRunFilesDelDia(flowName, fecha, fileSuffix) {
   const httpLogsDir = path.join(logsDir, HTTP_LOG_SUBDIR);
   if (!fs.existsSync(httpLogsDir)) return [];
   const runIdPattern = new RegExp(`^\\d{18}-${CONCILIACION_RUN_ID_SUFFIXES[flowName]}$`);
@@ -770,7 +771,7 @@ function readErrorRowsDelDia(flowName, fecha) {
     if (formatDateOnlyLocal(mtime) !== fecha) continue;
 
     const runId = name.replace(/\.log$/, '');
-    const errorPath = path.join(filesDir, `${runId}-error.csv`);
+    const errorPath = path.join(filesDir, `${runId}${fileSuffix}.csv`);
     if (!fs.existsSync(errorPath)) continue;
 
     let summary = null;
@@ -788,11 +789,31 @@ function readErrorRowsDelDia(flowName, fecha) {
     } catch (err) {
       continue;
     }
-    for (const cols of parseCsvText(content)) {
-      result.push({ fecha: formatLocal(mtime), usuario: summary ? summary.username : '', cols });
-    }
+    result.push({ fecha: formatLocal(mtime), usuario: summary ? summary.username : '', lines: parseCsvText(content) });
   }
   return result;
+}
+
+// Archivo de error sin encabezado ("Alta de Plazo Fijos - File" y
+// "Transferencia DEBIN - File"): la fila de entrada tal cual + idMensaje + motivo.
+function readErrorRowsDelDia(flowName, fecha) {
+  return readRunFilesDelDia(flowName, fecha, '-error').flatMap(({ fecha: fechaCorrida, usuario, lines }) =>
+    lines.map((cols) => ({ fecha: fechaCorrida, usuario, cols }))
+  );
+}
+
+// Archivo con encabezado ("Pago de Plazo Fijos", OK y error): cada fila como
+// objeto por nombre de columna (archivos viejos pueden no tener "circuito").
+function readRunRecordsDelDia(flowName, fecha, fileSuffix) {
+  return readRunFilesDelDia(flowName, fecha, fileSuffix).flatMap(({ fecha: fechaCorrida, usuario, lines }) => {
+    const [header, ...data] = lines;
+    if (!header) return [];
+    return data.map((cols) => {
+      const record = {};
+      header.forEach((col, i) => (record[col] = cols[i] != null ? cols[i] : ''));
+      return { fecha: fechaCorrida, usuario, record };
+    });
+  });
 }
 
 const CONCILIACION_TRANSFERENCIAS_HEADERS = [
@@ -920,7 +941,72 @@ async function buildConciliacionPlazosFijos(fecha) {
   return rows;
 }
 
-// GET /api/conciliacion?tipo=transferencias|plazos-fijos&fecha=yyyy-MM-dd —
+const CONCILIACION_PAGOS_PLAZOS_FIJOS_HEADERS = [
+  'fecha', 'idMensaje', 'cuit', 'apellidoNombre', 'numeroComprobante', 'operacion', 'circuito',
+  'importe', 'cajaAhorro', 'fechaVencimiento', 'realizado', 'motivo', 'usuario',
+];
+
+// Pagos del día de "Pago de Plazo Fijos":
+// - realizados (SI): los marcados como pagados ese día en
+//   operaciones_procesadas (pf_pagado_en) — se marcan fila por fila, así que
+//   están aunque la corrida se haya cortado;
+// - del archivo OK de cada corrida: los de circuito 1 (NO: listados sin
+//   movimiento bancario) y los pagados que no estén en la base (pagos de
+//   antes de existir pf_pagado_en);
+// - del archivo de error de cada corrida: los fallidos (NO, con motivo).
+// Sin repetir por idMensaje.
+async function buildConciliacionPagosPlazosFijos(fecha) {
+  const dbRows = await processedOperationsStore.getPagosDelDia(rootDir, fecha);
+  const rows = dbRows.map((r) => ({
+    fecha: r.pf_pagado_en,
+    idMensaje: r.pf_pago_id_mensaje,
+    cuit: r.cuit,
+    apellidoNombre: r.apellido_nombre,
+    numeroComprobante: r.numero_comprobante,
+    operacion: r.operacion,
+    circuito: r.tipo_circuito,
+    importe: r.importe_neto,
+    cajaAhorro: r.caja_ahorro,
+    fechaVencimiento: r.fecha_vencimiento,
+    realizado: 'SI',
+    motivo: '',
+    usuario: r.pf_pagado_por,
+  }));
+
+  const idMensajesVistos = new Set(rows.map((r) => r.idMensaje).filter(Boolean));
+  const fromFile = (fechaCorrida, usuario, record, realizado, motivo) => ({
+    fecha: fechaCorrida,
+    idMensaje: record.idMensaje || '',
+    cuit: record.cuit || '',
+    apellidoNombre: record.apellidoNombre || '',
+    numeroComprobante: record.numeroComprobante || '',
+    operacion: '',
+    circuito: record.circuito || '',
+    importe: record.importe || '',
+    cajaAhorro: record.cajaAhorro || '',
+    fechaVencimiento: record.fechaVencimiento || '',
+    realizado,
+    motivo,
+    usuario,
+  });
+
+  for (const { fecha: fechaCorrida, usuario, record } of readRunRecordsDelDia('Pago de Plazo Fijos', fecha, '')) {
+    if (record.idMensaje && idMensajesVistos.has(record.idMensaje)) continue;
+    idMensajesVistos.add(record.idMensaje);
+    rows.push(
+      record.circuito === '1'
+        ? fromFile(fechaCorrida, usuario, record, 'NO', 'Circuito 1: sin movimiento bancario (solo constancia)')
+        : fromFile(fechaCorrida, usuario, record, 'SI', '')
+    );
+  }
+  for (const { fecha: fechaCorrida, usuario, record } of readRunRecordsDelDia('Pago de Plazo Fijos', fecha, '-error')) {
+    if (record.idMensaje && idMensajesVistos.has(record.idMensaje)) continue;
+    rows.push(fromFile(fechaCorrida, usuario, record, 'NO', record.motivo || ''));
+  }
+  return rows;
+}
+
+// GET /api/conciliacion?tipo=transferencias|plazos-fijos|pagos-plazos-fijos&fecha=yyyy-MM-dd —
 // archivo diario para conciliar contra el core, con realizado SI/NO por fila.
 async function handleConciliacionGet(parsedUrl, res, session) {
   const tipo = parsedUrl.searchParams.get('tipo') || '';
@@ -937,8 +1023,11 @@ async function handleConciliacionGet(parsedUrl, res, session) {
   } else if (tipo === 'plazos-fijos') {
     headers = CONCILIACION_PLAZOS_FIJOS_HEADERS;
     rows = await buildConciliacionPlazosFijos(fecha);
+  } else if (tipo === 'pagos-plazos-fijos') {
+    headers = CONCILIACION_PAGOS_PLAZOS_FIJOS_HEADERS;
+    rows = await buildConciliacionPagosPlazosFijos(fecha);
   } else {
-    writeJsonResponse(res, 400, { error: 'Tipo inválido (transferencias o plazos-fijos).' });
+    writeJsonResponse(res, 400, { error: 'Tipo inválido (transferencias, plazos-fijos o pagos-plazos-fijos).' });
     return;
   }
 
@@ -1221,9 +1310,10 @@ async function handlePlazosFijosPagadosPost(req, res, session) {
   const operations = (payload.operations || []).map((op) => ({
     cuit: String(op.cuit),
     numeroComprobante: String(op.numeroComprobante),
+    idMensaje: op.idMensaje != null ? String(op.idMensaje) : '',
   }));
   if (operations.length > 0) {
-    await processedOperationsStore.markOperationsPaid(rootDir, operations);
+    await processedOperationsStore.markOperationsPaid(rootDir, operations, session.username);
     securityStore.writeSecurityLog(logsDir, `PLAZOS FIJOS MARCADOS COMO PAGADOS: ${operations.length} por '${session.username}'`);
   }
   writeJsonResponse(res, 200, { ok: true, marked: operations.length });

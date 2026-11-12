@@ -145,9 +145,10 @@ async function findOperationsToPay(rootDir, today = formatDateOnlyDMY()) {
 // (ver runPagoPlazoFijos en wwwroot/app.js). Mismo patrón transaccional que
 // addProcessedOperations: si una fila falla, se revierten todas — no tiene
 // sentido dejar la lista de pagos a medio marcar.
-async function markOperationsPaid(rootDir, operations) {
+async function markOperationsPaid(rootDir, operations, username) {
   if (!operations || operations.length === 0) return;
 
+  const now = formatLocal();
   const pool = db.getPool(rootDir);
   const connection = await pool.getConnection();
   try {
@@ -157,6 +158,24 @@ async function markOperationsPaid(rootDir, operations) {
         `UPDATE operaciones_procesadas SET pf_pagado = 1 WHERE cuit = ? AND numero_comprobante = ?`,
         [String(op.cuit), String(op.numeroComprobante)]
       );
+      // Se llama 2 veces por pago (fila por fila y de nuevo al final del
+      // archivo): COALESCE/IF conservan los datos del primer llamado, que es
+      // cuándo se pagó de verdad. En un UPDATE aparte del de pf_pagado: si
+      // falta correr la migración de estas columnas, el pago igual queda
+      // marcado (lo que evita pagarlo de nuevo) — solo se pierde el dato
+      // para la conciliación.
+      try {
+        await connection.query(
+          `UPDATE operaciones_procesadas SET
+             pf_pagado_en = COALESCE(pf_pagado_en, ?),
+             pf_pagado_por = IF(pf_pagado_por = '', ?, pf_pagado_por),
+             pf_pago_id_mensaje = IF(pf_pago_id_mensaje = '', ?, pf_pago_id_mensaje)
+           WHERE cuit = ? AND numero_comprobante = ?`,
+          [now, String(username || ''), String(op.idMensaje || ''), String(op.cuit), String(op.numeroComprobante)]
+        );
+      } catch (err) {
+        if (err.code !== 'ER_BAD_FIELD_ERROR') throw err;
+      }
     }
     await connection.commit();
   } catch (err) {
@@ -183,6 +202,20 @@ async function getAltasDelDia(rootDir, fecha) {
   );
 }
 
+// Para el archivo de conciliación diaria de pagos de plazo fijo: los
+// marcados como pagados ese día (fecha local yyyy-MM-dd de pf_pagado_en).
+async function getPagosDelDia(rootDir, fecha) {
+  return db.query(
+    rootDir,
+    `SELECT pf_pagado_en, pf_pagado_por, pf_pago_id_mensaje, cuit, apellido_nombre, numero_comprobante,
+            operacion, tipo_circuito, importe_neto, caja_ahorro, fecha_vencimiento
+     FROM operaciones_procesadas
+     WHERE pf_pagado = 1 AND DATE(pf_pagado_en) = ?
+     ORDER BY pf_pagado_en, id`,
+    [fecha]
+  );
+}
+
 module.exports = {
   getProcessedOperations,
   findDuplicateOperations,
@@ -190,4 +223,5 @@ module.exports = {
   findOperationsToPay,
   markOperationsPaid,
   getAltasDelDia,
+  getPagosDelDia,
 };

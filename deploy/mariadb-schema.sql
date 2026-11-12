@@ -242,6 +242,12 @@ ALTER TABLE operaciones_procesadas ADD COLUMN IF NOT EXISTS monto VARCHAR(50) NO
 ALTER TABLE operaciones_procesadas ADD COLUMN IF NOT EXISTS plazo VARCHAR(10) NOT NULL DEFAULT '';
 ALTER TABLE operaciones_procesadas ADD COLUMN IF NOT EXISTS operacion VARCHAR(50) NOT NULL DEFAULT '';
 ALTER TABLE operaciones_procesadas ADD COLUMN IF NOT EXISTS tna VARCHAR(50) NOT NULL DEFAULT '';
+-- Cuándo, quién y con qué IdMensaje se pagó el plazo fijo ("Pago de Plazo
+-- Fijos", ver markOperationsPaid) — para la conciliación diaria de pagos.
+-- NULL/vacío en los pagados antes de existir estas columnas.
+ALTER TABLE operaciones_procesadas ADD COLUMN IF NOT EXISTS pf_pagado_en DATETIME NULL;
+ALTER TABLE operaciones_procesadas ADD COLUMN IF NOT EXISTS pf_pagado_por VARCHAR(255) NOT NULL DEFAULT '';
+ALTER TABLE operaciones_procesadas ADD COLUMN IF NOT EXISTS pf_pago_id_mensaje VARCHAR(100) NOT NULL DEFAULT '';
 
 -- Índice para el flow "Pago de Plazo Fijos" (findOperationsToPay en
 -- processedOperationsStore.js): busca por fecha_vencimiento + tipo_circuito
