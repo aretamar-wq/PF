@@ -142,7 +142,7 @@ function isCsvFlow(flow) {
 // de flows) se muestran de una a la vez: mostrar una implica ocultar el
 // resto. Ningún panel (perfil, parametría, usuarios, archivos de salida) se
 // abre como <dialog> flotante, todos reemplazan el contenido de esta área.
-const MAIN_SECTION_IDS = ['flowDetail', 'outputFilesSection', 'dashboardSection', 'profileSection', 'parametriaSection', 'usersSection'];
+const MAIN_SECTION_IDS = ['flowDetail', 'outputFilesSection', 'dashboardSection', 'conciliacionIbsSection', 'profileSection', 'parametriaSection', 'usersSection'];
 
 function showMainSection(id) {
   for (const sectionId of MAIN_SECTION_IDS) {
@@ -3105,6 +3105,175 @@ document.getElementById('clearDashboardFilterBtn').addEventListener('click', () 
 dashboardFromDate.addEventListener('change', loadDashboard);
 dashboardToDate.addEventListener('change', loadDashboard);
 dashboardErrorFlowFilter.addEventListener('change', applyDashboardErrorFilter);
+
+// --- Conciliación con IBS (altas de Plazo Fijo) ------------------------------
+// El cruce lo hace el servidor (POST /api/conciliacion/ibs, ver
+// node/lib/conciliacionIbs.js); acá solo se lee el archivo y se muestra el
+// resultado.
+
+const conciliacionIbsFecha = document.getElementById('conciliacionIbsFecha');
+const conciliacionIbsFile = document.getElementById('conciliacionIbsFile');
+const conciliacionIbsTipoFilter = document.getElementById('conciliacionIbsTipoFilter');
+let lastConciliacionIbs = null;
+
+function formatImporte(value) {
+  return Number(value || 0).toLocaleString('es-AR', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+}
+
+function renderConciliacionIbsTiles(resumen) {
+  const tile = (label, value, cls) => `
+    <div class="dashboard-tile ${cls || ''}">
+      <div class="dashboard-tile-label">${escapeHtml(label)}</div>
+      <div class="dashboard-tile-value">${escapeHtml(String(value))}</div>
+    </div>`;
+  document.getElementById('conciliacionIbsTiles').innerHTML =
+    tile('Altas en ApiCore', resumen.altasApicore) +
+    tile('Movimientos en IBS', resumen.movimientosIbs) +
+    tile('Altas conciliadas OK', resumen.altasOk, 'ok') +
+    tile('Altas con diferencias', resumen.altasConDiferencias, resumen.altasConDiferencias > 0 ? 'error' : 'ok') +
+    tile('Movimientos solo en IBS', resumen.soloEnIbs, resumen.soloEnIbs > 0 ? 'error' : 'ok');
+}
+
+function renderConciliacionIbsTotales(totales) {
+  const tbody = document.querySelector('#conciliacionIbsTotales tbody');
+  tbody.innerHTML = '';
+  for (const t of totales) {
+    const difImporte = Math.round((t.ibs.importe - t.apicore.importe) * 100) / 100;
+    const difCantidad = t.ibs.cantidad - t.apicore.cantidad;
+    const cuadra = difImporte === 0 && difCantidad === 0;
+    const tr = document.createElement('tr');
+    tr.innerHTML = `
+      <td>${escapeHtml(t.concepto)}</td>
+      <td class="num">${t.apicore.cantidad} · $ ${formatImporte(t.apicore.importe)}</td>
+      <td class="num">${t.ibs.cantidad} · $ ${formatImporte(t.ibs.importe)}</td>
+      <td class="num">${cuadra ? '—' : `${difCantidad > 0 ? '+' : ''}${difCantidad} · $ ${formatImporte(difImporte)}`}</td>
+      <td class="${cuadra ? 'conciliacion-check-ok' : 'conciliacion-check-error'}">${cuadra ? '✓' : '✗'}</td>
+    `;
+    tbody.appendChild(tr);
+  }
+}
+
+function applyConciliacionIbsFilter() {
+  if (!lastConciliacionIbs) return;
+  const tipo = conciliacionIbsTipoFilter.value;
+  const filas = tipo ? lastConciliacionIbs.diferencias.filter((d) => d.tipo === tipo) : lastConciliacionIbs.diferencias;
+  const tbody = document.querySelector('#conciliacionIbsDiferencias tbody');
+  tbody.innerHTML = '';
+  for (const d of filas) {
+    const tr = document.createElement('tr');
+    tr.innerHTML = `
+      <td><span class="dashboard-motivo-pill">${escapeHtml(d.tipo)}</span></td>
+      <td class="mono">${escapeHtml(d.numeroComprobante || '—')}</td>
+      <td class="mono">${escapeHtml(d.operacion || '—')}</td>
+      <td>${escapeHtml(d.circuito || '—')}</td>
+      <td class="mono">${escapeHtml(d.cuit || '—')}</td>
+      <td class="titular">${escapeHtml(d.apellidoNombre || '—')}</td>
+      <td class="mono">${escapeHtml(d.cajaAhorro || '—')}</td>
+      <td class="num">$ ${formatImporte(d.importe)}</td>
+      <td class="detalle">${escapeHtml(d.detalle)}</td>
+    `;
+    tbody.appendChild(tr);
+  }
+  const sinDiferencias = lastConciliacionIbs.diferencias.length === 0;
+  document.getElementById('conciliacionIbsSinDiferencias').style.display = sinDiferencias ? '' : 'none';
+  document.getElementById('conciliacionIbsDiferencias').style.display = sinDiferencias ? 'none' : '';
+}
+
+function renderConciliacionIbs(data) {
+  lastConciliacionIbs = data;
+  const r = data.resumen;
+  const conDiferencias = data.diferencias.length > 0;
+
+  const estado = document.getElementById('conciliacionIbsEstado');
+  estado.className = 'conciliacion-estado ' + (conDiferencias ? 'error' : 'ok');
+  estado.textContent = conDiferencias
+    ? `Hay diferencias: ${r.altasConDiferencias} alta(s) de ApiCore con diferencias y ${r.soloEnIbs} movimiento(s) de IBS sin su alta en ApiCore.`
+    : `Concilia: las ${r.altasApicore} altas de ApiCore (${r.altasCircuito0} de circuito 0, ${r.altasCircuito1} de circuito 1) están en IBS con la misma cuenta e importe.`;
+
+  const aviso = document.getElementById('conciliacionIbsAviso');
+  const avisos = [];
+  if (r.altasApicore === 0) avisos.push('ApiCore no tiene altas registradas en esa fecha: revisá que la fecha elegida sea la del extracto.');
+  if (r.filasOtraFecha > 0) avisos.push(`Se ignoraron ${r.filasOtraFecha} movimiento(s) del extracto con una fecha distinta a la elegida.`);
+  aviso.textContent = avisos.join(' ');
+  aviso.style.display = avisos.length ? '' : 'none';
+
+  renderConciliacionIbsTiles(r);
+  renderConciliacionIbsTotales(data.totales);
+
+  const tipos = [...new Set(data.diferencias.map((d) => d.tipo))].sort();
+  conciliacionIbsTipoFilter.innerHTML = '<option value="">Todas</option>';
+  for (const tipo of tipos) {
+    const count = data.diferencias.filter((d) => d.tipo === tipo).length;
+    const option = document.createElement('option');
+    option.value = tipo;
+    option.textContent = `${tipo} (${count})`;
+    conciliacionIbsTipoFilter.appendChild(option);
+  }
+  applyConciliacionIbsFilter();
+
+  const otrosBox = document.getElementById('conciliacionIbsOtrosCanalesBox');
+  if (r.otrosCanales > 0) {
+    const cuentas = [...new Set(data.otrosCanales.map((o) => o.cuecod))].join(', ');
+    document.getElementById('conciliacionIbsOtrosCanalesTexto').textContent =
+      `${r.otrosCanales} alta(s) de PF por $ ${formatImporte(r.otrosCanalesImporte)} debitadas de Cuenta Corriente (${cuentas}): ` +
+      'ApiCore no da de alta PF desde una Cuenta Corriente, así que no se concilian acá.';
+    otrosBox.style.display = '';
+  } else {
+    otrosBox.style.display = 'none';
+  }
+
+  document.getElementById('conciliacionIbsResultado').style.display = '';
+  document.getElementById('conciliacionIbsDownloadBtn').disabled = !conDiferencias;
+}
+
+async function runConciliacionIbs() {
+  if (!conciliacionIbsFecha.value) {
+    alert('Elegí la fecha del extracto.');
+    return;
+  }
+  const file = conciliacionIbsFile.files[0];
+  if (!file) {
+    alert('Elegí el archivo del extracto de IBS.');
+    return;
+  }
+  const btn = document.getElementById('conciliacionIbsRunBtn');
+  btn.disabled = true;
+  try {
+    const contenido = await file.text();
+    const res = await apiFetch('/api/conciliacion/ibs', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ fecha: conciliacionIbsFecha.value, contenido }),
+    });
+    const data = await res.json();
+    if (!res.ok) {
+      alert(data.error || 'No se pudo conciliar.');
+      return;
+    }
+    renderConciliacionIbs(data);
+  } finally {
+    btn.disabled = false;
+  }
+}
+
+function downloadConciliacionIbsDiferencias() {
+  if (!lastConciliacionIbs) return;
+  const headers = ['tipo', 'numeroComprobante', 'operacion', 'circuito', 'cuit', 'apellidoNombre', 'cajaAhorro', 'importe', 'detalle'];
+  const lines = [headers.join(',')];
+  for (const d of lastConciliacionIbs.diferencias) lines.push(headers.map((h) => csvEscape(d[h])).join(','));
+  downloadTextFile(`conciliacion-ibs-altas-pf-${lastConciliacionIbs.fecha}-diferencias.csv`, lines.join('\r\n'), 'text/csv');
+}
+
+function openConciliacionIbsSection() {
+  if (!conciliacionIbsFecha.value) conciliacionIbsFecha.value = formatDateOnlyLocal(new Date());
+  showMainSection('conciliacionIbsSection');
+}
+
+document.getElementById('conciliacionIbsBtn').addEventListener('click', openConciliacionIbsSection);
+document.getElementById('closeConciliacionIbsBtn').addEventListener('click', () => showMainSection('flowDetail'));
+document.getElementById('conciliacionIbsRunBtn').addEventListener('click', runConciliacionIbs);
+document.getElementById('conciliacionIbsDownloadBtn').addEventListener('click', downloadConciliacionIbsDiferencias);
+conciliacionIbsTipoFilter.addEventListener('change', applyConciliacionIbsFilter);
 
 // --- Login / logout ---------------------------------------------------------
 
