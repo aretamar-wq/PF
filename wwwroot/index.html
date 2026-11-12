@@ -44,6 +44,7 @@
             <li><button type="button" id="usersBtn" style="display: none;">Usuarios</button></li>
             <li><button type="button" id="outputFilesBtn">Archivos de salida</button></li>
             <li><button type="button" id="dashboardBtn">Dashboard</button></li>
+            <li><button type="button" id="conciliacionIbsBtn">Conciliación con IBS</button></li>
             <li><button type="button" id="logoutBtn">Cerrar sesión</button></li>
           </ul>
         </div>
@@ -141,6 +142,62 @@
           </thead>
           <tbody id="outputFilesTableBody"></tbody>
         </table>
+      </section>
+
+      <section id="conciliacionIbsSection" style="display: none;">
+        <div class="section-head">
+          <h2>Conciliación con IBS — Altas de Plazo Fijo</h2>
+          <button type="button" id="closeConciliacionIbsBtn">Volver a flows</button>
+        </div>
+        <p class="muted">
+          Cruza las altas de Plazo Fijo registradas en ApiCore ese día contra el extracto de movimientos de IBS
+          (sistcod, moncod, cuecod, Fecha_Mov, comnro, movcod, signo, accimp, Importe). Circuito 0: débito en Cuenta
+          Corriente (25020) y crédito en Caja de Ahorro (25021) por número de comprobante, y alta del PF (152) por
+          número de operación. Circuito 1: solo el 152.
+        </p>
+        <div class="actions">
+          <label>Fecha <input type="date" id="conciliacionIbsFecha" /></label>
+          <label>Extracto de IBS <input type="file" id="conciliacionIbsFile" accept=".csv,text/csv" /></label>
+          <button type="button" id="conciliacionIbsRunBtn">Conciliar</button>
+          <span class="spacer"></span>
+          <button type="button" id="conciliacionIbsDownloadBtn" disabled>Descargar diferencias (CSV)</button>
+        </div>
+        <div id="conciliacionIbsResultado" style="display: none;">
+          <p id="conciliacionIbsEstado" class="conciliacion-estado"></p>
+          <p id="conciliacionIbsAviso" class="conciliacion-aviso" style="display: none;"></p>
+          <div id="conciliacionIbsTiles" class="dashboard-tiles"></div>
+
+          <h3>Totales</h3>
+          <table id="conciliacionIbsTotales">
+            <thead>
+              <tr><th>Concepto</th><th>ApiCore</th><th>IBS</th><th>Diferencia</th><th></th></tr>
+            </thead>
+            <tbody></tbody>
+          </table>
+
+          <h3>Diferencias</h3>
+          <div class="actions">
+            <label>Tipo
+              <select id="conciliacionIbsTipoFilter">
+                <option value="">Todas</option>
+              </select>
+            </label>
+          </div>
+          <p id="conciliacionIbsSinDiferencias" class="muted" style="display: none;">Sin diferencias: todas las altas de ApiCore están en IBS con la misma cuenta e importe, y no hay movimientos de IBS sin su alta en ApiCore.</p>
+          <div class="conciliacion-table-wrap">
+            <table id="conciliacionIbsDiferencias">
+              <thead>
+                <tr><th>Tipo</th><th>Comprobante</th><th>Operación</th><th>Circ.</th><th>CUIT</th><th>Titular</th><th>Caja de Ahorro</th><th>Importe</th><th>Detalle</th></tr>
+              </thead>
+              <tbody></tbody>
+            </table>
+          </div>
+
+          <div id="conciliacionIbsOtrosCanalesBox" style="display: none;">
+            <h3>Altas de PF de otros canales (informativo)</h3>
+            <p id="conciliacionIbsOtrosCanalesTexto" class="muted"></p>
+          </div>
+        </div>
       </section>
 
       <section id="dashboardSection" style="display: none;">

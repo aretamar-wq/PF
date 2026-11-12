@@ -24,6 +24,7 @@ const flowEngine = require('./lib/flowEngine');
 const securityStore = require('./lib/securityStore');
 const processedOperationsStore = require('./lib/processedOperationsStore');
 const debinOutputStore = require('./lib/debinOutputStore');
+const conciliacionIbs = require('./lib/conciliacionIbs');
 const sybaseClient = require('./lib/sybaseClient');
 const { convertDMYToISO, formatLocal } = require('./lib/dateUtil');
 
@@ -1040,6 +1041,42 @@ async function handleConciliacionGet(parsedUrl, res, session) {
   writeJsonResponse(res, 200, { name, content: lines.join('\r\n'), filas: rows.length });
 }
 
+// POST /api/conciliacion/ibs { fecha: yyyy-MM-dd, contenido: <CSV del
+// extracto de IBS> } — cruza las altas de Plazo Fijo de ese día contra el
+// extracto (ver conciliacionIbs.js) y devuelve resumen, totales y
+// diferencias para el panel "Conciliación con IBS".
+async function handleConciliacionIbsPost(req, res, session) {
+  const payload = await readJsonBody(req);
+  const fecha = String(payload.fecha || '');
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(fecha)) {
+    writeJsonResponse(res, 400, { error: 'Fecha inválida (formato yyyy-MM-dd).' });
+    return;
+  }
+  const contenido = String(payload.contenido || '');
+  if (!contenido.trim()) {
+    writeJsonResponse(res, 400, { error: 'El archivo de IBS está vacío.' });
+    return;
+  }
+
+  const altas = await processedOperationsStore.getAltasDelDia(rootDir, fecha);
+  let resultado;
+  try {
+    resultado = conciliacionIbs.conciliarAltasPf(altas, parseCsvText(contenido.replace(/^﻿/, '')), fecha);
+  } catch (err) {
+    if (err.statusCode === 400) {
+      writeJsonResponse(res, 400, { error: err.message });
+      return;
+    }
+    throw err;
+  }
+  const r = resultado.resumen;
+  securityStore.writeSecurityLog(
+    logsDir,
+    `CONCILIACION IBS altas PF ${fecha} por '${session.username}': ${r.altasOk}/${r.altasApicore} OK, ${r.altasConDiferencias} con diferencias, ${r.soloEnIbs} solo en IBS`
+  );
+  writeJsonResponse(res, 200, resultado);
+}
+
 function handleOutputFileContentGet(parsedUrl, res, session) {
   const name = parsedUrl.searchParams.get('name') || '';
   if (!OUTPUT_FILE_NAME_PATTERN.test(name)) {
@@ -1466,6 +1503,7 @@ async function handleRequest(req, res) {
     if (method === 'GET' && pathname === '/api/dashboard') return void handleDashboardGet(parsedUrl, res);
     if (method === 'GET' && pathname === '/api/output-files/content') return void handleOutputFileContentGet(parsedUrl, res, session);
     if (method === 'GET' && pathname === '/api/conciliacion') return void (await handleConciliacionGet(parsedUrl, res, session));
+    if (method === 'POST' && pathname === '/api/conciliacion/ibs') return void (await handleConciliacionIbsPost(req, res, session));
     if (method === 'GET' && pathname === '/api/http-logs/content') return void handleHttpLogContentGet(parsedUrl, res, session);
     if (method === 'GET' && pathname === '/api/certs-browse') return void handleCertsBrowseGet(parsedUrl, res, session);
     if (method === 'POST' && pathname === '/api/check-operations') return void (await handleCheckOperations(req, res, session));

@@ -288,6 +288,7 @@ node/
     securityStore.js          Usuarios/roles/config de AD — en MariaDB (ídem); login LDAP con ldapts, sesiones en memoria
     processedOperationsStore.js  Antiduplicado — en MariaDB (ídem)
     debinOutputStore.js       Registro en MariaDB (dbn_out/dbn_consulta) del contenido de dbnout-/dbnconsulta-...csv, ver "Archivos de salida (files/)"
+    conciliacionIbs.js        Cruce de altas de Plazo Fijo contra el extracto de IBS, ver "Conciliación con IBS"
 ```
 
 `jsonPath.js`, `variableSubstitution.js`, `flowStore.js`, `flowEngine.js` y
@@ -1408,6 +1409,39 @@ operaciones duplicadas"), pero no las filas que fallaron por otra cosa
 (CBU inválido, error de comunicación). Una transferencia de una corrida
 cortada antes de consultar su estado queda con `realizado` = `SI` y
 `errorConsulta` = `Consulta de estado pendiente`.
+
+### Conciliación con IBS (altas de Plazo Fijo)
+
+Panel **"Conciliación con IBS"** (menú): se elige la fecha y se sube el
+extracto de movimientos de IBS de ese día (CSV con encabezado
+`sistcod,moncod,cuecod,Fecha_Mov,comnro,movcod,signo,accimp,Importe`). El
+servidor (`POST /api/conciliacion/ibs` con `{ fecha, contenido }`,
+`node/lib/conciliacionIbs.js`) cruza las altas de `operaciones_procesadas`
+de ese día (`processed_at`) contra el extracto:
+
+- **Circuito 0:** tiene que estar el `25020` (débito en Cuenta Corriente) y
+  el `25021` (crédito en Caja de Ahorro, en `caja_ahorro`) con `comnro` =
+  `numero_comprobante`, y el `152` (alta del PF, en `caja_ahorro`) con
+  `comnro` = `operacion`. Los tres por `monto`.
+- **Circuito 1:** solo el `152`; un `25020`/`25021` de ese comprobante es
+  "Movimiento de más en IBS".
+- Lo que sobra del extracto es "Solo en IBS" (o "Repetido en IBS" si el
+  mismo `movcod`+`comnro` está más de una vez), salvo los `152` debitados
+  de una Cuenta Corriente (`sistcod` 3): ApiCore no da de alta PF así, se
+  muestran aparte como "otros canales" y no cuentan como diferencia.
+- Los movimientos del extracto con otra `Fecha_Mov` se ignoran (con aviso).
+
+Muestra el estado general (concilia / hay diferencias), indicadores (altas
+en ApiCore, movimientos en IBS, altas OK, altas con diferencias,
+movimientos solo en IBS), totales por concepto ApiCore vs IBS (cantidad e
+importe) y la tabla de diferencias (Falta en IBS, Importe distinto, Cuenta
+distinta, Movimiento de más en IBS, Solo en IBS, Repetido en IBS), con
+filtro por tipo y descarga en CSV. Queda en `logs/security.log` quién
+concilió y el resultado. No guarda nada en la base.
+
+Ojo: una alta que se hizo en el banco pero no quedó en
+`operaciones_procesadas` (corridas cortadas antes del registro fila por
+fila) aparece como "Solo en IBS".
 
 ### Prevención de operaciones duplicadas
 
