@@ -12,6 +12,10 @@
 // - La fecha y hora de la transferencia (ejecutado_en) sale del idMensaje
 //   (PFC + yyyyMMddHHmmss + ms); si no se puede leer, del nombre del archivo
 //   (ddMMyyyyHHmmss). ejecutado_por queda "importacion".
+// - Avisa (no frena) las transferencias realizadas que ya figuran realizadas
+//   en dbn_consulta o más de una vez en lo que se va a cargar (mismo CUIT de
+//   débito y comprobante): son envíos distintos, se cargan igual y la
+//   conciliación las va a marcar como "Enviada más de una vez".
 // - Dry-run por default: muestra qué cargaría. --apply para cargar de verdad.
 //
 // Uso (desde la carpeta node/):
@@ -50,6 +54,8 @@ async function main() {
   let totalNuevas = 0;
   let totalExistentes = 0;
   let totalSinId = 0;
+  const vistas = new Map(); // "cuit|comprobante" -> archivos/idMensaje de las realizadas a cargar
+  const repetidas = [];
 
   for (const archivo of archivos) {
     if (!/-consulta-debin-solo\.csv$/.test(archivo)) {
@@ -77,6 +83,12 @@ async function main() {
         ejecutadoPor: 'importacion',
       });
     }
+    for (const r of nuevas) {
+      if (String(r.realizado).trim() !== 's') continue;
+      const clave = `${String(r.debitoCuit || '').trim()}|${String(r.idComprobante || '').trim()}`;
+      if (vistas.has(clave)) repetidas.push({ clave, motivo: `repetida en lo que se carga (${vistas.get(clave)} y ${r.idMensaje})` });
+      else vistas.set(clave, r.idMensaje);
+    }
     const fechas = nuevas.map((r) => r.ejecutadoEn).filter(Boolean).sort();
     console.log(
       `${path.basename(archivo)}: ${records.length} fila(s), ${nuevas.length} nueva(s)` +
@@ -88,6 +100,18 @@ async function main() {
     totalNuevas += nuevas.length;
     totalExistentes += existentes;
     totalSinId += sinId;
+  }
+
+  const pares = [...vistas.keys()].map((k) => {
+    const [debitoCuit, idComprobante] = k.split('|');
+    return { debitoCuit, idComprobante };
+  });
+  for (const e of await debinOutputStore.findTransferenciasRealizadas(rootDir, pares)) {
+    repetidas.push({ clave: `${e.debitoCuit}|${e.idComprobante}`, motivo: `ya figura realizada en dbn_consulta (${e.ejecutadoEn})` });
+  }
+  if (repetidas.length > 0) {
+    console.log(`ATENCIÓN: ${repetidas.length} transferencia(s) realizada(s) repetidas (CUIT de débito | comprobante) — se cargan igual:`);
+    for (const r of repetidas) console.log(`  ${r.clave}: ${r.motivo}`);
   }
 
   console.log(

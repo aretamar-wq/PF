@@ -1415,7 +1415,10 @@ Diferencias que detecta:
   `node scripts/import-dbn-consulta.js --apply ../files/<runId>-consulta-debin-solo.csv`
   desde `node/`. Sin `--apply` solo muestra qué cargaría. Solo inserta (un
   `idMensaje` que ya está se saltea) y toma la fecha de la transferencia del
-  `idMensaje`, no la de hoy.
+  `idMensaje`, no la de hoy. Avisa (sin frenar) las realizadas que ya figuran
+  realizadas en `dbn_consulta` o repetidas en lo que carga (mismo CUIT de débito
+  y comprobante): son envíos distintos y la conciliación las marca como
+  "Enviada más de una vez".
 - **Solo en IBS**: un débito sin ninguna transferencia en ApiCore. Los débitos
   de transferencias hechas fuera del rango pero que sí figuran realizadas en
   `dbn_consulta` se explican aparte (informativo, "débitos de otras fechas").
