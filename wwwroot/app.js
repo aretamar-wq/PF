@@ -3135,7 +3135,8 @@ function renderConciliacionIbsTiles(tipo, resumen) {
       tile('Con diferencias', resumen.transferenciasConDiferencias, malo(resumen.transferenciasConDiferencias)) +
       tile('Pendientes de débito', resumen.pendientes) +
       tile('Débitos solo en IBS', resumen.soloEnIbs, malo(resumen.soloEnIbs)) +
-      tile('Rechazadas (sin movimiento neto)', resumen.rechazadasApicore)
+      tile('Rechazadas en ApiCore', resumen.rechazadosApicore) +
+      tile('Rechazadas que figuran en IBS', resumen.rechazadosEnIbs, malo(resumen.rechazadosEnIbs))
     : tipo === 'pagos'
     ? tile('PF que vencían (circuito 0)', resumen.vencenCircuito0) +
       tile('Pagados en ApiCore', resumen.pagadosApicore) +
@@ -3143,12 +3144,16 @@ function renderConciliacionIbsTiles(tipo, resumen) {
       tile('Pagos con diferencias', resumen.pagosConDiferencias, malo(resumen.pagosConDiferencias)) +
       tile('Pagados en IBS sin marcar en ApiCore', resumen.pagadosEnIbsNoApicore, malo(resumen.pagadosEnIbsNoApicore)) +
       tile('Movimientos solo en IBS', resumen.soloEnIbs, malo(resumen.soloEnIbs)) +
-      tile('Sin pagar (pendientes)', resumen.pendientes)
+      tile('Sin pagar (pendientes)', resumen.pendientes) +
+      tile('Rechazados en ApiCore', resumen.rechazadosApicore) +
+      tile('Rechazados que figuran en IBS', resumen.rechazadosEnIbs, malo(resumen.rechazadosEnIbs))
     : tile('Altas en ApiCore', resumen.altasApicore) +
       tile('Movimientos en IBS', resumen.movimientosIbs) +
       tile('Altas conciliadas OK', resumen.altasOk, 'ok') +
       tile('Altas con diferencias', resumen.altasConDiferencias, malo(resumen.altasConDiferencias)) +
-      tile('Movimientos solo en IBS', resumen.soloEnIbs, malo(resumen.soloEnIbs));
+      tile('Movimientos solo en IBS', resumen.soloEnIbs, malo(resumen.soloEnIbs)) +
+      tile('Rechazadas en ApiCore', resumen.rechazadosApicore) +
+      tile('Rechazadas que figuran en IBS', resumen.rechazadosEnIbs, malo(resumen.rechazadosEnIbs));
 }
 
 function renderConciliacionIbsTotales(totales) {
@@ -3195,6 +3200,58 @@ function applyConciliacionIbsFilter() {
   const sinDiferencias = lastConciliacionIbs.diferencias.length === 0;
   document.getElementById('conciliacionIbsSinDiferencias').style.display = sinDiferencias ? '' : 'none';
   document.getElementById('conciliacionIbsDiferencias').style.display = sinDiferencias ? 'none' : '';
+}
+
+const CONCILIACION_RECHAZADO_ESTADOS = {
+  'no-figura': { texto: 'No figura ✓', clase: 'conciliacion-check-ok' },
+  figura: { texto: 'Figura en IBS ✗', clase: 'conciliacion-check-error' },
+  revertida: { texto: 'Debitada y revertida', clase: '' },
+  reintentada: { texto: 'Reintentada y realizada', clase: '' },
+};
+
+// Lo que ApiCore rechazó y que, si está todo bien, no figura en IBS.
+function renderConciliacionIbsRechazados(data) {
+  const box = document.getElementById('conciliacionIbsRechazadosBox');
+  const rechazados = data.rechazados || [];
+  if (rechazados.length === 0) {
+    box.style.display = 'none';
+    return;
+  }
+  const r = data.resumen;
+  const esTransferencias = data.tipo === 'transferencias';
+  const cosa = data.tipo === 'altas' ? 'alta(s)' : data.tipo === 'pagos' ? 'pago(s)' : 'transferencia(s)';
+  document.getElementById('conciliacionIbsRechazadosTitulo').textContent = 'Rechazados en ApiCore';
+  const partes = [`${rechazados.length} ${cosa} rechazada(s) por ApiCore`];
+  if (r.rechazadosEnIbs > 0) partes.push(`${r.rechazadosEnIbs} figuran en IBS (diferencia)`);
+  if (r.rechazadosRevertidos > 0) partes.push(`${r.rechazadosRevertidos} IBS las debitó y las revirtió`);
+  if (r.rechazadosReintentados > 0) partes.push(`${r.rechazadosReintentados} se reintentaron y quedaron realizadas`);
+  document.getElementById('conciliacionIbsRechazadosTexto').textContent =
+    partes.join(' · ') + (r.rechazadosEnIbs === 0 ? '. Ninguna tiene movimientos pendientes en IBS.' : '.') +
+    (esTransferencias ? ' Incluye las que nunca llegaron a la base (CBU inválido, error de comunicación).' : '');
+  const orden = { figura: 0, revertida: 1, reintentada: 2, 'no-figura': 3 };
+  const filas = [...rechazados].sort((a, b) => (orden[a.estado] - orden[b.estado]) || String(a.fecha).localeCompare(String(b.fecha)));
+  const tbody = document.querySelector('#conciliacionIbsRechazados tbody');
+  tbody.innerHTML = '';
+  // Los que figuran en IBS van primero; con muchos rechazados se muestran los primeros.
+  const LIMITE_FILAS = 200;
+  if (filas.length > LIMITE_FILAS) {
+    document.getElementById('conciliacionIbsRechazadosTexto').textContent += ` Se muestran los primeros ${LIMITE_FILAS} (primero los que figuran en IBS).`;
+  }
+  for (const f of filas.slice(0, LIMITE_FILAS)) {
+    const estado = CONCILIACION_RECHAZADO_ESTADOS[f.estado] || { texto: f.estado, clase: '' };
+    const tr = document.createElement('tr');
+    tr.innerHTML = `
+      <td class="${estado.clase}" title="${escapeHtml(f.detalle || '')}">${escapeHtml(estado.texto)}</td>
+      <td class="mono">${escapeHtml(String(f.fecha || '—').slice(0, 19))}</td>
+      <td class="mono">${escapeHtml(f.numeroComprobante || '—')}</td>
+      <td class="mono">${escapeHtml(f.cuit || '—')}</td>
+      <td class="titular">${escapeHtml(f.apellidoNombre || '—')}</td>
+      <td class="num">${f.moneda === 'USD' ? 'USD' : '$'} ${formatImporte(f.importe)}</td>
+      <td class="detalle">${escapeHtml(f.motivo || '—')}${f.intentos > 1 ? ` (${f.intentos} intentos)` : ''}</td>
+    `;
+    tbody.appendChild(tr);
+  }
+  box.style.display = '';
 }
 
 function renderConciliacionIbs(data) {
@@ -3278,6 +3335,8 @@ function renderConciliacionIbs(data) {
   } else {
     pendientesBox.style.display = 'none';
   }
+
+  renderConciliacionIbsRechazados(data);
 
   const otrosBox = document.getElementById('conciliacionIbsOtrosCanalesBox');
   if (esTransferencias && r.debitosOtrasFechas > 0) {

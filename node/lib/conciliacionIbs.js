@@ -165,7 +165,31 @@ function indexarPorClave(movimientos) {
   return porClave;
 }
 
-function conciliarAltasPf(altas, ibsLines, fecha) {
+// Lo que ApiCore rechazó (o nunca llegó a hacer) tiene que NO figurar en IBS.
+// Estados de cada rechazado: 'no-figura' (correcto), 'figura' (IBS tiene
+// movimientos sin revertir: diferencia), 'revertida' (IBS lo debitó y lo
+// revirtió, neto cero: solo transferencias) y 'reintentada' (se volvió a
+// procesar y quedó realizada, así que sus movimientos son los de la realizada).
+function resumenRechazados(rechazados) {
+  const cuenta = (estado) => rechazados.filter((r) => r.estado === estado).length;
+  return {
+    rechazadosApicore: rechazados.length,
+    rechazadosEnIbs: cuenta('figura'),
+    rechazadosRevertidos: cuenta('revertida'),
+    rechazadosReintentados: cuenta('reintentada'),
+  };
+}
+
+const claveCuitComprobante = (cuit, comprobante) => `${String(cuit == null ? '' : cuit).trim()}|${String(comprobante == null ? '' : comprobante).trim()}`;
+
+function importeRechazado(r) {
+  return toCents(r.importe) / 100;
+}
+
+// opciones.rechazados: filas rechazadas de ApiCore del día, ya normalizadas
+// ({ fecha, idMensaje, cuit, apellidoNombre, numeroComprobante, circuito,
+// importe, motivo, usuario }).
+function conciliarAltasPf(altas, ibsLines, fecha, opciones = {}) {
   const { movimientos, filasOtraFecha } = leerMovimientosIbs(ibsLines, fecha);
 
   const porClave = indexarPorClave(movimientos);
@@ -221,6 +245,39 @@ function conciliarAltasPf(altas, ibsLines, fecha) {
 
     if (problemas.length === 0) altasOk++;
     for (const p of problemas) diferencias.push({ ...base, ...p });
+  }
+
+  // Rechazadas por ApiCore: no tendrían que tener débito ni crédito en IBS.
+  const realizadasClaves = new Set(altas.map((a) => claveCuitComprobante(a.cuit, a.numero_comprobante)));
+  const rechazados = [];
+  for (const r of opciones.rechazados || []) {
+    const comprobante = String(r.numeroComprobante || '').trim();
+    const fila = { ...r, numeroComprobante: comprobante, importe: importeRechazado(r) };
+    if (realizadasClaves.has(claveCuitComprobante(r.cuit, comprobante))) {
+      rechazados.push({ ...fila, estado: 'reintentada', detalle: 'Se volvió a procesar y quedó realizada.' });
+      continue;
+    }
+    const movs = comprobante ? [...(porClave.get(`${MOV_DEBITO_CC}|${comprobante}`) || []), ...(porClave.get(`${MOV_CREDITO_CA}|${comprobante}`) || [])] : [];
+    if (movs.length === 0) {
+      rechazados.push({ ...fila, estado: 'no-figura', detalle: '' });
+      continue;
+    }
+    rechazados.push({ ...fila, estado: 'figura', detalle: `IBS tiene ${movs.map((m) => m.movcod).join(' y ')} con comnro ${comprobante}.` });
+    for (const mov of movs) {
+      if (mov.usado) continue;
+      mov.usado = true;
+      diferencias.push({
+        tipo: 'Rechazada en ApiCore, con movimientos en IBS',
+        numeroComprobante: comprobante,
+        operacion: '',
+        circuito: r.circuito || '',
+        cuit: r.cuit,
+        apellidoNombre: r.apellidoNombre,
+        cajaAhorro: mov.sistcod === '5' ? mov.cuecod : '',
+        importe: mov.cents / 100,
+        detalle: `ApiCore la rechazó (${r.motivo || 'sin motivo'}), pero IBS tiene el ${mov.movcod} (cuenta ${mov.cuecod}, comnro ${comprobante}) por $ ${formatCents(mov.cents)}.`,
+      });
+    }
   }
 
   const otrosCanales = [];
@@ -290,6 +347,7 @@ function conciliarAltasPf(altas, ibsLines, fecha) {
       movimientosIbs: movimientos.length,
       altasOk,
       altasConDiferencias: altas.length - altasOk,
+      ...resumenRechazados(rechazados),
       soloEnIbs: diferencias.filter((d) => d.tipo === 'Solo en IBS' || d.tipo === 'Repetido en IBS').length,
       otrosCanales: otrosCanales.length,
       otrosCanalesImporte: sumCents(otrosCanales.map((o) => Math.round(o.importe * 100))) / 100,
@@ -297,6 +355,7 @@ function conciliarAltasPf(altas, ibsLines, fecha) {
     },
     totales,
     diferencias,
+    rechazados,
     otrosCanales,
   };
 }
@@ -316,7 +375,7 @@ function conciliarAltasPf(altas, ibsLines, fecha) {
 // - circuito 1: ApiCore nunca lo paga, no tendría que haber movimientos.
 // Los que vencían y no se pagaron (sin movimientos en IBS) no son una
 // diferencia: se informan aparte como "pendientes".
-function conciliarPagosPf(operaciones, ibsLines, fecha, config) {
+function conciliarPagosPf(operaciones, ibsLines, fecha, config, opciones = {}) {
   const { movimientos, filasOtraFecha } = leerMovimientosIbs(ibsLines, fecha);
   const porClave = indexarPorClave(movimientos);
 
@@ -438,6 +497,40 @@ function conciliarPagosPf(operaciones, ibsLines, fecha, config) {
     }
   }
 
+  // Rechazados por ApiCore (archivo de error del flow): no tendrían que tener
+  // débito ni crédito en IBS.
+  const pagadosClaves = new Set(operaciones.filter((o) => Number(o.pf_pagado) === 1).map((o) => claveCuitComprobante(o.cuit, o.numero_comprobante)));
+  const rechazados = [];
+  for (const r of opciones.rechazados || []) {
+    const comprobante = String(r.numeroComprobante || '').trim();
+    const fila = { ...r, numeroComprobante: comprobante, importe: importeRechazado(r) };
+    if (pagadosClaves.has(claveCuitComprobante(r.cuit, comprobante))) {
+      rechazados.push({ ...fila, estado: 'reintentada', detalle: 'Se volvió a procesar y quedó pagado.' });
+      continue;
+    }
+    const movs = comprobante ? [...(porClaveRelevante.get(`${config.movDebitoCa}|${comprobante}`) || []), ...(porClaveRelevante.get(`${config.movCreditoCc}|${comprobante}`) || [])] : [];
+    if (movs.length === 0) {
+      rechazados.push({ ...fila, estado: 'no-figura', detalle: '' });
+      continue;
+    }
+    rechazados.push({ ...fila, estado: 'figura', detalle: `IBS tiene ${movs.map((m) => m.movcod).join(' y ')} con comnro ${comprobante}.` });
+    for (const mov of movs) {
+      if (mov.usado) continue;
+      mov.usado = true;
+      diferencias.push({
+        tipo: 'Rechazado en ApiCore, con movimientos en IBS',
+        numeroComprobante: comprobante,
+        operacion: '',
+        circuito: r.circuito || '',
+        cuit: r.cuit,
+        apellidoNombre: r.apellidoNombre,
+        cajaAhorro: mov.sistcod === config.sistCa ? mov.cuecod : '',
+        importe: mov.cents / 100,
+        detalle: `ApiCore rechazó el pago (${r.motivo || 'sin motivo'}), pero IBS tiene el ${mov.movcod} (cuenta ${mov.cuecod}, comnro ${comprobante}) por $ ${formatCents(mov.cents)}.`,
+      });
+    }
+  }
+
   for (const mov of relevantes) {
     if (mov.usado) continue;
     const repetido = (porClaveRelevante.get(`${mov.movcod}|${mov.comnro}`) || []).length > 1;
@@ -476,6 +569,7 @@ function conciliarPagosPf(operaciones, ibsLines, fecha, config) {
       pagosConDiferencias: pagadosApicore - pagosOk,
       sinPagar,
       pendientes: pendientes.length,
+      ...resumenRechazados(rechazados),
       pendientesImporte: sumCents(pendientes.map((p) => Math.round(p.importe * 100))) / 100,
       pagadosEnIbsNoApicore: tipos('Pagado en IBS, no en ApiCore') + tipos('Pago incompleto en IBS'),
       soloEnIbs: tipos('Solo en IBS') + tipos('Repetido en IBS'),
@@ -510,6 +604,7 @@ function conciliarPagosPf(operaciones, ibsLines, fecha, config) {
     ],
     diferencias,
     pendientes,
+    rechazados,
     otrosCanales: otrosVencimientos.map((m) => ({ cuecod: m.cuecod, comnro: m.comnro, importe: m.cents / 100 })),
   };
 }
@@ -677,6 +772,7 @@ function conciliarTransferencias(apiRows, ibsLines, opciones) {
   const { desde, hasta, hoy } = opciones;
   const feriados = opciones.feriados || new Set();
   const otrasFechas = opciones.otrasFechas || new Map();
+  const rechazadosArchivo = opciones.rechazadosArchivo || [];
   const hastaEsperado = proximoDiaHabil(hasta, feriados);
   const { grupos, filasOtraFecha, movimientos } = leerIbsTransferencias(ibsLines, desde, hastaEsperado);
 
@@ -707,9 +803,26 @@ function conciliarTransferencias(apiRows, ibsLines, opciones) {
   // Agrupa lo de ApiCore por comprobante: envíos realizados (puede haber
   // más de uno si se mandó dos veces) y rechazos.
   const apiGrupos = new Map();
+  const rechazados = [];
+  const filaRechazada = (r, extra) => ({
+    fecha: r.ejecutado_en,
+    idMensaje: r.id_mensaje || '',
+    numeroComprobante: String(r.id_comprobante || '').trim(),
+    operacion: r.id_operacion || '',
+    cuit: r.debito_cuit,
+    apellidoNombre: r.debito_titular,
+    importe: toCents(r.importe) / 100,
+    moneda: monedaDe(r),
+    motivo: estadoDescripcion(r) || String(r.descripcion_respuesta || '').trim() || String(r.error_consulta || '').trim(),
+    usuario: r.ejecutado_por || '',
+    ...extra,
+  });
   for (const r of apiRows) {
     const c = String(r.id_comprobante || '').trim();
-    if (!c) continue;
+    if (!c) {
+      if (r.realizado !== 's') rechazados.push(filaRechazada(r, { estado: 'no-figura', detalle: 'Sin número de comprobante.' }));
+      continue;
+    }
     if (!apiGrupos.has(c)) apiGrupos.set(c, { envios: [], rechazos: [] });
     apiGrupos.get(c)[r.realizado === 's' ? 'envios' : 'rechazos'].push(r);
   }
@@ -742,8 +855,13 @@ function conciliarTransferencias(apiRows, ibsLines, opciones) {
 
     if (g.envios.length === 0) {
       rechazadas++;
+      const r = g.rechazos[0];
+      const estado = vigentes.length > 0 ? 'figura' : hayReversa ? 'revertida' : 'no-figura';
+      const detalleRechazo = estado === 'figura'
+        ? `IBS tiene ${vigentes.length} débito(s) sin revertir por ${dineroMoneda(monedaDe(r), vigentes[0].cents)} (${vigentes[0].fecha}).`
+        : estado === 'revertida' ? 'IBS la debitó y la revirtió (neto cero).' : '';
+      rechazados.push(filaRechazada(r, { estado, detalle: detalleRechazo, intentos: g.rechazos.length }));
       if (vigentes.length > 0) {
-        const r = g.rechazos[0];
         comprobantesConDiferencias++;
         diferencias.push({
           ...base(r, { tipo: 'Rechazada con débito en IBS' }),
@@ -848,12 +966,35 @@ function conciliarTransferencias(apiRows, ibsLines, opciones) {
     for (const m of vigentes) sumar(totIbs, claveIbs(m), m.cents);
   }
 
+  // Rechazos del archivo de error que nunca llegaron a dbn_consulta (CBU
+  // inválido, error de comunicación): tampoco tendrían que figurar en IBS.
+  const archivoPorComp = new Map();
+  for (const r of rechazadosArchivo) {
+    const c = String(r.id_comprobante || '').trim();
+    const g = c ? apiGrupos.get(c) : null;
+    if (g) {
+      if (g.envios.length > 0) rechazados.push(filaRechazada(r, { estado: 'reintentada', detalle: 'Se volvió a procesar y quedó realizada.' }));
+      continue; // si solo tiene rechazos, ya está listada con los de dbn_consulta
+    }
+    const ibsGrupo = c ? grupos.get(c) : null;
+    const vigentes = ibsGrupo ? ibsGrupo.vigentes : [];
+    const estado = vigentes.length > 0 ? 'figura' : ibsGrupo && ibsGrupo.hayReversa ? 'revertida' : 'no-figura';
+    const detalle = estado === 'figura'
+      ? `IBS tiene ${vigentes.length} débito(s) sin revertir por ${dineroMoneda(monedaDe(r), vigentes[0].cents)} (${vigentes[0].fecha}).`
+      : estado === 'revertida' ? 'IBS la debitó y la revirtió (neto cero).' : '';
+    rechazados.push(filaRechazada(r, { estado, detalle }));
+    if (estado === 'figura') {
+      if (!archivoPorComp.has(c)) archivoPorComp.set(c, []);
+      archivoPorComp.get(c).push(r);
+    }
+  }
+
   // Lo de IBS que ApiCore no tiene en este rango.
   let soloEnIbs = 0;
   for (const [comprobante, g] of grupos) {
     if (apiGrupos.has(comprobante) || g.vigentes.length === 0) continue;
     const m = g.vigentes[0];
-    const otras = otrasFechas.get(comprobante) || [];
+    const otras = [...(otrasFechas.get(comprobante) || []), ...(archivoPorComp.get(comprobante) || [])];
     const monedaEtiqueta = MONEDA_IBS_ETIQUETA[Number(m.moncod)] || m.moncod;
     if (otras.some((r) => r.realizado === 's')) {
       const r = otras.find((x) => x.realizado === 's');
@@ -928,6 +1069,7 @@ function conciliarTransferencias(apiRows, ibsLines, opciones) {
       enviosRealizados,
       rechazadasApicore: rechazadas,
       rechazadasRevertidas,
+      ...resumenRechazados(rechazados),
       revertidasOk,
       transferenciasOk: ok,
       transferenciasConDiferencias: comprobantesConDiferencias,
@@ -942,6 +1084,7 @@ function conciliarTransferencias(apiRows, ibsLines, opciones) {
     diferencias,
     pendientes,
     explicadas,
+    rechazados,
     otrosCanales: [],
     avisos,
   };

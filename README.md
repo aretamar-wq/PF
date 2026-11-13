@@ -1285,6 +1285,19 @@ filtro por tipo y descarga en CSV. Queda en `logs/security.log` quién
 concilió, de dónde salieron los movimientos de IBS y el resultado. No guarda
 nada en la base.
 
+**Rechazados en ApiCore.** En las tres conciliaciones (altas, pagos y
+transferencias) el panel lista también lo que ApiCore rechazó y que, si está
+todo bien, **no figura en IBS**: las filas de los archivos de error de las
+corridas del día (altas y pagos), y para transferencias las rechazadas de
+`dbn_consulta` más las del archivo de error que nunca llegaron a la base (CBU
+inválido, error de comunicación). Cada una se marca como "No figura ✓",
+"Figura en IBS ✗" (IBS tiene sus movimientos sin revertir: es una diferencia,
+tipo "Rechazada en ApiCore, con movimientos en IBS"), "Debitada y revertida"
+(transferencias: IBS las debitó y las revirtió, neto cero) o "Reintentada y
+realizada" (el mismo CUIT y comprobante se procesó bien después). Se agregan
+los indicadores "Rechazadas en ApiCore" y "Rechazadas que figuran en IBS"; con
+más de 200 se muestran las primeras, empezando por las que figuran en IBS.
+
 Ojo: una alta que se hizo en el banco pero no quedó en
 `operaciones_procesadas` (corridas cortadas antes del registro fila por
 fila) aparece como "Solo en IBS".
