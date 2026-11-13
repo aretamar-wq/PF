@@ -16,6 +16,13 @@
 //   en dbn_consulta o más de una vez en lo que se va a cargar (mismo CUIT de
 //   débito y comprobante): son envíos distintos, se cargan igual y la
 //   conciliación las va a marcar como "Enviada más de una vez".
+// - También lee el formato VIEJO: files/dbnconsulta-<yyyyMMddHHmmss>.csv, que
+//   no tenía CUIT, CBU, importe ni "realizado" propios. Si está su
+//   files/dbnout-<mismo sello>.csv (los datos de la transferencia) se usan esos
+//   datos; si no, se toman de la consulta del DEBIN (comprador = quien paga,
+//   vendedor = quien recibe) y la fila cuenta como realizada si tiene
+//   idOperacion. Las transferencias que están en el dbnout y no en el
+//   dbnconsulta también se cargan (sin estado de acreditación).
 // - Dry-run por default: muestra qué cargaría. --apply para cargar de verdad.
 //
 // Uso (desde la carpeta node/):
@@ -39,6 +46,69 @@ function fechaDeNombreArchivo(nombre) {
   return m ? `${m[3]}-${m[2]}-${m[1]} ${m[4]}:${m[5]}:${m[6]}` : '';
 }
 
+const text = (v) => (v == null ? '' : String(v).trim());
+
+// dbnconsulta-<ts>.csv (formato viejo) + dbnout-<ts>.csv -> registros con la
+// forma del formato nuevo (ver debinOutputStore.upsertDbnConsultaRecords).
+function leerFormatoViejo(archivo, rowsToRecords) {
+  const dir = path.dirname(archivo);
+  const sello = /^dbnconsulta-(\d{14})\.csv$/.exec(path.basename(archivo))[1];
+  const consulta = rowsToRecords(fs.readFileSync(archivo, 'utf8'));
+  const outPath = path.join(dir, `dbnout-${sello}.csv`);
+  const salidas = fs.existsSync(outPath) ? rowsToRecords(fs.readFileSync(outPath, 'utf8')) : [];
+  const salidaPorMensaje = new Map(salidas.map((o) => [text(o.idMensaje), o]));
+
+  const records = consulta.map((c) => {
+    const o = salidaPorMensaje.get(text(c.idMensaje));
+    // Si ya trae las columnas nuevas (archivo de la etapa intermedia) se respetan.
+    const idOperacion = text(c.idOperacion) || text(o && o.idRespuesta);
+    return {
+      ...c,
+      idOperacion,
+      creditoCuit: text(c.creditoCuit) || text(o && o.creditoCuit) || text(c.vendedorCuit),
+      creditoCbu: text(c.creditoCbu) || text(o && o.creditoCbu) || text(c.vendedorCuentaCbu),
+      creditoTitular: text(c.creditoTitular) || text(o && o.creditoTitular) || text(c.vendedorTitular),
+      debitoCuit: text(c.debitoCuit) || text(o && o.debitoCuit) || text(c.compradorCuit),
+      debitoCbu: text(c.debitoCbu) || text(o && o.debitoCbu) || text(c.compradorCuentaCbu),
+      debitoTitular: text(c.debitoTitular) || text(o && o.debitoTitular) || text(c.compradorTitular),
+      moneda: text(c.moneda) || text(o && o.moneda) || text(c.detalleMoneda),
+      importe: text(c.importe) || text(o && o.importe) || text(c.detalleImporte),
+      codigoRespuestaTransferencia: text(c.codigoRespuestaTransferencia) || text(o && o.codigoRespuesta),
+      descripcionRespuestaTransferencia: text(c.descripcionRespuestaTransferencia) || text(o && o.descripcionRespuesta),
+      realizado: text(c.realizado) || text(o && o.realizado) || (idOperacion ? 's' : 'n'),
+    };
+  });
+
+  // Transferencias del dbnout que no tienen fila en el dbnconsulta.
+  const enConsulta = new Set(consulta.map((c) => text(c.idMensaje)));
+  for (const o of salidas) {
+    if (!text(o.idMensaje) || enConsulta.has(text(o.idMensaje))) continue;
+    records.push({
+      idMensaje: o.idMensaje,
+      idComprobante: o.idComprobante,
+      idOperacion: o.idRespuesta,
+      creditoCuit: o.creditoCuit,
+      creditoCbu: o.creditoCbu,
+      creditoTitular: o.creditoTitular,
+      debitoCuit: o.debitoCuit,
+      debitoCbu: o.debitoCbu,
+      debitoTitular: o.debitoTitular,
+      moneda: o.moneda,
+      importe: o.importe,
+      codigoRespuestaTransferencia: o.codigoRespuesta,
+      descripcionRespuestaTransferencia: o.descripcionRespuesta,
+      realizado: o.realizado,
+    });
+  }
+  return records;
+}
+
+// dbnconsulta-20261001103108.csv -> 2026-10-01 10:31:08
+function fechaDeSelloViejo(nombre) {
+  const m = /^dbnconsulta-(\d{4})(\d{2})(\d{2})(\d{2})(\d{2})(\d{2})\.csv$/.exec(path.basename(nombre));
+  return m ? `${m[1]}-${m[2]}-${m[3]} ${m[4]}:${m[5]}:${m[6]}` : '';
+}
+
 async function main() {
   const args = process.argv.slice(2);
   const apply = args.includes('--apply');
@@ -58,11 +128,14 @@ async function main() {
   const repetidas = [];
 
   for (const archivo of archivos) {
-    if (!/-consulta-debin-solo\.csv$/.test(archivo)) {
-      console.log(`${archivo}: se saltea (no es un -consulta-debin-solo.csv)`);
+    const viejo = /^dbnconsulta-\d{14}\.csv$/.test(path.basename(archivo));
+    if (!viejo && !/-consulta-debin-solo\.csv$/.test(archivo)) {
+      console.log(`${archivo}: se saltea (no es un -consulta-debin-solo.csv ni un dbnconsulta-<fecha>.csv; los dbnout se leen junto a su dbnconsulta)`);
       continue;
     }
-    const records = debinOutputStore.rowsToRecords(fs.readFileSync(archivo, 'utf8'));
+    const records = viejo
+      ? leerFormatoViejo(archivo, debinOutputStore.rowsToRecords)
+      : debinOutputStore.rowsToRecords(fs.readFileSync(archivo, 'utf8'));
     const nuevas = [];
     let existentes = 0;
     let sinId = 0;
@@ -79,7 +152,7 @@ async function main() {
       }
       nuevas.push({
         ...record,
-        ejecutadoEn: fechaDeIdMensaje(idMensaje) || fechaDeNombreArchivo(archivo),
+        ejecutadoEn: fechaDeIdMensaje(idMensaje) || (viejo ? fechaDeSelloViejo(archivo) : fechaDeNombreArchivo(archivo)),
         ejecutadoPor: 'importacion',
       });
     }
