@@ -1422,6 +1422,49 @@ operaciones duplicadas"), pero no las filas que fallaron por otra cosa
 cortada antes de consultar su estado queda con `realizado` = `SI` y
 `errorConsulta` = `Consulta de estado pendiente`.
 
+### Conciliación QNET (Loop, débitos pendientes y BankService)
+
+Verifica cada día que cada transferencia QNET esté bien contabilizada en Loop
+(un débito a la cuenta del cliente y un crédito a la cuenta puente), que lo que
+falta esté en los débitos pendientes y que todo cierre contra BankService.
+
+- **Loop** y **débitos pendientes** salen directo de Sybase con las consultas del
+  área (Loop: una consulta por día hábil, `movcod in (25030, 25031)`, fechas como
+  `aaaammdd`; pendientes: `Banksys..tgl_deb_pendientes`). **BankService** viene por
+  archivo, uno por mes (`Movimientos_BankService-mmaaaa.csv`); los de dos meses
+  consecutivos se superponen y gana el más nuevo por `Comprobante`.
+- Sin Sybase se puede correr con lo exportado antes (`--loop-dir` con los
+  `Movimientos_Loop_aaaammdd.csv` —un reexport del día REEMPLAZA al original— y
+  `--pendientes`).
+- Clave del comprobante: moneda + número. Marcas, en este orden: más de 2
+  partidas; débito de centavo sin crédito; débito pendiente (del último día /
+  anterior / con importe distinto); una partida; importes distintos; correcto.
+  Cruce con BankService: FAILED contabilizado, transfer sin ejecutar, APPROVED sin
+  registro, sin operación en transfers, monto / moneda / cuenta distintos.
+- Las reglas son configurables (`node/lib/qnet/config.js`, o un JSON con
+  `--config`): códigos de movimiento, cuentas puente, umbral del centavo.
+
+Uso (desde `node/`):
+
+```bash
+node scripts/conciliar-qnet.js \
+  --bankservice ../qnet/entrada/Movimientos_BankService-102026.csv \
+  --bankservice ../qnet/entrada/Movimientos_BankService-112026.csv
+```
+
+Opciones: `--desde`/`--hasta` (aaaa-mm-dd; por defecto el período de BankService),
+`--salida`, `--config`. Código de salida: **0** bien, **1** error (no se concilia:
+encabezado inesperado, fila de otra fecha, pendientes de otro tipo, etc.), **2**
+advertencias (por ejemplo un archivo repetido).
+
+Cada corrida queda en `qnet/corridas/<id>/` (el id es el hash de las entradas y la
+configuración: correrla dos veces con lo mismo escribe lo mismo): `entradas/` (los
+archivos tal como llegaron, permisos 0600), `conciliacion-comprobantes.csv`,
+`excepciones.csv`, `resumen.csv` (por tipo, desbalance por moneda y cruce con
+transfers), `pendientes-por-dia.csv` (antigüedad), `fuentes.csv`, `resultado.json` y
+`corrida.log`. Las salidas no llevan nombres, CUIT ni CBU. `qnet/` no se versiona.
+Pruebas: `npm test` en `node/`.
+
 ### Conciliación con IBS (altas y pagos de Plazo Fijo, transferencias DEBIN)
 
 Panel **"Conciliación con IBS"** (menú): se elige **qué conciliar** (altas o
