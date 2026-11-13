@@ -1429,6 +1429,27 @@ async function handleDbnConsultaRowsPost(req, res, session) {
   writeJsonResponse(res, 200, { ok: true, registered: rows.length });
 }
 
+// "Consulta DEBIN" manual: guarda en dbn_consulta el estado que devolvió
+// Nova-Link para esa operación (las transferencias que quedaron sin estado de
+// acreditación). Sin filas con ese id_operacion no hace nada.
+async function handleDbnConsultaEstadoPost(req, res, session) {
+  const payload = await readJsonBody(req);
+  const idOperacion = String(payload.idOperacion || '').trim();
+  const campos = payload.campos && typeof payload.campos === 'object' && !Array.isArray(payload.campos) ? payload.campos : null;
+  if (!idOperacion || !campos) {
+    writeJsonResponse(res, 400, { error: 'Falta idOperacion o campos.' });
+    return;
+  }
+  const { actualizadas } = await debinOutputStore.updateConsultaEstadoPorOperacion(rootDir, idOperacion, campos);
+  if (actualizadas > 0) {
+    securityStore.writeSecurityLog(
+      logsDir,
+      `CONSULTA DEBIN '${idOperacion}' por '${session.username}': estado '${campos.estadoCodigo || ''}' guardado en ${actualizadas} transferencia(s)`
+    );
+  }
+  writeJsonResponse(res, 200, { ok: true, actualizadas, estadoCodigo: campos.estadoCodigo || '', estadoDescripcion: campos.estadoDescripcion || '' });
+}
+
 // La "fecha de hoy" para "Pago de Plazo Fijos" no es la fecha del sistema
 // operativo del servidor: tiene que ser la fecha de PROCESO del banco
 // (tabla tgl_fechaproceso en Sybase), que puede no coincidir con el
@@ -1715,6 +1736,7 @@ async function handleRequest(req, res) {
     if (method === 'POST' && pathname === '/api/register-operations') return void (await handleRegisterOperations(req, res, session));
     if (method === 'POST' && pathname === '/api/check-transferencias') return void (await handleCheckTransferencias(req, res, session));
     if (method === 'POST' && pathname === '/api/dbn-consulta-rows') return void (await handleDbnConsultaRowsPost(req, res, session));
+    if (method === 'POST' && pathname === '/api/dbn-consulta-estado') return void (await handleDbnConsultaEstadoPost(req, res, session));
     if (method === 'GET' && pathname === '/api/plazos-fijos-a-pagar') return void (await handlePlazosFijosAPagarGet(res, session));
     if (method === 'GET' && pathname === '/api/transferencias-limite') return void (await handleTransferenciasLimiteGet(parsedUrl, res, session));
     if (method === 'POST' && pathname === '/api/plazos-fijos-pagados') return void (await handlePlazosFijosPagadosPost(req, res, session));

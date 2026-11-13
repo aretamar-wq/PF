@@ -208,6 +208,32 @@ async function upsertDbnConsultaRecords(rootDir, records, username) {
   }
 }
 
+// Actualiza el estado de acreditación (y el resto de lo que devuelve la
+// consulta DEBIN) de las transferencias de dbn_consulta con ese id_operacion:
+// lo usa la "Consulta DEBIN" manual para completar las que quedaron sin
+// estado. "campos" es lo que devuelve extractDebinConsultaFields (wwwroot/app.js);
+// se mezcla en respuesta_json, como cuando lo guarda "Transferencia DEBIN -
+// File". Devuelve cuántas filas se actualizaron y el estado resultante.
+async function updateConsultaEstadoPorOperacion(rootDir, idOperacion, campos) {
+  const operacion = String(idOperacion == null ? '' : idOperacion).trim();
+  if (!operacion) return { actualizadas: 0 };
+  const rows = await db.query(rootDir, 'SELECT id, respuesta_json FROM dbn_consulta WHERE TRIM(id_operacion) = ?', [operacion]);
+  for (const row of rows) {
+    let actual = {};
+    try {
+      actual = row.respuesta_json ? JSON.parse(row.respuesta_json) : {};
+    } catch (err) {
+      actual = {};
+    }
+    await db.query(rootDir, 'UPDATE dbn_consulta SET respuesta_json = ?, error_consulta = ? WHERE id = ?', [
+      JSON.stringify({ ...actual, ...campos }),
+      '',
+      row.id,
+    ]);
+  }
+  return { actualizadas: rows.length };
+}
+
 // La columna "moneda" de dbn_consulta/el CSV de entrada no trae el texto
 // "ARS"/"USD": trae el código numérico que espera Nova-Link (ISO 4217 —
 // "032"/"32" = ARS, "840" = USD, ver defaultValue de "moneda" en
@@ -367,6 +393,7 @@ module.exports = {
   addDbnOutRows,
   addDbnConsultaRows,
   upsertDbnConsultaRecords,
+  updateConsultaEstadoPorOperacion,
   getTransferidoHoyPorCuit,
   transferidoHoyKey,
   getConsultaRowsDelDia,
