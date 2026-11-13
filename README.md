@@ -1277,7 +1277,9 @@ estas últimas también `hasta`). El servidor cruza las altas de
 Muestra el estado general (concilia / hay diferencias), indicadores (altas
 en ApiCore, movimientos en IBS, altas OK, altas con diferencias,
 movimientos solo en IBS), totales por concepto ApiCore vs IBS (cantidad e
-importe) y la tabla de diferencias (Falta en IBS, Importe distinto, Cuenta
+importe; el `152` se abre en circuito 0 y circuito 1 más el total, porque
+`25020`/`25021` solo existen en el circuito 0 y por eso suman menos que el
+total de altas) y la tabla de diferencias (Falta en IBS, Importe distinto, Cuenta
 distinta, Movimiento de más en IBS, Solo en IBS, Repetido en IBS), con
 filtro por tipo y descarga en CSV. Queda en `logs/security.log` quién
 concilió, de dónde salieron los movimientos de IBS y el resultado. No guarda

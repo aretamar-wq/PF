@@ -246,6 +246,8 @@ function conciliarAltasPf(altas, ibsLines, fecha) {
 
   const sumCents = (list) => list.reduce((s, x) => s + x, 0);
   const circuito0 = altas.filter((a) => String(a.tipo_circuito || '').trim() === '0');
+  const circuito1 = altas.filter((a) => String(a.tipo_circuito || '').trim() !== '0');
+  const circuitoPorOperacion = new Map(altas.map((a) => [String(a.operacion).trim(), String(a.tipo_circuito || '').trim()]));
   const totalIbs = (pred) => {
     const list = movimientos.filter(pred);
     return { cantidad: list.length, importe: sumCents(list.map((m) => m.cents)) / 100 };
@@ -262,7 +264,17 @@ function conciliarAltasPf(altas, ibsLines, fecha) {
       ibs: totalIbs((m) => m.movcod === MOV_CREDITO_CA),
     },
     {
-      concepto: 'Altas de Plazo Fijo desde Caja de Ahorro (152)',
+      concepto: 'Altas de Plazo Fijo, circuito 0 — con débito de Cuenta Corriente (152)',
+      apicore: { cantidad: circuito0.length, importe: sumCents(circuito0.map((a) => toCents(a.monto))) / 100 },
+      ibs: totalIbs((m) => m.movcod === MOV_ALTA_PF && m.sistcod !== '3' && circuitoPorOperacion.get(m.comnro) === '0'),
+    },
+    {
+      concepto: 'Altas de Plazo Fijo, circuito 1 — directo desde Caja de Ahorro (152)',
+      apicore: { cantidad: circuito1.length, importe: sumCents(circuito1.map((a) => toCents(a.monto))) / 100 },
+      ibs: totalIbs((m) => m.movcod === MOV_ALTA_PF && m.sistcod !== '3' && circuitoPorOperacion.get(m.comnro) !== '0'),
+    },
+    {
+      concepto: 'Total altas de Plazo Fijo (152)',
       apicore: { cantidad: altas.length, importe: sumCents(altas.map((a) => toCents(a.monto))) / 100 },
       ibs: totalIbs((m) => m.movcod === MOV_ALTA_PF && m.sistcod !== '3'),
     },
