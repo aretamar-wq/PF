@@ -1,6 +1,6 @@
 'use strict';
 
-// Reglas configurables de la conciliación QNET (se pueden pisar con un JSON,
+// Reglas configurables de la conciliación Loop (se pueden pisar con un JSON,
 // ver cargarConfig en corrida.js). Todos los importes en centavos enteros.
 module.exports = {
   movDebito: '25030', // débito de la transferencia

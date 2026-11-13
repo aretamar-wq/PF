@@ -2,7 +2,7 @@
 
 // Dashboard de una corrida: un HTML autocontenido (sin librerías ni pedidos de
 // red) con los datos embebidos. Sirve de archivo por corrida (dashboard.html) y
-// la app lo muestra tal cual en el panel "Conciliación QNET". No lleva nombres,
+// la app lo muestra tal cual en el panel "Conciliación Loop". No lleva nombres,
 // CUIT ni CBU: solo comprobante, cuenta, moneda e importes.
 
 const ESTILO = `
@@ -43,7 +43,7 @@ function cliente() {
   // Encabezado y avisos
   const estado = D.exitCode === 0 ? '<span class="badge ok">sin avisos</span>' : D.exitCode === 2 ? '<span class="badge warn">con advertencias</span>' : '<span class="badge err">con errores</span>';
   $('cab').innerHTML =
-    `<h1>Conciliación QNET ${estado}</h1><div class="mut">Corrida ${esc(D.id)} · Loop del ${fecha(D.periodo.primerDia)} al ${fecha(D.periodo.ultimoDia)} · ` +
+    `<h1>Conciliación Loop ${estado}</h1><div class="mut">Corrida ${esc(D.id)} · Loop del ${fecha(D.periodo.primerDia)} al ${fecha(D.periodo.ultimoDia)} · ` +
     `corte de transfers ${esc(D.corte.ejecutada)}</div>`;
   const avisos = (D.avisos || []).filter((a) => a.nivel !== 'info');
   $('avisos').innerHTML = avisos.map((a) => `<div class="aviso ${a.nivel === 'error' ? 'error' : ''}">${esc(a.mensaje)}</div>`).join('');
@@ -168,7 +168,7 @@ function construirDashboardHtml(data) {
   const json = JSON.stringify(data).replace(/</g, '\\u003c').replace(new RegExp('[\\u2028\\u2029]', 'g'), (c) => '\\u' + c.charCodeAt(0).toString(16));
   return `<!doctype html>
 <html lang="es"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
-<title>Conciliación QNET</title><style>${ESTILO}</style></head><body>
+<title>Conciliación Loop</title><style>${ESTILO}</style></head><body>
 ${ESQUELETO}
 <script id="datos" type="application/json">${json}</script>
 <script>(${cliente.toString()})();</script>
