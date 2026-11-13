@@ -1403,6 +1403,14 @@ Diferencias que detecta:
   correcto y no es una diferencia.
 - **Revertida en IBS estando acreditada**: el débito se revirtió pero la
   transferencia figura acreditada.
+- Los **comprobantes de IBS pueden repetirse por casualidad** con los de ApiCore
+  de otra fecha (otros canales usan el mismo campo `comnro`): un débito solo se
+  explica con una transferencia de otra fecha, o se marca "Rechazada con débito
+  en IBS", si coinciden también la moneda y el importe; si no, queda como "Solo
+  en IBS" aclarando que el número coincide con una transferencia de ApiCore. Las
+  filas de `dbn_consulta` de las primeras corridas (formato viejo, sin CUIT, CBU,
+  importe ni `realizado`) toman esos datos de la consulta del DEBIN
+  (`respuesta_json`) y cuentan como realizadas si tienen `idOperacion`.
 - **Sin estado de acreditación**: la consulta de estado no devolvió nada. Se
   resuelve corriendo el flow **Consulta DEBIN** (manual, con el id de la
   operación = `idOperacion` de `dbn_consulta`): si esa operación es de una

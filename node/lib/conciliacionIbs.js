@@ -994,7 +994,18 @@ function conciliarTransferencias(apiRows, ibsLines, opciones) {
   for (const [comprobante, g] of grupos) {
     if (apiGrupos.has(comprobante) || g.vigentes.length === 0) continue;
     const m = g.vigentes[0];
-    const otras = [...(otrasFechas.get(comprobante) || []), ...(archivoPorComp.get(comprobante) || [])];
+    // El número de comprobante de IBS (comnro) puede coincidir por casualidad
+    // con el de una transferencia de ApiCore de otra fecha (otros canales usan
+    // el mismo campo): solo cuenta como la misma transferencia si la moneda y
+    // el importe también coinciden (cuando ApiCore los tiene).
+    const todasOtras = [...(otrasFechas.get(comprobante) || []), ...(archivoPorComp.get(comprobante) || [])];
+    const mismaOperacion = (r) => {
+      const monedaIbs = MONEDA_IBS[String(r.moneda).trim()];
+      if (monedaIbs && String(m.moncod).trim() !== monedaIbs) return false;
+      if (String(r.importe == null ? '' : r.importe).trim() !== '' && toCents(r.importe) !== m.cents) return false;
+      return true;
+    };
+    const otras = todasOtras.filter(mismaOperacion);
     const monedaEtiqueta = MONEDA_IBS_ETIQUETA[Number(m.moncod)] || m.moncod;
     if (otras.some((r) => r.realizado === 's')) {
       const r = otras.find((x) => x.realizado === 's');
@@ -1028,7 +1039,9 @@ function conciliarTransferencias(apiRows, ibsLines, opciones) {
         cajaAhorro: m.cuecod,
         importe: m.cents / 100,
         moneda: monedaEtiqueta,
-        detalle: `Débito ${m.movcod} en la cuenta ${m.cuecod} (${m.fecha}) sin ninguna transferencia en ApiCore.`,
+        detalle: todasOtras.length > 0
+          ? `Débito ${m.movcod} en la cuenta ${m.cuecod} (${m.fecha}). El comprobante coincide con una transferencia de ApiCore del ${String(todasOtras[0].ejecutado_en).slice(0, 10)} por ${dineroMoneda(monedaDe(todasOtras[0]), toCents(todasOtras[0].importe))}, pero el importe o la moneda no coinciden: parece un movimiento de otro origen con el mismo número.`
+          : `Débito ${m.movcod} en la cuenta ${m.cuecod} (${m.fecha}) sin ninguna transferencia en ApiCore.`,
       });
     }
     sumar(totIbs, claveIbs(m), m.cents);
