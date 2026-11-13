@@ -1603,7 +1603,9 @@ Diferencias que detecta:
   `node scripts/import-dbn-consulta.js --apply ../files/<runId>-consulta-debin-solo.csv`
   desde `node/`. Sin `--apply` solo muestra qué cargaría. Solo inserta (un
   `idMensaje` que ya está se saltea) y toma la fecha de la transferencia del
-  `idMensaje`, no la de hoy. Avisa (sin frenar) las realizadas que ya figuran
+  `idMensaje`, no la de hoy. También lee el formato viejo
+  `files/dbnconsulta-<fecha>.csv` (sin CUIT, importe ni `realizado`), junto con su
+  `dbnout-<mismo sello>.csv` si existe (`../files/dbnconsulta-*.csv`). Avisa (sin frenar) las realizadas que ya figuran
   realizadas en `dbn_consulta` o repetidas en lo que carga (mismo CUIT de débito
   y comprobante): son envíos distintos y la conciliación las marca como
   "Enviada más de una vez".
