@@ -1444,7 +1444,18 @@ falta esté en los débitos pendientes y que todo cierre contra BankService.
 - Las reglas son configurables (`node/lib/qnet/config.js`, o un JSON con
   `--config`): códigos de movimiento, cuentas puente, umbral del centavo.
 
-Uso (desde `node/`):
+**Desde la app:** menú **Conciliación QNET**. Se suben los archivos de BankService (uno
+por mes), opcionalmente se acota el período, y **Conciliar** corre en segundo
+plano (unas 30 consultas a Sybase; una conciliación a la vez) mostrando el avance.
+Al terminar se ve el dashboard (indicadores de partidas, desbalance y cruce,
+gráfico de barras apiladas por fecha y tipo, débitos pendientes del último día y
+de días anteriores, saldo por día y excepciones con filtros, búsqueda y orden) y se
+pueden descargar los CSV y el log. Las corridas anteriores se reabren desde el
+selector. Endpoints: `POST /api/qnet/ejecutar`, `GET /api/qnet/estado`,
+`/corridas`, `/dashboard` y `/archivo`. Cada corrida también deja un
+`dashboard.html` autocontenido en su carpeta.
+
+Por línea de comandos (por ejemplo para programarla):
 
 ```bash
 node scripts/conciliar-qnet.js \

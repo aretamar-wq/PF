@@ -96,6 +96,9 @@ function conciliar({ partidas, pendientes, transfers, config }) {
   return {
     periodo,
     corte,
+    partidasTotal: partidas.length,
+    comprobantesTotal: lista.length,
+    comprobantesConMarca: lista.filter((c) => c.marca !== MARCAS.CORRECTO).length,
     comprobantes: lista,
     excepciones,
     pendientesPosteriores,

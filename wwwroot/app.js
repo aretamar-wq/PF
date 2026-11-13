@@ -142,7 +142,7 @@ function isCsvFlow(flow) {
 // de flows) se muestran de una a la vez: mostrar una implica ocultar el
 // resto. Ningún panel (perfil, parametría, usuarios, archivos de salida) se
 // abre como <dialog> flotante, todos reemplazan el contenido de esta área.
-const MAIN_SECTION_IDS = ['flowDetail', 'outputFilesSection', 'dashboardSection', 'conciliacionIbsSection', 'profileSection', 'parametriaSection', 'usersSection'];
+const MAIN_SECTION_IDS = ['flowDetail', 'outputFilesSection', 'dashboardSection', 'conciliacionIbsSection', 'qnetSection', 'profileSection', 'parametriaSection', 'usersSection'];
 
 function showMainSection(id) {
   for (const sectionId of MAIN_SECTION_IDS) {
@@ -3481,6 +3481,153 @@ document.getElementById('conciliacionIbsRunBtn').addEventListener('click', () =>
 document.getElementById('conciliacionIbsFileBtn').addEventListener('click', () => runConciliacionIbs(true));
 document.getElementById('conciliacionIbsDownloadBtn').addEventListener('click', downloadConciliacionIbsDiferencias);
 conciliacionIbsTipoFilter.addEventListener('change', applyConciliacionIbsFilter);
+
+// --- Conciliación QNET ----------------------------------------------------------
+// Loop y los débitos pendientes se consultan en Sybase desde el servidor; acá se
+// suben los archivos de BankService, se sigue el avance y se muestra el dashboard
+// (un HTML autocontenido generado por el servidor, ver node/lib/qnet/reportes/dashboard.js).
+
+let qnetCorridaActual = '';
+
+function setQnetProgreso(texto, esError) {
+  const el = document.getElementById('qnetProgreso');
+  el.textContent = texto;
+  el.style.color = esError ? 'var(--error, #b42318)' : '';
+}
+
+async function loadQnetCorridas(seleccionar) {
+  const select = document.getElementById('qnetCorridas');
+  try {
+    const res = await apiFetch('/api/qnet/corridas');
+    const data = await res.json();
+    select.innerHTML = '';
+    for (const c of data.corridas || []) {
+      const option = document.createElement('option');
+      option.value = c.id;
+      const estado = c.exitCode === 0 ? '' : c.exitCode === 2 ? ' · con advertencias' : c.exitCode === 1 ? ' · con errores' : '';
+      option.textContent = `${c.fecha} · ${c.id}${estado}`;
+      select.appendChild(option);
+    }
+    if (seleccionar) select.value = seleccionar;
+    return (data.corridas || []).length > 0;
+  } catch (err) {
+    return false;
+  }
+}
+
+async function loadQnetDashboard(id) {
+  const frame = document.getElementById('qnetFrame');
+  try {
+    const res = await apiFetch(`/api/qnet/dashboard?id=${encodeURIComponent(id)}`);
+    const data = await res.json();
+    if (!res.ok) {
+      frame.style.display = 'none';
+      document.getElementById('qnetDescargas').style.display = '';
+      setQnetProgreso(data.error || 'No se pudo abrir el dashboard.', true);
+      qnetCorridaActual = id;
+      return;
+    }
+    qnetCorridaActual = id;
+    // La pantalla de la app es siempre clara: el dashboard no sigue el modo oscuro del sistema.
+    frame.srcdoc = data.html.replace('<html lang="es">', '<html lang="es" data-theme="light">');
+    frame.style.display = '';
+    document.getElementById('qnetDescargas').style.display = '';
+  } catch (err) {
+    setQnetProgreso('Error de red abriendo el dashboard: ' + err.message, true);
+  }
+}
+
+async function runQnet() {
+  const files = document.getElementById('qnetFiles').files;
+  if (!files || files.length === 0) {
+    alert('Elegí al menos un archivo de BankService (Movimientos_BankService-mmaaaa.csv).');
+    return;
+  }
+  const runBtn = document.getElementById('qnetRunBtn');
+  runBtn.disabled = true;
+  setQnetProgreso('Leyendo los archivos...');
+  try {
+    const archivos = [];
+    for (const file of files) archivos.push({ nombre: file.name, contenido: await readFileAsText(file) });
+    const res = await apiFetch('/api/qnet/ejecutar', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ archivos, desde: document.getElementById('qnetDesde').value, hasta: document.getElementById('qnetHasta').value }),
+    });
+    const data = await res.json();
+    if (!res.ok) {
+      setQnetProgreso(data.error || 'No se pudo iniciar la conciliación.', true);
+      return;
+    }
+    await pollQnet(data.jobId);
+  } catch (err) {
+    setQnetProgreso('Error: ' + err.message, true);
+  } finally {
+    runBtn.disabled = false;
+  }
+}
+
+async function pollQnet(jobId) {
+  for (;;) {
+    const res = await apiFetch(`/api/qnet/estado?job=${encodeURIComponent(jobId)}`);
+    const data = await res.json();
+    if (!res.ok) {
+      setQnetProgreso(data.error || 'Se perdió el seguimiento de la conciliación.', true);
+      return;
+    }
+    if (data.estado === 'corriendo') {
+      setQnetProgreso(`Conciliando... ${data.segundos}s · ${(data.progreso || []).slice(-1)[0] || 'iniciando'}`);
+      await new Promise((resolve) => setTimeout(resolve, 2000));
+      continue;
+    }
+    if (data.estado === 'error') {
+      setQnetProgreso('La conciliación falló: ' + data.error, true);
+      return;
+    }
+    const r = data.resultado;
+    const avisos = (r.avisos || []).filter((a) => a.nivel !== 'info');
+    await loadQnetCorridas(r.id);
+    await loadQnetDashboard(r.id);
+    const texto = r.exitCode === 0 ? 'Conciliación terminada sin avisos.'
+      : r.exitCode === 2 ? 'Conciliación terminada con advertencias: ' + avisos.map((a) => a.mensaje).join(' | ')
+      : 'La conciliación no se pudo hacer: ' + avisos.map((a) => a.mensaje).join(' | ');
+    setQnetProgreso(texto, r.exitCode === 1);
+    return;
+  }
+}
+
+async function downloadQnetArchivo(name) {
+  if (!qnetCorridaActual) return;
+  try {
+    const res = await apiFetch(`/api/qnet/archivo?id=${encodeURIComponent(qnetCorridaActual)}&name=${encodeURIComponent(name)}`);
+    const data = await res.json();
+    if (!res.ok) {
+      alert(data.error || 'No se pudo descargar el archivo.');
+      return;
+    }
+    downloadTextFile(data.name, data.content, name.endsWith('.csv') ? 'text/csv' : 'text/plain');
+  } catch (err) {
+    alert('Error de red descargando el archivo: ' + err.message);
+  }
+}
+
+async function openQnetSection() {
+  showMainSection('qnetSection');
+  const hay = await loadQnetCorridas();
+  const select = document.getElementById('qnetCorridas');
+  if (hay && !qnetCorridaActual) await loadQnetDashboard(select.value);
+}
+
+document.getElementById('qnetBtn').addEventListener('click', openQnetSection);
+document.getElementById('closeQnetBtn').addEventListener('click', () => showMainSection('flowDetail'));
+document.getElementById('qnetRunBtn').addEventListener('click', runQnet);
+document.getElementById('qnetAbrirBtn').addEventListener('click', () => {
+  const id = document.getElementById('qnetCorridas').value;
+  if (id) loadQnetDashboard(id);
+});
+for (const button of document.querySelectorAll('[data-qnet-archivo]')) {
+  button.addEventListener('click', () => downloadQnetArchivo(button.dataset.qnetArchivo));
+}
 
 // --- Login / logout ---------------------------------------------------------
 
