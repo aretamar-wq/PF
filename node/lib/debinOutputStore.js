@@ -315,12 +315,7 @@ async function getTransferidoHoyPorCuit(rootDir, cuits) {
 async function getConsultaRowsDelDia(rootDir, fecha) {
   return db.query(
     rootDir,
-    `SELECT ejecutado_en, ejecutado_por, id_mensaje, id_comprobante, id_operacion,
-            debito_cuit, debito_cbu, debito_titular,
-            credito_cuit, credito_cbu, credito_titular,
-            moneda, importe, realizado, codigo_respuesta, descripcion_respuesta, error_consulta,
-            JSON_UNQUOTE(JSON_EXTRACT(respuesta_json, '$.estadoCodigo')) AS estado_codigo,
-            JSON_UNQUOTE(JSON_EXTRACT(respuesta_json, '$.estadoDescripcion')) AS estado_descripcion
+    `SELECT ${CONCILIACION_COLUMNAS}
      FROM dbn_consulta
      WHERE DATE(ejecutado_en) = ?
      ORDER BY ejecutado_en, id`,
@@ -355,9 +350,22 @@ async function findTransferenciasRealizadas(rootDir, transferencias) {
 
 // Columnas de dbn_consulta que usa la conciliación de transferencias con IBS
 // (estadoCodigo/estadoDescripcion no son columnas: están en respuesta_json).
+// Las filas de las primeras corridas (formato viejo de dbnconsulta-...csv, sin
+// CUIT, CBU, importe ni "realizado" propios) tienen esos datos solo dentro de
+// la consulta del DEBIN (respuesta_json): comprador = quien paga (débito),
+// vendedor = quien recibe (crédito). Se usan de respaldo cuando la columna
+// está vacía, y una fila sin "realizado" pero con idOperacion (el DEBIN se
+// creó) cuenta como realizada.
+const jsonCampo = (campo) => `JSON_UNQUOTE(JSON_EXTRACT(respuesta_json, '$.${campo}'))`;
+const conRespaldo = (columna, campo) => `COALESCE(NULLIF(TRIM(${columna}), ''), ${jsonCampo(campo)}) AS ${columna}`;
 const CONCILIACION_COLUMNAS = `ejecutado_en, ejecutado_por, id_mensaje, id_comprobante, id_operacion,
-            debito_cuit, debito_cbu, debito_titular, credito_cuit, credito_cbu, credito_titular,
-            moneda, importe, realizado, codigo_respuesta, descripcion_respuesta, error_consulta,
+            ${conRespaldo('debito_cuit', 'compradorCuit')}, ${conRespaldo('debito_cbu', 'compradorCuentaCbu')},
+            ${conRespaldo('debito_titular', 'compradorTitular')},
+            ${conRespaldo('credito_cuit', 'vendedorCuit')}, ${conRespaldo('credito_cbu', 'vendedorCuentaCbu')},
+            ${conRespaldo('credito_titular', 'vendedorTitular')},
+            ${conRespaldo('moneda', 'detalleMoneda')}, ${conRespaldo('importe', 'detalleImporte')},
+            CASE WHEN TRIM(realizado) = '' AND TRIM(id_operacion) <> '' THEN 's' ELSE realizado END AS realizado,
+            codigo_respuesta, descripcion_respuesta, error_consulta,
             JSON_UNQUOTE(JSON_EXTRACT(respuesta_json, '$.estadoCodigo')) AS estado_codigo,
             JSON_UNQUOTE(JSON_EXTRACT(respuesta_json, '$.estadoDescripcion')) AS estado_descripcion`;
 
