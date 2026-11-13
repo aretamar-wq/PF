@@ -890,6 +890,29 @@ async function runOnce(inputs, runLogFileName) {
   return runFlowByName(state.selectedFlow.name, inputs, runLogFileName);
 }
 
+// "Consulta DEBIN" manual: si la operación es de una transferencia de ApiCore
+// (dbn_consulta) que quedó sin estado de acreditación, guarda el estado que
+// devolvió Nova-Link para que la conciliación lo vea. Si no hay transferencia
+// con ese id, el servidor no hace nada. Una falla acá no corta la consulta.
+async function guardarEstadoConsultaDebin(idOperacion, log) {
+  const lastEntry = log[log.length - 1];
+  if (!idOperacion || !lastEntry || lastEntry.status !== 'Success' || !lastEntry.responseSummary) return;
+  try {
+    const campos = extractDebinConsultaFields(JSON.parse(lastEntry.responseSummary));
+    const res = await apiFetch('/api/dbn-consulta-estado', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ idOperacion, campos }),
+    });
+    const data = await res.json();
+    if (res.ok && data.actualizadas > 0) {
+      alert(`Estado guardado en ApiCore: ${data.estadoCodigo || 'sin estado'}${data.estadoDescripcion ? ' — ' + data.estadoDescripcion : ''} (${data.actualizadas} transferencia).`);
+    }
+  } catch (err) {
+    // No es parte de la consulta: se ignora.
+  }
+}
+
 async function runFlow() {
   if (!state.selectedFlow) return;
 
@@ -913,6 +936,7 @@ async function runFlow() {
     state.lastLog = await runOnce(inputs);
     renderLog(state.lastLog);
     document.getElementById('saveLogBtn').disabled = state.lastLog.length === 0;
+    if (state.selectedFlow.name === 'Consulta DEBIN') await guardarEstadoConsultaDebin(inputs.idOperacion, state.lastLog);
     if (isSqlFlow(state.selectedFlow)) {
       renderSqlResult(state.lastLog);
     }
