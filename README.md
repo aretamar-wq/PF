@@ -1580,7 +1580,12 @@ Diferencias que detecta:
   correcto y no es una diferencia.
 - **Revertida en IBS estando acreditada**: el débito se revirtió pero la
   transferencia figura acreditada.
-- **Sin estado de acreditación**: la consulta de estado no devolvió nada.
+- **Sin estado de acreditación**: la consulta de estado no devolvió nada. Se
+  resuelve corriendo el flow **Consulta DEBIN** (manual, con el id de la
+  operación = `idOperacion` de `dbn_consulta`): si esa operación es de una
+  transferencia de ApiCore, el estado que devuelve Nova-Link se guarda en
+  `dbn_consulta` (`POST /api/dbn-consulta-estado`, queda en `security.log`) y
+  avisa "Estado guardado en ApiCore"; la próxima conciliación ya lo ve.
 - **Rechazada con débito en IBS**: ApiCore la rechazó y IBS tiene un débito
   sin revertir.
 - **Solo en IBS**: un débito sin ninguna transferencia en ApiCore. Los débitos
