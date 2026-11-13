@@ -16,6 +16,8 @@ const COLUMNAS_IBS = ['sistcod', 'cuecod', 'Fecha_Mov', 'comnro', 'movcod', 'acc
 const MOV_DEBITO_CC = '25020';
 const MOV_CREDITO_CA = '25021';
 const MOV_ALTA_PF = '152';
+// Crédito en la Caja de Ahorro cuando vence un plazo fijo (capital + interés); comnro = número de operación del PF.
+const MOV_VENCIMIENTO_PF = '1200';
 
 // Importes a centavos enteros: comparar sumas en float acumula error.
 function toCents(value) {
@@ -76,6 +78,7 @@ function buildIbsPagosPfQuery(fecha, config) {
   return buildIbsQuery(fecha, [
     `a.movcod = ${config.movDebitoCa} and a.sistcod = ${config.sistCa}`,
     `a.movcod = ${config.movCreditoCc} and a.sistcod = ${config.sistCc} and a.cuecod = ${config.cuentaCc}`,
+    `a.movcod = ${MOV_VENCIMIENTO_PF} and a.sistcod = ${config.sistCa}`,
   ]);
 }
 
@@ -310,6 +313,14 @@ function conciliarPagosPf(operaciones, ibsLines, fecha, config) {
   const relevantes = movimientos.filter((m) => esDebitoCa(m) || esCreditoCc(m));
   const porClaveRelevante = indexarPorClave(relevantes);
 
+  // Crédito de vencimiento del plazo fijo (1200, comnro = operación): IBS lo
+  // acredita en la Caja de Ahorro antes de que ApiCore la debite para pagar.
+  // Solo se verifica si el extracto lo trae (los extractos anteriores no).
+  const vencimientos = movimientos.filter((m) => m.movcod === MOV_VENCIMIENTO_PF && m.sistcod === config.sistCa);
+  const hayVencimientos = vencimientos.length > 0;
+  const vencPorOperacion = indexarPorClave(vencimientos);
+  const vencimientosCasados = [];
+
   const diferencias = [];
   const pendientes = [];
   let pagosOk = 0;
@@ -331,6 +342,37 @@ function conciliarPagosPf(operaciones, ibsLines, fecha, config) {
       importe: importeCents / 100,
     };
     const candidatos = (movcod) => (porClaveRelevante.get(`${movcod}|${op.numero_comprobante}`) || []).filter((m) => !m.usado);
+
+    // Vencimiento acreditado en IBS (todas las operaciones que vencen, pagadas o no, circuito 0 o 1).
+    let problemasVencimiento = 0;
+    const operacionPf = String(op.operacion || '').trim();
+    if (hayVencimientos && operacionPf) {
+      const lista = (vencPorOperacion.get(`${MOV_VENCIMIENTO_PF}|${operacionPf}`) || []).filter((m) => !m.usado);
+      const venc = lista.find((m) => m.cuecod === String(op.caja_ahorro).trim() && m.cents === importeCents) || lista[0];
+      if (!venc) {
+        problemasVencimiento++;
+        diferencias.push({
+          ...base,
+          tipo: 'Vencimiento sin acreditar en IBS',
+          detalle: `IBS no tiene el crédito del vencimiento del plazo fijo (${MOV_VENCIMIENTO_PF}, operación ${operacionPf}) en la Caja de Ahorro ${op.caja_ahorro}.`,
+        });
+      } else {
+        venc.usado = true;
+        vencimientosCasados.push(venc);
+        if (venc.cuecod !== String(op.caja_ahorro).trim()) {
+          problemasVencimiento++;
+          diferencias.push({ ...base, tipo: 'Cuenta de vencimiento distinta', detalle: `IBS acreditó el vencimiento (${MOV_VENCIMIENTO_PF}) en la cuenta ${venc.cuecod} y ApiCore tiene la ${op.caja_ahorro}.` });
+        }
+        if (venc.cents !== importeCents) {
+          problemasVencimiento++;
+          diferencias.push({
+            ...base,
+            tipo: 'Importe de vencimiento distinto',
+            detalle: `IBS acreditó $ ${formatCents(venc.cents)} por el vencimiento (${MOV_VENCIMIENTO_PF}) y el importe neto de ApiCore es $ ${formatCents(importeCents)}.`,
+          });
+        }
+      }
+    }
 
     if (circuito === '0' && pagado) {
       pagadosApicore++;
@@ -354,7 +396,7 @@ function conciliarPagosPf(operaciones, ibsLines, fecha, config) {
       };
       esperar(config.movDebitoCa, op.caja_ahorro, 'débito en Caja de Ahorro');
       esperar(config.movCreditoCc, config.cuentaCc, 'crédito en Cuenta Corriente');
-      if (problemas.length === 0) pagosOk++;
+      if (problemas.length === 0 && problemasVencimiento === 0) pagosOk++;
       for (const p of problemas) diferencias.push({ ...base, ...p });
       continue;
     }
@@ -408,6 +450,8 @@ function conciliarPagosPf(operaciones, ibsLines, fecha, config) {
     return { cantidad: list.length, importe: sumCents(list.map((m) => m.cents)) / 100 };
   };
   const tipos = (d) => diferencias.filter((x) => x.tipo === d).length;
+  const otrosVencimientos = vencimientos.filter((m) => !m.usado);
+  const conOperacion = operaciones.filter((o) => String(o.operacion || '').trim());
 
   return {
     tipo: 'pagos',
@@ -425,8 +469,22 @@ function conciliarPagosPf(operaciones, ibsLines, fecha, config) {
       soloEnIbs: tipos('Solo en IBS') + tipos('Repetido en IBS'),
       movimientosIbs: movimientos.length,
       filasOtraFecha,
+      verificaVencimientos: hayVencimientos,
+      vencimientosSinAcreditar: tipos('Vencimiento sin acreditar en IBS'),
+      // Vencimientos (1200) de plazos fijos que no son de ApiCore: informativo.
+      otrosCanales: otrosVencimientos.length,
+      otrosCanalesImporte: sumCents(otrosVencimientos.map((m) => m.cents)) / 100,
     },
     totales: [
+      ...(hayVencimientos
+        ? [
+            {
+              concepto: `Créditos de vencimiento en Caja de Ahorro (${MOV_VENCIMIENTO_PF})`,
+              apicore: { cantidad: conOperacion.length, importe: sumCents(conOperacion.map((o) => toCents(o.importe_neto))) / 100 },
+              ibs: { cantidad: vencimientosCasados.length, importe: sumCents(vencimientosCasados.map((m) => m.cents)) / 100 },
+            },
+          ]
+        : []),
       {
         concepto: `Débitos en Caja de Ahorro (${config.movDebitoCa})`,
         apicore: { cantidad: pagados.length, importe: importePagados },
@@ -440,7 +498,7 @@ function conciliarPagosPf(operaciones, ibsLines, fecha, config) {
     ],
     diferencias,
     pendientes,
-    otrosCanales: [],
+    otrosCanales: otrosVencimientos.map((m) => ({ cuecod: m.cuecod, comnro: m.comnro, importe: m.cents / 100 })),
   };
 }
 

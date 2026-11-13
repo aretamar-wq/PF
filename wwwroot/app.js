@@ -3286,6 +3286,12 @@ function renderConciliacionIbs(data) {
       `${r.debitosOtrasFechas} débito(s) de IBS en este período corresponden a transferencias hechas fuera del rango elegido ` +
       `(ya figuran realizadas en ApiCore, por ejemplo las de un fin de semana o feriado anterior): no son diferencias.`;
     otrosBox.style.display = '';
+  } else if (esPagos && r.otrosCanales > 0) {
+    document.getElementById('conciliacionIbsOtrosCanalesTitulo').textContent = 'Vencimientos de plazos fijos de otros canales (informativo)';
+    document.getElementById('conciliacionIbsOtrosCanalesTexto').textContent =
+      `${r.otrosCanales} vencimiento(s) de plazos fijos por $ ${formatImporte(r.otrosCanalesImporte)} acreditados en IBS ese día que no son de ApiCore: ` +
+      'no se concilian acá.';
+    otrosBox.style.display = '';
   } else if (r.otrosCanales > 0) {
     document.getElementById('conciliacionIbsOtrosCanalesTitulo').textContent = 'Altas de PF de otros canales (informativo)';
     const cuentas = [...new Set(data.otrosCanales.map((o) => o.cuecod))].join(', ');
@@ -3351,7 +3357,9 @@ const CONCILIACION_IBS_DESCRIPCIONES = {
   pagos:
     'Cruza los plazos fijos que vencían en la fecha de proceso elegida contra los pagos en IBS: débito en la Caja de ' +
     'Ahorro y crédito en la Cuenta Corriente (transacciones y cuenta de Parametría), por número de comprobante. Detecta ' +
-    'pagos que IBS tiene y ApiCore no marcó como pagados (por ejemplo, una corrida cortada) y pagos a medias.',
+    'pagos que IBS tiene y ApiCore no marcó como pagados (por ejemplo, una corrida cortada) y pagos a medias. Si el ' +
+    'extracto trae los créditos de vencimiento (código 1200), también verifica que IBS haya acreditado cada plazo fijo ' +
+    'por su importe neto.',
   transferencias:
     'Cruza las transferencias DEBIN realizadas en ApiCore entre las fechas elegidas contra los débitos de IBS en la Caja de ' +
     'Ahorro del cliente (28600 si es a su propia cuenta, 28601 si es a terceros), por comprobante, importe, moneda y cuenta. ' +
