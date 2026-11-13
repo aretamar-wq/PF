@@ -1,6 +1,6 @@
 'use strict';
 
-// Conciliación QNET: Loop (partidas) + débitos pendientes + BankService.
+// Conciliación Loop: Loop (partidas) + débitos pendientes + BankService.
 // Función pura (sin E/S): recibe filas ya normalizadas y devuelve el resultado.
 
 const { claveDe, agruparComprobantes } = require('./comprobantes');
