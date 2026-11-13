@@ -1598,6 +1598,15 @@ Diferencias que detecta:
   avisa "Estado guardado en ApiCore"; la próxima conciliación ya lo ve.
 - **Rechazada con débito en IBS**: ApiCore la rechazó y IBS tiene un débito
   sin revertir.
+- **Débito pendiente en IBS**: la transferencia está realizada en ApiCore, no
+  tiene débito en `tgl_movimientos`, pero IBS lo tiene encolado en
+  `Banksys..tgl_deb_pendientes` (por ejemplo, sin saldo): el banco acreditó sin
+  haber debitado. El detalle trae el importe y el mensaje (`mentexto`) del
+  pendiente. Con "Rechazada con débito pendiente en IBS" es lo mismo para una
+  transferencia que ApiCore rechazó. El cruce es por comprobante (`comnro`) y,
+  cuando se conoce, por la cuenta del CBU de débito. Los pendientes solo se
+  consultan con "Conciliar contra IBS" (consulta directa a Sybase), no con un
+  archivo; si esa consulta falla se avisa y la conciliación sigue.
 - **Solo en IBS** de una transferencia que ApiCore sí hizo pero que nunca llegó a
   `dbn_consulta` (corridas viejas, quedaron solo en `files/`): se carga con
   `node scripts/import-dbn-consulta.js --apply ../files/<runId>-consulta-debin-solo.csv`

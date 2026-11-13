@@ -3157,7 +3157,8 @@ function renderConciliacionIbsTiles(tipo, resumen) {
     ? tile('Transferencias realizadas', resumen.realizadasApicore) +
       tile('Conciliadas OK', resumen.transferenciasOk, 'ok') +
       tile('Con diferencias', resumen.transferenciasConDiferencias, malo(resumen.transferenciasConDiferencias)) +
-      tile('Pendientes de débito', resumen.pendientes) +
+      tile('Pendientes de débito (día hábil)', resumen.pendientes) +
+      tile('Con débito pendiente en IBS', resumen.debitosPendientesIbs, malo(resumen.debitosPendientesIbs)) +
       tile('Débitos solo en IBS', resumen.soloEnIbs, malo(resumen.soloEnIbs)) +
       tile('Rechazadas en ApiCore', resumen.rechazadosApicore) +
       tile('Rechazadas que figuran en IBS', resumen.rechazadosEnIbs, malo(resumen.rechazadosEnIbs))
