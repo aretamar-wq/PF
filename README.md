@@ -1249,13 +1249,26 @@ Verifica cada día que cada transferencia QNET esté bien contabilizada en Loop
 (un débito a la cuenta del cliente y un crédito a la cuenta puente), que lo que
 falta esté en los débitos pendientes y que todo cierre contra BankService.
 
-- **Loop** y **débitos pendientes** salen directo de Sybase con las consultas del
-  área (Loop: una consulta por día hábil, `movcod in (25030, 25031)`, fechas como
-  `aaaammdd`; pendientes: `Banksys..tgl_deb_pendientes`). **BankService** viene por
+- **Se concilia UN día** (un solo campo "Fecha"). **Loop** y **débitos pendientes**
+  salen directo de Sybase con las consultas del área (Loop: los movimientos de ese
+  día, `movcod in (25030, 25031)`, fechas como `aaaammdd`; pendientes:
+  `Banksys..tgl_deb_pendientes`, la foto del momento). **BankService** viene por
   archivo, uno por mes (`Movimientos_BankService-mmaaaa.csv`); los de dos meses
   consecutivos se superponen y gana el más nuevo por `Comprobante`.
-- Sin Sybase se puede correr con lo exportado antes (`--loop-dir` con los
-  `Movimientos_Loop_aaaammdd.csv` —un reexport del día REEMPLAZA al original— y
+- De BankService cuentan para el día las operaciones con **fecha contable** igual
+  al día: la fecha de `Ejecutada` (o de `Creada` si no se ejecutó), pasada al próximo
+  día hábil —lo de un fin de semana o feriado se contabiliza el siguiente día hábil,
+  con el calendario de feriados de Parametría—. Si Loop contabiliza por la fecha de la
+  operación, `postergarNoHabiles: false` en `config.js`. Un comprobante que está en
+  Loop se compara con BankService sin importar la fecha de la operación.
+- Un día que **no pasó todavía (hoy)** sigue abierto: lo que falta en Loop es
+  "pendiente de contabilizar" y no excepción; en un día cerrado, un APPROVED sin
+  asiento es excepción. Los débitos pendientes de días anteriores no son del día, pero
+  entran en la antigüedad del saldo; los posteriores se informan aparte. Como los
+  pendientes son una foto del momento, una conciliación de un día pasado ve los
+  pendientes de hoy: la más fiel es la que se hace el mismo día.
+- Sin Sybase se puede correr con lo exportado antes (`--loop-dir` con el
+  `Movimientos_Loop_aaaammdd.csv` del día —un reexport REEMPLAZA al original— y
   `--pendientes`).
 - Clave del comprobante: moneda + número. Marcas, en este orden: más de 2
   partidas; débito de centavo sin crédito; débito pendiente (del último día /
@@ -1266,26 +1279,29 @@ falta esté en los débitos pendientes y que todo cierre contra BankService.
   `--config`): códigos de movimiento, cuentas puente, umbral del centavo.
 
 **Desde la app:** menú **Conciliación Loop**. Se suben los archivos de BankService (uno
-por mes), opcionalmente se acota el período, y **Conciliar** corre en segundo
-plano (unas 30 consultas a Sybase; una conciliación a la vez) mostrando el avance.
-Al terminar se ve el dashboard (indicadores de partidas, desbalance y cruce,
-gráfico de barras apiladas por fecha y tipo, débitos pendientes del último día y
-de días anteriores, saldo por día y excepciones con filtros, búsqueda y orden) y se
-pueden descargar los CSV y el log. Las corridas anteriores se reabren desde el
-selector. Endpoints: `POST /api/qnet/ejecutar`, `GET /api/qnet/estado`,
-`/corridas`, `/dashboard` y `/archivo`. Cada corrida también deja un
-`dashboard.html` autocontenido en su carpeta.
+por mes), se elige la **fecha** (un día) y **Conciliar** corre en segundo plano (dos
+consultas a Sybase; una conciliación a la vez) mostrando el avance. Al terminar se ve
+el dashboard (indicadores de partidas, desbalance y cruce, excepciones del día por
+tipo, débitos pendientes del día y de días anteriores, saldo por día y excepciones
+con filtros, búsqueda y orden) y se pueden descargar los CSV y el log.
+
+**Histórico:** cada conciliación queda guardada con su fecha. El selector "Histórico"
+las lista por fecha (con su estado y cuándo se hizo) y **Abrir** muestra su dashboard.
+**Evolución día a día** compara las conciliaciones guardadas (una por fecha, la más
+nueva): excepciones por fecha y tipo, saldo de débitos pendientes, "sin cubrir" y un
+detalle por día desde el que se abre cada una. Endpoints: `POST /api/qnet/ejecutar`,
+`GET /api/qnet/estado`, `/corridas`, `/evolucion`, `/dashboard` y `/archivo`. Cada
+corrida también deja un `dashboard.html` autocontenido en su carpeta.
 
 Por línea de comandos (por ejemplo para programarla):
 
 ```bash
-node scripts/conciliar-qnet.js \
+node scripts/conciliar-qnet.js --fecha 2026-11-12 \
   --bankservice ../qnet/entrada/Movimientos_BankService-102026.csv \
   --bankservice ../qnet/entrada/Movimientos_BankService-112026.csv
 ```
 
-Opciones: `--desde`/`--hasta` (aaaa-mm-dd; por defecto el período de BankService),
-`--salida`, `--config`. Código de salida: **0** bien, **1** error (no se concilia:
+Opciones: `--fecha` (aaaa-mm-dd; por defecto hoy), `--salida`, `--config`. Código de salida: **0** bien, **1** error (no se concilia:
 encabezado inesperado, fila de otra fecha, pendientes de otro tipo, etc.), **2**
 advertencias (por ejemplo un archivo repetido).
 
