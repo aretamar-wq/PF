@@ -38,13 +38,15 @@ const leer = (dir) => Object.fromEntries(fs.readdirSync(dir).filter((n) => n !==
 
 test('Corrida completa desde archivos: resultado, histórico y salidas CSV sin datos personales', async () => {
   const e = escenario();
-  const r = await ejecutarCorrida({ fuente: crearFuenteArchivos({ loopDir: e.loop, pendientesFile: e.pend }), bankservice: e.bs, salidaDir: e.salida });
+  const r = await ejecutarCorrida({ fuente: crearFuenteArchivos({ loopDir: e.loop, pendientesFile: e.pend }), bankservice: e.bs, fecha: '2026-11-02', hoy: '2026-11-20', salidaDir: e.salida });
   assert.strictEqual(r.exitCode, 0);
   const c = r.conciliacion;
-  assert.deepStrictEqual(c.periodo, { primerDia: '2026-11-02', ultimoDia: '2026-11-03' });
+  assert.strictEqual(c.fecha, '2026-11-02');
+  // solo los movimientos de ese día: el 02/11 tiene los comprobantes 1 y 2
   const marcas = Object.fromEntries(c.comprobantes.map((x) => [x.comnro, x.marca]));
-  assert.deepStrictEqual(marcas, { 1: 'Correcto', 2: 'Débito pendiente anterior', 3: 'Correcto', 4: 'Débito de centavo sin crédito' });
-  assert.deepStrictEqual([c.totales.ARS.neto, c.totales.ARS.pendientes, c.totales.ARS.sinCubrir], [5000 + 0 - 1, 5000, -1]);
+  assert.deepStrictEqual(marcas, { 1: 'Correcto', 2: 'Débito pendiente del último día' });
+  assert.deepStrictEqual([c.totales.ARS.neto, c.totales.ARS.pendientes, c.totales.ARS.sinCubrir], [5000, 5000, 0]);
+  assert.strictEqual(JSON.parse(fs.readFileSync(path.join(r.dir, 'resultado.json'), 'utf8')).fecha, '2026-11-02');
   // histórico: entradas tal como llegaron y salidas
   for (const f of ['entradas/loop/Movimientos_Loop_20261102.csv', 'entradas/pendientes/pendientes.csv', 'entradas/bankservice/Movimientos_BankService-112026.csv', 'excepciones.csv', 'resumen.csv', 'pendientes-por-dia.csv', 'fuentes.csv', 'conciliacion-comprobantes.csv', 'resultado.json', 'corrida.log']) {
     assert.ok(fs.existsSync(path.join(r.dir, f)), f);
@@ -54,29 +56,33 @@ test('Corrida completa desde archivos: resultado, histórico y salidas CSV sin d
   assert.ok(!/APELLIDO|20111222333|30999888777|0070000000000/.test(salidas), 'las salidas no deben llevar nombres, CUIT ni CBU');
   const exc = fs.readFileSync(path.join(r.dir, 'excepciones.csv'), 'utf8');
   assert.match(exc, /\r\n/);
-  assert.match(exc, /Débito pendiente anterior,2,5002,ARS,02\/11\/2026,50\.00/);
+  assert.match(exc, /Débito pendiente del último día,2,5002,ARS,02\/11\/2026,50\.00/);
 });
 
 test('Idempotente: dos corridas con los mismos archivos dan el mismo id y las mismas salidas', async () => {
   const e = escenario();
-  const correr = () => ejecutarCorrida({ fuente: crearFuenteArchivos({ loopDir: e.loop, pendientesFile: e.pend }), bankservice: e.bs, salidaDir: e.salida });
+  const correr = () => ejecutarCorrida({ fuente: crearFuenteArchivos({ loopDir: e.loop, pendientesFile: e.pend }), bankservice: e.bs, fecha: '2026-11-02', hoy: '2026-11-20', salidaDir: e.salida });
   const r1 = await correr();
   const salidas1 = leer(r1.dir);
   const r2 = await correr();
   assert.strictEqual(r1.id, r2.id);
   assert.deepStrictEqual(leer(r2.dir), salidas1);
   assert.strictEqual(fs.readdirSync(e.salida).filter((n) => n !== 'ultima.txt').length, 1);
-  // otro Loop (un día reexportado con otro contenido) = otra corrida
-  fs.writeFileSync(path.join(e.loop, 'Movimientos_Loop_20261103_r2.csv'), [LOOP_H, filaLoop(5, 0, 5003, '2026-11-03', 3, 25030, -1, 30), filaLoop(3, 0, 11000492, '2026-11-03', 3, 25031, 1, 30)].join('\r\n') + '\r\n');
+  // el reexport de ese día (con otro contenido) es otra corrida y reemplaza al original
+  fs.writeFileSync(path.join(e.loop, 'Movimientos_Loop_20261102_r2.csv'), [LOOP_H, filaLoop(5, 0, 5001, '2026-11-02', 1, 25030, -1, 100), filaLoop(3, 0, 11000492, '2026-11-02', 1, 25031, 1, 100)].join('\r\n') + '\r\n');
   const r3 = await correr();
   assert.notStrictEqual(r3.id, r1.id);
-  assert.ok(!r3.conciliacion.comprobantes.some((x) => x.comnro === '4'), 'el reexport reemplazó al día: el comprobante 4 ya no está');
+  assert.ok(!r3.conciliacion.comprobantes.some((x) => x.comnro === '2'), 'el reexport reemplazó al día: el comprobante 2 ya no está');
+  // otra fecha = otra corrida, en su propia carpeta; el histórico guarda las dos
+  const r4 = await ejecutarCorrida({ fuente: crearFuenteArchivos({ loopDir: e.loop, pendientesFile: e.pend }), bankservice: e.bs, fecha: '2026-11-03', hoy: '2026-11-20', salidaDir: e.salida });
+  assert.notStrictEqual(r4.id, r1.id);
+  assert.deepStrictEqual(r4.conciliacion.comprobantes.map((x) => x.comnro).sort(), ['3', '4']);
 });
 
 test('Código de salida 1: pendientes con filas de otro tipo, y no se concilia', async () => {
   const e = escenario();
   fs.writeFileSync(e.pend, [PEND_H, ['12/11/2026 0:00:00.000', 7, 1, 5, 0, 5002, 25003, 'Venta ME', '2/11/2026 10:00:00.000', 9, 1, '', '50.00', '2/11/2026 10:00:00.000', '2/11/2026 10:00:00.000'].join(',')].join('\r\n'));
-  const r = await ejecutarCorrida({ fuente: crearFuenteArchivos({ loopDir: e.loop, pendientesFile: e.pend }), bankservice: e.bs, salidaDir: e.salida });
+  const r = await ejecutarCorrida({ fuente: crearFuenteArchivos({ loopDir: e.loop, pendientesFile: e.pend }), bankservice: e.bs, fecha: '2026-11-02', hoy: '2026-11-20', salidaDir: e.salida });
   assert.strictEqual(r.exitCode, 1);
   assert.strictEqual(r.conciliacion, null);
   assert.match(fs.readFileSync(path.join(r.dir, 'corrida.log'), 'utf8'), /\[ERROR\].*error de la consulta/);
@@ -85,7 +91,7 @@ test('Código de salida 1: pendientes con filas de otro tipo, y no se concilia',
 test('Código de salida 2: un archivo de Loop repetido es una advertencia y la corrida sigue', async () => {
   const e = escenario();
   fs.copyFileSync(path.join(e.loop, 'Movimientos_Loop_20261102.csv'), path.join(e.loop, 'Movimientos_Loop_20261102_copia.csv'));
-  const r = await ejecutarCorrida({ fuente: crearFuenteArchivos({ loopDir: e.loop, pendientesFile: e.pend }), bankservice: e.bs, salidaDir: e.salida });
+  const r = await ejecutarCorrida({ fuente: crearFuenteArchivos({ loopDir: e.loop, pendientesFile: e.pend }), bankservice: e.bs, fecha: '2026-11-02', hoy: '2026-11-20', salidaDir: e.salida });
   assert.strictEqual(r.exitCode, 2);
   assert.ok(r.conciliacion);
 });
@@ -108,16 +114,30 @@ test('Fuente Sybase: una consulta por día hábil (aaaammdd) y los pendientes co
   };
   const e = escenario();
   const bs = [{ nombre: 'Movimientos_BankService-112026.csv', contenido: [BS_H, filaBs(1, '2026-11-02 09:00:00', '2026-11-02 09:00:05', 'APPROVED', 5001, '100'), filaBs(9, '2026-11-08 09:00:00', '2026-11-08 09:00:05', 'APPROVED', 5009, '1')].join('\n') + '\n' }];
-  const r = await ejecutarCorrida({ fuente: crearFuenteSybase({}, querySybase, config), bankservice: bs, salidaDir: e.salida });
+  const r = await ejecutarCorrida({ fuente: crearFuenteSybase({}, querySybase, config), bankservice: bs, fecha: '2026-11-02', hoy: '2026-11-20', salidaDir: e.salida });
   const consultasLoop = consultas.filter((c) => /tgl_movimientos/.test(c));
-  // período 02/11 (lunes) a 08/11 (domingo): lunes a viernes = 5 consultas, sin sábado ni domingo
-  assert.strictEqual(consultasLoop.length, 5);
+  // un solo día = una consulta de Loop (más la de pendientes)
+  assert.strictEqual(consultasLoop.length, 1);
+  assert.strictEqual(consultas.filter((c) => /tgl_deb_pendientes/.test(c)).length, 1);
   assert.ok(/a\.fecmov >= '20261102'\s+and a\.fecmov < '20261103'/.test(consultasLoop[0]));
   assert.ok(/a\.movcod in \(25030, 25031\)/.test(consultasLoop[0]) && /a\.concod = ' '/.test(consultasLoop[0]));
   assert.ok(fs.existsSync(path.join(r.dir, 'entradas/loop/Movimientos_Loop_20261102.csv')));
-  assert.ok(!fs.existsSync(path.join(r.dir, 'entradas/loop/Movimientos_Loop_20261103.csv')), 'un día sin movimientos no genera archivo');
   // el pendiente del comprobante 2 (fecha de isql "Nov  2 2026 10:00AM") no tiene partidas en Loop: excepción con su fecha
   const sinAsiento = r.conciliacion.excepciones.find((x) => x.tipo === 'Débito pendiente sin asiento en Loop');
   assert.deepStrictEqual([sinAsiento.comprobante, sinAsiento.fecha, sinAsiento.importe], ['2', '2026-11-02', 5000]);
   assert.strictEqual(consultaLoop('2026-11-12', config).includes("'20261113'"), true);
+  // un sábado no consulta nada de Loop
+  consultas.length = 0;
+  await ejecutarCorrida({ fuente: crearFuenteSybase({}, querySybase, config), bankservice: bs, fecha: '2026-11-07', hoy: '2026-11-20', salidaDir: e.salida });
+  assert.strictEqual(consultas.filter((c) => /tgl_movimientos/.test(c)).length, 0);
+});
+
+test('Sin fecha, o un día sin movimientos de Loop (fin de semana), no se concilia', async () => {
+  const e = escenario();
+  const fuente = crearFuenteArchivos({ loopDir: e.loop, pendientesFile: e.pend });
+  const sinFecha = await ejecutarCorrida({ fuente, bankservice: e.bs, salidaDir: e.salida });
+  assert.strictEqual(sinFecha.exitCode, 1);
+  const domingo = await ejecutarCorrida({ fuente, bankservice: e.bs, fecha: '2026-11-01', hoy: '2026-11-20', salidaDir: e.salida });
+  assert.strictEqual(domingo.exitCode, 1);
+  assert.match(fs.readFileSync(path.join(domingo.dir, 'corrida.log'), 'utf8'), /fin de semana o feriado/);
 });

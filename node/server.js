@@ -29,6 +29,7 @@ const sybaseClient = require('./lib/sybaseClient');
 const crypto = require('crypto');
 const qnetCorrida = require('./lib/qnet/corrida');
 const qnetConfig = require('./lib/qnet/config');
+const qnetHistorial = require('./lib/qnet/historial');
 const { crearFuenteSybase } = require('./lib/qnet/fuentes/sybase');
 const { convertDMYToISO, formatLocal, formatDateOnly } = require('./lib/dateUtil');
 
@@ -1126,7 +1127,7 @@ function readTransferenciasRechazadasArchivo(desde, hasta, apiRows) {
 // consulta el avance (POST /api/qnet/ejecutar -> GET /api/qnet/estado). Una sola a la vez.
 
 const QNET_DIR = path.join(rootDir, 'qnet', 'corridas');
-const QNET_ID = /^[0-9a-f]{12}$/;
+const QNET_ID = qnetHistorial.ID;
 const QNET_ARCHIVOS_DESCARGA = ['excepciones.csv', 'resumen.csv', 'conciliacion-comprobantes.csv', 'pendientes-por-dia.csv', 'fuentes.csv', 'corrida.log'];
 const QNET_MAX_BYTES = 25 * 1024 * 1024;
 const qnetJobs = new Map();
@@ -1147,11 +1148,10 @@ async function handleQnetEjecutarPost(req, res, session) {
     writeJsonResponse(res, 400, { error: 'Demasiados archivos o demasiado grandes (máximo 6 y 25 MB en total).' });
     return;
   }
-  for (const campo of ['desde', 'hasta']) {
-    if (payload[campo] && !/^\d{4}-\d{2}-\d{2}$/.test(payload[campo])) {
-      writeJsonResponse(res, 400, { error: `${campo === 'desde' ? 'Desde' : 'Hasta'} inválida (formato aaaa-mm-dd).` });
-      return;
-    }
+  const fecha = String(payload.fecha || '');
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(fecha)) {
+    writeJsonResponse(res, 400, { error: 'Indicá la fecha a conciliar (un día, formato aaaa-mm-dd).' });
+    return;
   }
   if (qnetJobCorriendo()) {
     writeJsonResponse(res, 409, { error: 'Ya hay una conciliación Loop en curso: esperá a que termine.' });
@@ -1161,18 +1161,21 @@ async function handleQnetEjecutarPost(req, res, session) {
   const job = { id: crypto.randomBytes(6).toString('hex'), estado: 'corriendo', progreso: [], usuario: session.username, inicio: Date.now(), resultado: null, error: null };
   qnetJobs.set(job.id, job);
   for (const [id, j] of qnetJobs) if (qnetJobs.size > 10 && j.estado !== 'corriendo') qnetJobs.delete(id); // no acumular
-  securityStore.writeSecurityLog(logsDir, `CONCILIACION LOOP iniciada por '${session.username}' (${validos.length} archivo(s) de BankService)`);
+  securityStore.writeSecurityLog(logsDir, `CONCILIACION LOOP del ${fecha} iniciada por '${session.username}' (${validos.length} archivo(s) de BankService)`);
 
   (async () => {
     try {
       const progreso = (m) => job.progreso.push(m);
       const parametria = await parametriaStore.getParametria(rootDir);
       const fuente = crearFuenteSybase(parametria.sybase, sybaseClient.querySybase, qnetConfig, { progreso });
+      // Lo ejecutado un fin de semana o feriado se contabiliza el próximo día hábil (calendario de Parametría).
+      const { fechas: feriados } = conciliacionIbs.parseFeriados((parametria.calendario || {}).feriados);
       const r = await qnetCorrida.ejecutarCorrida({
         fuente,
         bankservice: validos.map((a) => ({ nombre: path.basename(a.nombre), contenido: a.contenido })),
-        desde: payload.desde || undefined,
-        hasta: payload.hasta || undefined,
+        fecha,
+        hoy: formatDateOnly(new Date()),
+        diaContable: qnetConfig.postergarNoHabiles ? (iso) => conciliacionIbs.proximoDiaHabil(iso, feriados) : (iso) => iso,
         salidaDir: QNET_DIR,
         progreso,
       });
@@ -1198,27 +1201,12 @@ function handleQnetEstadoGet(parsedUrl, res) {
 }
 
 function handleQnetCorridasGet(res) {
-  let ids = [];
-  try {
-    ids = fs.readdirSync(QNET_DIR).filter((n) => QNET_ID.test(n));
-  } catch (err) {
-    // Sin corridas todavía.
-  }
-  const corridas = ids
-    .map((id) => {
-      const dir = path.join(QNET_DIR, id);
-      let exitCode = null;
-      try {
-        const m = /código de salida (\d)/.exec(fs.readFileSync(path.join(dir, 'corrida.log'), 'utf8').split('\n')[0]);
-        exitCode = m ? Number(m[1]) : null;
-      } catch (err) {
-        // Sin log.
-      }
-      return { id, fecha: formatLocal(fs.statSync(dir).mtime), exitCode, conDashboard: fs.existsSync(path.join(dir, 'dashboard.html')) };
-    })
-    .sort((a, b) => b.fecha.localeCompare(a.fecha))
-    .slice(0, 30);
-  writeJsonResponse(res, 200, { corridas });
+  writeJsonResponse(res, 200, { corridas: qnetHistorial.listarCorridas(QNET_DIR).slice(0, 200).map((c) => ({ ...c, fechaGenerada: formatLocal(new Date(c.generada)) })) });
+}
+
+// Una corrida por fecha (la más nueva), para ver cómo se movieron las excepciones y el saldo día a día.
+function handleQnetEvolucionGet(res) {
+  writeJsonResponse(res, 200, { dias: qnetHistorial.evolucion(QNET_DIR) });
 }
 
 function handleQnetDashboardGet(parsedUrl, res) {
@@ -1877,6 +1865,7 @@ async function handleRequest(req, res) {
     if (method === 'POST' && pathname === '/api/qnet/ejecutar') return void (await handleQnetEjecutarPost(req, res, session));
     if (method === 'GET' && pathname === '/api/qnet/estado') return void handleQnetEstadoGet(parsedUrl, res);
     if (method === 'GET' && pathname === '/api/qnet/corridas') return void handleQnetCorridasGet(res);
+    if (method === 'GET' && pathname === '/api/qnet/evolucion') return void handleQnetEvolucionGet(res);
     if (method === 'GET' && pathname === '/api/qnet/dashboard') return void handleQnetDashboardGet(parsedUrl, res);
     if (method === 'GET' && pathname === '/api/qnet/archivo') return void handleQnetArchivoGet(parsedUrl, res, session);
     if (method === 'GET' && pathname === '/api/http-logs/content') return void handleHttpLogContentGet(parsedUrl, res, session);

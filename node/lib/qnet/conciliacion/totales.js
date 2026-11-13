@@ -18,17 +18,17 @@ function calcularTotales(lista, config) {
   return res;
 }
 
-// Saldo de débitos pendientes por fecha del crédito, por moneda, con cantidad,
-// importe y acumulado (del más viejo al más nuevo); separa el último día de los anteriores.
-function calcularAntiguedad(lista, ultimoDia, config) {
+// Saldo de débitos pendientes por fecha, por moneda, con cantidad, importe y
+// acumulado (del más viejo al más nuevo); separa el día de los anteriores.
+// "items": { moneda, fecha, importe } — el crédito del día para los comprobantes
+// de Loop y la fecha de origen para los pendientes de días anteriores.
+function calcularAntiguedad(items, dia) {
   const grupos = new Map();
-  for (const c of lista) {
-    if (!MARCAS_PENDIENTE.includes(c.marca)) continue;
-    const m = config.etiquetasMoneda[c.moncod] || c.moncod;
-    const k = `${m}|${c.fechaCredito}`;
-    const g = grupos.get(k) || { moneda: m, fecha: c.fechaCredito, cantidad: 0, importe: 0 };
+  for (const it of items) {
+    const k = `${it.moneda}|${it.fecha}`;
+    const g = grupos.get(k) || { moneda: it.moneda, fecha: it.fecha, cantidad: 0, importe: 0 };
     g.cantidad++;
-    g.importe += c.pendiente.importedeb;
+    g.importe += it.importe;
     grupos.set(k, g);
   }
   const filas = [...grupos.values()].sort((a, b) => a.moneda.localeCompare(b.moneda) || a.fecha.localeCompare(b.fecha));
@@ -36,7 +36,7 @@ function calcularAntiguedad(lista, ultimoDia, config) {
   for (const f of filas) {
     acumulado[f.moneda] = (acumulado[f.moneda] || 0) + f.importe;
     f.acumulado = acumulado[f.moneda];
-    f.tramo = f.fecha === ultimoDia ? 'Último día' : 'Días anteriores';
+    f.tramo = f.fecha === dia ? 'Último día' : 'Días anteriores';
   }
   const tramos = {};
   for (const f of filas) {
