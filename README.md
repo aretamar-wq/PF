@@ -275,6 +275,7 @@ node/
     migrate-json-to-mariadb.js  Migración única de *.local.json a MariaDB, ver "Base de datos (MariaDB)"
     repair-dbn-consulta-summaries.js  Reparación única del ArchivoOK de corridas viejas de "Transferencia DEBIN - File" (dry-run por default, --apply para aplicar)
     import-dbn-consulta.js            Carga a dbn_consulta las transferencias de un -consulta-debin-solo.csv que quedó solo como archivo (dry-run por default, --apply para cargar)
+    duplicadas-debin.js               CSV de transferencias DEBIN realizadas más de una vez (mismo CUIT de débito y comprobante) para pedir la devolución; lee files/*-consulta-debin-solo.csv
   lib/
     jsonPath.js               Port de modules/JsonPath.psm1
     variableSubstitution.js   Port de modules/VariableSubstitution.psm1
@@ -1598,6 +1599,10 @@ Diferencias que detecta:
   realizadas en `dbn_consulta` o repetidas en lo que carga (mismo CUIT de débito
   y comprobante): son envíos distintos y la conciliación las marca como
   "Enviada más de una vez".
+  Para pedir la devolución de las repetidas: `node scripts/duplicadas-debin.js`
+  (desde `node/`; opciones `--desde`/`--hasta` yyyy-MM-dd, `--out`, `--dir`)
+  genera `duplicadas-debin.csv` con una fila por cada DEBIN de más (el que hay
+  que devolver) y el original como referencia.
 - **Solo en IBS**: un débito sin ninguna transferencia en ApiCore. Los débitos
   de transferencias hechas fuera del rango pero que sí figuran realizadas en
   `dbn_consulta` se explican aparte (informativo, "débitos de otras fechas").
