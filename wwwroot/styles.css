@@ -333,6 +333,7 @@ fieldset legend { color: var(--navy); font-weight: 600; padding: 0 6px; }
 #conciliacionIbsDiferencias td.mono, #conciliacionIbsPendientes td.mono { font-family: monospace; white-space: nowrap; }
 #conciliacionIbsDiferencias td.detalle { min-width: 260px; }
 #conciliacionIbsDiferencias td.titular, #conciliacionIbsPendientes td.titular { min-width: 170px; }
+#conciliacionIbsDiferencias td.operacion, #conciliacionIbsPendientes td.operacion { white-space: normal; word-break: break-all; min-width: 110px; max-width: 150px; }
 .conciliacion-check-ok { color: var(--success); font-weight: 700; }
 .conciliacion-check-error { color: var(--error); font-weight: 700; }
 

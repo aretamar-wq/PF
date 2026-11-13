@@ -41,6 +41,7 @@ function getDefaultParametria() {
       limiteDiarioUsdMismoCuit: '',
       limiteDiarioUsdTerceros: '',
     },
+    calendario: { feriados: '' },
   };
 }
 
@@ -79,6 +80,10 @@ function mapParametriaRow(row) {
       limiteDiarioArsTerceros: row.debin_limite_diario_ars_terceros || '',
       limiteDiarioUsdMismoCuit: row.debin_limite_diario_usd_mismo_cuit || '',
       limiteDiarioUsdTerceros: row.debin_limite_diario_usd_terceros || '',
+    },
+    calendario: {
+      // Feriados bancarios, texto libre (ver parseFeriados en conciliacionIbs.js).
+      feriados: row.calendario_feriados || '',
     },
   };
 }
@@ -154,6 +159,15 @@ async function saveParametria(rootDir, parametria) {
       debin.limiteDiarioUsdTerceros || '',
     ]
   );
+
+  // En un UPDATE aparte: si todavía no se corrió la migración de la columna
+  // calendario_feriados, guardar el resto de la Parametría tiene que seguir
+  // funcionando (solo se pierde la lista de feriados hasta correrla).
+  try {
+    await db.query(rootDir, 'UPDATE parametria SET calendario_feriados = ? WHERE id = 1', [String((p.calendario || {}).feriados || '')]);
+  } catch (err) {
+    if (err.code !== 'ER_BAD_FIELD_ERROR') throw err;
+  }
 }
 
 module.exports = { getDefaultParametria, getParametria, saveParametria };

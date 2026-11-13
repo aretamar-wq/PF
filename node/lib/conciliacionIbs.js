@@ -40,17 +40,24 @@ function isoToDMY(fecha) {
 // colapse en una sola fila y se vea como "Repetido en IBS". Cada filtro es
 // una condición SQL ya armada por quien llama (solo con valores numéricos
 // validados, nunca texto del usuario).
-function buildIbsQuery(fecha, filtros) {
-  if (!/^\d{4}-\d{2}-\d{2}$/.test(fecha)) throw new Error(`Fecha inválida: '${fecha}'.`);
-  const [y, m, d] = fecha.split('-').map(Number);
+function buildIbsQuery(fecha, filtros, opciones = {}) {
+  const hastaFecha = opciones.hasta || fecha;
+  for (const f of [fecha, hastaFecha]) {
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(f)) throw new Error(`Fecha inválida: '${f}'.`);
+  }
+  const [y, m, d] = hastaFecha.split('-').map(Number);
   const siguiente = new Date(Date.UTC(y, m - 1, d + 1));
   const desde = fecha.replace(/-/g, '');
   const hasta = siguiente.toISOString().slice(0, 10).replace(/-/g, '');
-  const select = (filtro) => `select a.sistcod, a.moncod, a.cuecod, convert(varchar, a.fecmov, 103) 'Fecha_Mov', a.comnro, a.movcod, b.signo, b.accimp, b.signo * b.accimp 'Importe'
+  // conConcod: trae también los movimientos con contra-asiento (concod M/C)
+  // y la columna concod — hace falta para ver débitos que se hicieron y se
+  // revirtieron (transferencias DEBIN rechazadas por el otro sistema).
+  const colConcod = opciones.conConcod ? 'a.concod, ' : '';
+  const filtroConcod = opciones.conConcod ? '' : "\n  and a.concod = ' '";
+  const select = (filtro) => `select a.sistcod, a.moncod, a.cuecod, convert(varchar, a.fecmov, 103) 'Fecha_Mov', a.comnro, a.movcod, ${colConcod}b.signo, b.accimp, b.signo * b.accimp 'Importe'
 from tgl_movimientos a, tgl_movimientos_aper b
 where a.fecmov >= '${desde}'
-  and a.fecmov < '${hasta}'
-  and a.concod = ' '
+  and a.fecmov < '${hasta}'${filtroConcod}
   and a.fecreal = b.fecreal
   and a.tercod = b.tercod
   and b.funcod = 1
@@ -103,8 +110,10 @@ function getPagoPfConfig(parametria) {
 
 // Filas de querySybase (objetos por columna) al mismo formato que un CSV
 // parseado (encabezado + filas), para pasarlas por conciliarAltasPf.
-function ibsRowsToLines(rows) {
-  const header = ['sistcod', 'moncod', 'cuecod', 'Fecha_Mov', 'comnro', 'movcod', 'signo', 'accimp', 'Importe'];
+function ibsRowsToLines(rows, opciones = {}) {
+  const header = ['sistcod', 'moncod', 'cuecod', 'Fecha_Mov', 'comnro', 'movcod'];
+  if (opciones.conConcod) header.push('concod');
+  header.push('signo', 'accimp', 'Importe');
   return [header, ...rows.map((row) => header.map((col) => (row[col] == null ? '' : String(row[col]))))];
 }
 
@@ -435,4 +444,450 @@ function conciliarPagosPf(operaciones, ibsLines, fecha, config) {
   };
 }
 
-module.exports = { conciliarAltasPf, conciliarPagosPf, buildIbsAltasPfQuery, buildIbsPagosPfQuery, getPagoPfConfig, ibsRowsToLines };
+// ---------------------------------------------------------------------------
+// Transferencias DEBIN ("Transferencia DEBIN - File")
+//
+// Cada transferencia realizada de ApiCore (dbn_consulta, realizado = 's') se
+// espera en IBS como UN débito en la Caja de Ahorro del cliente
+// (sistcod 5) con comnro = id_comprobante: movimiento 28600 si es a su
+// propia cuenta (mismo CUIT) y 28601 si es a terceros, por el importe, en la
+// moneda (moncod 0 = pesos, 2 = dólares) y en la cuenta que sale del CBU de
+// débito. Las transferencias que el otro sistema rechaza también se debitan
+// y se revierten enseguida: un débito (signo -1, concod 'M') y su
+// contra-asiento (signo +1, concod 'C') que netean cero — por eso los
+// débitos "vigentes" de un comprobante son (débitos - contra-asientos).
+//
+// La fecha del débito en IBS no es la de la transferencia: los fines de
+// semana y feriados pasan al próximo día hábil (calendario de feriados en
+// Parametría, ver parseFeriados/proximoDiaHabil).
+// ---------------------------------------------------------------------------
+
+const MOV_TRANSFERENCIA_MISMO_TITULAR = '28600';
+const MOV_TRANSFERENCIA_TERCEROS = '28601';
+const MONEDA_IBS = { 32: '0', '032': '0', 840: '2' };
+const MONEDA_ETIQUETA = { 32: 'ARS', '032': 'ARS', 840: 'USD' };
+const MONEDA_IBS_ETIQUETA = { 0: 'ARS', 2: 'USD' };
+
+function sumarDias(iso, n) {
+  const [y, m, d] = iso.split('-').map(Number);
+  return new Date(Date.UTC(y, m - 1, d + n)).toISOString().slice(0, 10);
+}
+
+function esFinDeSemana(iso) {
+  const [y, m, d] = iso.split('-').map(Number);
+  const dia = new Date(Date.UTC(y, m - 1, d)).getUTCDay();
+  return dia === 0 || dia === 6;
+}
+
+// Primer día hábil igual o posterior a la fecha (yyyy-MM-dd): no sábado ni
+// domingo ni feriado. El tope de iteraciones evita un bucle infinito con un
+// calendario absurdo.
+function proximoDiaHabil(iso, feriados) {
+  let fecha = iso;
+  for (let i = 0; i < 60 && (esFinDeSemana(fecha) || feriados.has(fecha)); i++) fecha = sumarDias(fecha, 1);
+  return fecha;
+}
+
+// Texto libre de Parametría (calendario.feriados): fechas separadas por
+// salto de línea, coma, punto y coma o espacio, como yyyy-MM-dd o dd/MM/yyyy.
+// Lo que no se reconoce se devuelve en "invalidos" para avisarlo — no se
+// rechaza al guardar la Parametría.
+function parseFeriados(texto) {
+  const fechas = new Set();
+  const invalidos = [];
+  for (const crudo of String(texto || '').split(/[\s,;]+/)) {
+    const token = crudo.trim();
+    if (!token) continue;
+    let y;
+    let mo;
+    let d;
+    let m = /^(\d{4})-(\d{1,2})-(\d{1,2})$/.exec(token);
+    if (m) {
+      [y, mo, d] = [Number(m[1]), Number(m[2]), Number(m[3])];
+    } else {
+      m = /^(\d{1,2})[/-](\d{1,2})[/-](\d{4})$/.exec(token);
+      if (m) [d, mo, y] = [Number(m[1]), Number(m[2]), Number(m[3])];
+    }
+    const fecha = m ? new Date(Date.UTC(y, mo - 1, d)) : null;
+    if (!fecha || fecha.getUTCFullYear() !== y || fecha.getUTCMonth() !== mo - 1 || fecha.getUTCDate() !== d) {
+      invalidos.push(token);
+      continue;
+    }
+    fechas.add(fecha.toISOString().slice(0, 10));
+  }
+  return { fechas, invalidos };
+}
+
+function dmyAIso(dmy) {
+  const m = /^(\d{1,2})\/(\d{1,2})\/(\d{4})$/.exec(String(dmy || '').trim());
+  return m ? `${m[3]}-${m[2].padStart(2, '0')}-${m[1].padStart(2, '0')}` : '';
+}
+
+// Número de cuenta de IBS (cuecod) que está dentro del CBU: 22 dígitos =
+// banco(3) sucursal(4) DV(1) tipo(2) cuenta(11) DV(1) — la cuenta son los 11
+// dígitos de la posición 11 a la 21, sin ceros a la izquierda.
+function cuentaDesdeCbu(cbu) {
+  const c = String(cbu || '').trim();
+  return /^\d{22}$/.test(c) ? String(parseInt(c.slice(10, 21), 10)) : '';
+}
+
+function buildIbsTransferenciasQuery(desde, hasta) {
+  return buildIbsQuery(desde, [`a.movcod in (${MOV_TRANSFERENCIA_MISMO_TITULAR}, ${MOV_TRANSFERENCIA_TERCEROS}) and a.sistcod = 5`], {
+    hasta,
+    conConcod: true,
+  });
+}
+
+// Extracto de IBS -> movimientos de transferencia agrupados por comprobante,
+// ya con los débitos vigentes (los que no fueron revertidos).
+function leerIbsTransferencias(ibsLines, desde, hastaEsperado) {
+  const [header, ...data] = ibsLines;
+  const requeridas = ['sistcod', 'moncod', 'cuecod', 'Fecha_Mov', 'comnro', 'movcod', 'signo', 'accimp'];
+  const faltantes = requeridas.filter((c) => !(header || []).includes(c));
+  if (faltantes.length > 0) {
+    const error = new Error(`El archivo no tiene el formato del extracto de IBS (faltan las columnas: ${faltantes.join(', ')}).`);
+    error.statusCode = 400;
+    throw error;
+  }
+  const tieneConcod = header.includes('concod');
+  const col = (row, name) => String(row[header.indexOf(name)] == null ? '' : row[header.indexOf(name)]).trim();
+
+  const porComprobante = new Map();
+  let filasOtraFecha = 0;
+  let movimientos = 0;
+  for (const row of data) {
+    if (row.length === 1 && row[0].trim() === '') continue;
+    const movcod = col(row, 'movcod');
+    if (movcod !== MOV_TRANSFERENCIA_MISMO_TITULAR && movcod !== MOV_TRANSFERENCIA_TERCEROS) continue;
+    const mov = {
+      sistcod: col(row, 'sistcod'),
+      moncod: col(row, 'moncod'),
+      cuecod: col(row, 'cuecod'),
+      fecha: dmyAIso(col(row, 'Fecha_Mov')),
+      comnro: col(row, 'comnro'),
+      movcod,
+      concod: tieneConcod ? col(row, 'concod') : '',
+      signo: Number(col(row, 'signo')) < 0 ? -1 : 1,
+      cents: toCents(col(row, 'accimp')),
+    };
+    if (!mov.fecha || mov.fecha < desde || mov.fecha > hastaEsperado) {
+      filasOtraFecha++;
+      continue;
+    }
+    movimientos++;
+    if (!porComprobante.has(mov.comnro)) porComprobante.set(mov.comnro, []);
+    porComprobante.get(mov.comnro).push(mov);
+  }
+
+  const grupos = new Map();
+  for (const [comnro, movs] of porComprobante) {
+    const debitos = movs.filter((m) => m.signo < 0);
+    const reversas = movs.filter((m) => m.signo > 0);
+    // Con la columna concod, vigente = débito sin marca (los 'M' son los
+    // anulados); sin ella, los débitos que sobran después de descontar las reversas.
+    const vigentes = tieneConcod ? debitos.filter((m) => m.concod === '') : debitos.slice(0, Math.max(debitos.length - reversas.length, 0));
+    grupos.set(comnro, { movs, vigentes, hayReversa: reversas.length > 0 });
+  }
+  return { grupos, filasOtraFecha, movimientos };
+}
+
+// Comprobantes de IBS dentro del período (para que el servidor busque en
+// ApiCore los que no están en el rango pedido).
+function comprobantesIbsTransferencias(ibsLines, desde, hastaEsperado) {
+  return [...leerIbsTransferencias(ibsLines, desde, hastaEsperado).grupos.keys()];
+}
+
+// apiRows: filas de dbn_consulta del rango (ejecutado_en, id_comprobante,
+// id_operacion, debito_cuit/cbu/titular, credito_cuit, moneda, importe,
+// realizado, estado_codigo, estado_descripcion). opciones: desde/hasta
+// (yyyy-MM-dd, el rango de ejecución), hoy, feriados (Set), otrasFechas (Map
+// comprobante -> filas de dbn_consulta de fuera del rango, para explicar
+// débitos de transferencias de otros días) y feriadosInvalidos.
+function conciliarTransferencias(apiRows, ibsLines, opciones) {
+  const { desde, hasta, hoy } = opciones;
+  const feriados = opciones.feriados || new Set();
+  const otrasFechas = opciones.otrasFechas || new Map();
+  const hastaEsperado = proximoDiaHabil(hasta, feriados);
+  const { grupos, filasOtraFecha, movimientos } = leerIbsTransferencias(ibsLines, desde, hastaEsperado);
+
+  const tipoDe = (r) => (String(r.debito_cuit || '').trim() === String(r.credito_cuit || '').trim() ? 'mismo' : 'terceros');
+  const etiquetaTipo = (tipo) => (tipo === 'mismo' ? 'mismo titular' : 'terceros');
+  const monedaDe = (r) => MONEDA_ETIQUETA[String(r.moneda).trim()] || String(r.moneda || '');
+  const estadoCodigo = (r) => String(r.estado_codigo || '').trim();
+  const estadoDescripcion = (r) => String(r.estado_descripcion || '').trim();
+  const esExitoso = (r) => estadoCodigo(r) === 'ACREDITADO';
+  const sinEstado = (r) => estadoCodigo(r) === '';
+  const esError = (r) => !esExitoso(r) && !sinEstado(r);
+  const dinero = (cents) => `$ ${formatCents(cents)}`;
+  const dineroMoneda = (moneda, cents) => `${moneda === 'USD' ? 'USD' : '$'} ${formatCents(cents)}`;
+
+  const base = (r, extra) => ({
+    fecha: r.ejecutado_en,
+    numeroComprobante: String(r.id_comprobante || '').trim(),
+    operacion: r.id_operacion || '',
+    circuito: tipoDe(r),
+    cuit: r.debito_cuit,
+    apellidoNombre: r.debito_titular,
+    cajaAhorro: cuentaDesdeCbu(r.debito_cbu),
+    importe: toCents(r.importe) / 100,
+    moneda: monedaDe(r),
+    ...extra,
+  });
+
+  // Agrupa lo de ApiCore por comprobante: envíos realizados (puede haber
+  // más de uno si se mandó dos veces) y rechazos.
+  const apiGrupos = new Map();
+  for (const r of apiRows) {
+    const c = String(r.id_comprobante || '').trim();
+    if (!c) continue;
+    if (!apiGrupos.has(c)) apiGrupos.set(c, { envios: [], rechazos: [] });
+    apiGrupos.get(c)[r.realizado === 's' ? 'envios' : 'rechazos'].push(r);
+  }
+
+  const diferencias = [];
+  const pendientes = [];
+  const explicadas = [];
+  const totApi = new Map();
+  const totIbs = new Map();
+  const sumar = (mapa, clave, cents) => {
+    const acc = mapa.get(clave) || { cantidad: 0, cents: 0 };
+    acc.cantidad++;
+    acc.cents += cents;
+    mapa.set(clave, acc);
+  };
+  const claveIbs = (m) => `${MONEDA_IBS_ETIQUETA[Number(m.moncod)] || m.moncod}|${m.movcod === MOV_TRANSFERENCIA_MISMO_TITULAR ? 'mismo' : 'terceros'}`;
+
+  let ok = 0;
+  let revertidasOk = 0;
+  let rechazadasRevertidas = 0;
+  let realizadas = 0;
+  let enviosRealizados = 0;
+  let rechazadas = 0;
+  let comprobantesConDiferencias = 0;
+
+  for (const [comprobante, g] of apiGrupos) {
+    const ibsGrupo = grupos.get(comprobante);
+    const vigentes = ibsGrupo ? ibsGrupo.vigentes : [];
+    const hayReversa = ibsGrupo ? ibsGrupo.hayReversa : false;
+
+    if (g.envios.length === 0) {
+      rechazadas++;
+      if (vigentes.length > 0) {
+        const r = g.rechazos[0];
+        comprobantesConDiferencias++;
+        diferencias.push({
+          ...base(r, { tipo: 'Rechazada con débito en IBS' }),
+          detalle: `ApiCore la rechazó (${estadoDescripcion(r) || 'sin motivo'}), pero IBS tiene ${vigentes.length} débito(s) sin revertir por ${dineroMoneda(monedaDe(r), vigentes[0].cents)} (${vigentes[0].fecha}).`,
+        });
+        for (const m of vigentes) sumar(totIbs, claveIbs(m), m.cents);
+      } else if (hayReversa) {
+        rechazadasRevertidas++;
+      }
+      continue;
+    }
+
+    realizadas++;
+    enviosRealizados += g.envios.length;
+    const primero = g.envios[0];
+    const k = g.envios.length;
+    const j = vigentes.length;
+    const tipo = tipoDe(primero);
+    const movEsperado = tipo === 'mismo' ? MOV_TRANSFERENCIA_MISMO_TITULAR : MOV_TRANSFERENCIA_TERCEROS;
+    const cuentaEsperada = cuentaDesdeCbu(primero.debito_cbu);
+    const esperada = proximoDiaHabil(String(primero.ejecutado_en).slice(0, 10), feriados);
+    const errores = [];
+    const pendiente = j === 0 && !hayReversa && esperada >= hoy && g.envios.some((r) => !esError(r));
+
+    if (k > 1) {
+      errores.push({
+        tipo: 'Enviada más de una vez',
+        detalle: `Se realizó ${k} veces (DEBIN ${g.envios.map((r) => r.id_operacion || '?').join(', ')}). Pedir la devolución de las de más.`,
+      });
+    }
+
+    if (j === 0) {
+      if (hayReversa) {
+        if (g.envios.some(esExitoso)) {
+          errores.push({
+            tipo: 'Revertida en IBS estando acreditada',
+            detalle: `El débito se hizo y se revirtió en IBS, pero la transferencia figura acreditada (${estadoDescripcion(primero)}): el cliente no pagó.`,
+          });
+        } else {
+          revertidasOk++;
+        }
+      } else if (pendiente) {
+        pendientes.push(base(primero, { detalle: `El débito corresponde al ${esperada}.` }));
+      } else if (g.envios.some((r) => !esError(r))) {
+        errores.push({
+          tipo: 'Sin débito en IBS',
+          detalle: `Realizada y ${estadoDescripcion(primero) || 'sin estado'}, pero IBS no tiene ningún débito ${movEsperado} para este comprobante (correspondía el ${esperada}; si hubo un feriado, revisá que esté cargado en Parametría).`,
+        });
+      }
+      // Realizada con error de acreditación y sin ningún movimiento: no se debitó ni se acreditó, es coherente.
+    } else {
+      if (j > k) errores.push({ tipo: 'Débitos de más en IBS', detalle: `IBS tiene ${j} débitos sin revertir y ApiCore ${k} transferencia(s) realizada(s).` });
+      if (j < k) errores.push({ tipo: 'Débitos de menos en IBS', detalle: `IBS tiene ${j} débito(s) sin revertir y ApiCore ${k} transferencia(s) realizadas.` });
+      for (let i = 0; i < Math.min(j, k); i++) {
+        const d = vigentes[i];
+        const e = g.envios[i];
+        const monedaIbs = MONEDA_IBS[String(e.moneda).trim()];
+        if (d.movcod !== movEsperado) {
+          errores.push({ tipo: 'Movimiento distinto al esperado', detalle: `IBS la debitó con el ${d.movcod} y por ser ${etiquetaTipo(tipo)} correspondía el ${movEsperado}.` });
+        }
+        if (monedaIbs && d.moncod !== monedaIbs) {
+          errores.push({ tipo: 'Moneda distinta', detalle: `IBS debitó en moneda ${d.moncod} y ApiCore transfirió ${monedaDe(e)}.` });
+        }
+        if (cuentaEsperada && d.cuecod !== cuentaEsperada) {
+          errores.push({ tipo: 'Cuenta distinta', detalle: `IBS debitó la cuenta ${d.cuecod} y el CBU de débito de ApiCore es de la cuenta ${cuentaEsperada}.` });
+        }
+        if (d.cents !== toCents(e.importe)) {
+          errores.push({ tipo: 'Importe distinto', detalle: `IBS debitó ${dinero(d.cents)} y ApiCore transfirió ${dinero(toCents(e.importe))}.` });
+        }
+        if (i === 0 && k === 1 && d.fecha !== esperada) {
+          errores.push({
+            tipo: 'Débito fuera de fecha',
+            detalle: `IBS la debitó el ${d.fecha} y correspondía el ${esperada} (próximo día hábil de la transferencia). Si hubo un feriado, revisá que esté cargado en Parametría.`,
+          });
+        }
+      }
+      if (!hayReversa || vigentes.length > 0) {
+        if (g.envios.some(esError)) {
+          const e = g.envios.find(esError);
+          errores.push({
+            tipo: 'Acreditación no exitosa, sin reversa',
+            detalle: `La acreditación terminó en "${estadoDescripcion(e) || estadoCodigo(e)}", pero el débito sigue vigente en IBS: hay que revertirlo.`,
+          });
+        } else if (g.envios.every(sinEstado)) {
+          errores.push({ tipo: 'Sin estado de acreditación', detalle: 'ApiCore no tiene el estado de acreditación de esta transferencia (la consulta no lo devolvió): verificar cómo terminó el DEBIN.' });
+        }
+      }
+    }
+
+    if (errores.length > 0) {
+      comprobantesConDiferencias++;
+      for (const err of errores) diferencias.push({ ...base(primero, {}), ...err });
+    } else if (!pendiente && !(j === 0 && hayReversa)) {
+      ok++;
+    }
+
+    // Totales: lo que ApiCore espera debitado (sin las pendientes de débito ni
+    // las acreditaciones con error) contra lo que IBS tiene vigente.
+    if (!pendiente) {
+      for (const e of g.envios) if (!esError(e)) sumar(totApi, `${monedaDe(e)}|${tipo}`, toCents(e.importe));
+    }
+    for (const m of vigentes) sumar(totIbs, claveIbs(m), m.cents);
+  }
+
+  // Lo de IBS que ApiCore no tiene en este rango.
+  let soloEnIbs = 0;
+  for (const [comprobante, g] of grupos) {
+    if (apiGrupos.has(comprobante) || g.vigentes.length === 0) continue;
+    const m = g.vigentes[0];
+    const otras = otrasFechas.get(comprobante) || [];
+    const monedaEtiqueta = MONEDA_IBS_ETIQUETA[Number(m.moncod)] || m.moncod;
+    if (otras.some((r) => r.realizado === 's')) {
+      const r = otras.find((x) => x.realizado === 's');
+      explicadas.push({
+        numeroComprobante: comprobante,
+        fecha: r.ejecutado_en,
+        fechaDebito: m.fecha,
+        importe: m.cents / 100,
+        moneda: monedaEtiqueta,
+      });
+      continue;
+    }
+    if (otras.length > 0) {
+      const r = otras[0];
+      comprobantesConDiferencias++;
+      diferencias.push({
+        ...base(r, { tipo: 'Rechazada con débito en IBS' }),
+        detalle: `ApiCore la rechazó (${estadoDescripcion(r) || 'sin motivo'}) y IBS la debitó el ${m.fecha} por ${dineroMoneda(monedaEtiqueta, m.cents)} sin revertir.`,
+      });
+    } else {
+      soloEnIbs++;
+      comprobantesConDiferencias++;
+      diferencias.push({
+        tipo: 'Solo en IBS',
+        fecha: m.fecha,
+        numeroComprobante: comprobante,
+        operacion: '',
+        circuito: m.movcod === MOV_TRANSFERENCIA_MISMO_TITULAR ? 'mismo' : 'terceros',
+        cuit: '',
+        apellidoNombre: '',
+        cajaAhorro: m.cuecod,
+        importe: m.cents / 100,
+        moneda: monedaEtiqueta,
+        detalle: `Débito ${m.movcod} en la cuenta ${m.cuecod} (${m.fecha}) sin ninguna transferencia en ApiCore.`,
+      });
+    }
+    sumar(totIbs, claveIbs(m), m.cents);
+  }
+
+  const orden = ['ARS|mismo', 'ARS|terceros', 'USD|mismo', 'USD|terceros'];
+  const totales = [];
+  for (const clave of orden) {
+    const a = totApi.get(clave) || { cantidad: 0, cents: 0 };
+    const i = totIbs.get(clave) || { cantidad: 0, cents: 0 };
+    if (a.cantidad === 0 && i.cantidad === 0) continue;
+    const [moneda, tipo] = clave.split('|');
+    totales.push({
+      concepto: `${moneda === 'ARS' ? 'Pesos' : 'Dólares'} — ${tipo === 'mismo' ? 'mismo titular (28600)' : 'terceros (28601)'}`,
+      apicore: { cantidad: a.cantidad, importe: a.cents / 100 },
+      ibs: { cantidad: i.cantidad, importe: i.cents / 100 },
+    });
+  }
+
+  const avisos = [];
+  if ((opciones.feriadosInvalidos || []).length > 0) {
+    avisos.push(`Feriados de Parametría que no se reconocieron y se ignoraron: ${opciones.feriadosInvalidos.join(', ')}.`);
+  }
+  if (feriados.size === 0) {
+    avisos.push('No hay feriados cargados en Parametría: solo se toman como no hábiles los sábados y domingos. Si hubo un feriado, las transferencias de ese día van a figurar con el débito fuera de fecha.');
+  }
+
+  diferencias.sort((x, y) => String(x.fecha).localeCompare(String(y.fecha)));
+  return {
+    tipo: 'transferencias',
+    fecha: desde,
+    hasta,
+    resumen: {
+      desde,
+      hasta,
+      hastaEsperado,
+      realizadasApicore: realizadas,
+      enviosRealizados,
+      rechazadasApicore: rechazadas,
+      rechazadasRevertidas,
+      revertidasOk,
+      transferenciasOk: ok,
+      transferenciasConDiferencias: comprobantesConDiferencias,
+      pendientes: pendientes.length,
+      soloEnIbs,
+      debitosOtrasFechas: explicadas.length,
+      movimientosIbs: movimientos,
+      filasOtraFecha,
+      feriadosCargados: feriados.size,
+    },
+    totales,
+    diferencias,
+    pendientes,
+    explicadas,
+    otrosCanales: [],
+    avisos,
+  };
+}
+
+module.exports = {
+  conciliarAltasPf,
+  conciliarPagosPf,
+  conciliarTransferencias,
+  buildIbsAltasPfQuery,
+  buildIbsPagosPfQuery,
+  buildIbsTransferenciasQuery,
+  getPagoPfConfig,
+  ibsRowsToLines,
+  comprobantesIbsTransferencias,
+  parseFeriados,
+  proximoDiaHabil,
+  cuentaDesdeCbu,
+};
