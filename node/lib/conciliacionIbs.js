@@ -703,6 +703,44 @@ function buildIbsTransferenciasQuery(desde, hasta) {
   });
 }
 
+// Débitos pendientes de IBS (tgl_deb_pendientes): lo que el banco no pudo
+// debitar todavía (por ejemplo, sin saldo) y quedó encolado con un mensaje. Una
+// transferencia realizada de ApiCore sin débito en tgl_movimientos puede estar
+// acá. No lleva fecha: es el estado actual de la cola, de cualquier origen.
+function buildIbsDebitosPendientesQuery() {
+  return `select b.fecreal, b.tercod, b.succod, b.sistcod, b.moncod, b.cuecod, movcod, descdet, b.fecproceso, b.comnro, b.nromen, m.mentexto, b.importedeb, fecenlace, fecorigen
+From Banksys..tgl_deb_pendientes b
+inner join Banksys..tgt_transaccion a on b.paiscod = a.paiscod and
+b.bcocod = a.bcocod and
+b.sistcod = a.sistcod and
+b.trancod = a.trancod
+left outer join Banksys..tdoc_mensages m on b.nromen = m.nromen
+Where
+b.paiscod = 54 and
+b.bcocod = 312 and
+b.succod = 1 and
+a.tipofunc in (0,1)
+and a.movcod in (${MOV_TRANSFERENCIA_MISMO_TITULAR}, ${MOV_TRANSFERENCIA_TERCEROS})
+order by b.fecorigen, b.fecreal, b.fecenlace, b.cuecod`;
+}
+
+// Filas de esa consulta (objetos columna -> valor) -> débitos pendientes
+// normalizados. Los importes pueden venir con coma o punto decimal.
+function leerDebitosPendientes(rows) {
+  return (rows || [])
+    .map((r) => ({
+      sistcod: String(r.sistcod == null ? '' : r.sistcod).trim(),
+      moncod: String(r.moncod == null ? '' : r.moncod).trim(),
+      cuecod: String(r.cuecod == null ? '' : r.cuecod).trim(),
+      movcod: String(r.movcod == null ? '' : r.movcod).trim(),
+      comnro: String(r.comnro == null ? '' : r.comnro).trim(),
+      cents: toCents(String(r.importedeb == null ? '' : r.importedeb).replace(',', '.')),
+      motivo: String(r.mentexto || r.descdet || '').replace(/\s+/g, ' ').trim(),
+      fechaOrigen: String(r.fecorigen || r.fecreal || '').trim(),
+    }))
+    .filter((p) => p.comnro !== '');
+}
+
 // Extracto de IBS -> movimientos de transferencia agrupados por comprobante,
 // ya con los débitos vigentes (los que no fueron revertidos).
 function leerIbsTransferencias(ibsLines, desde, hastaEsperado) {
@@ -773,6 +811,22 @@ function conciliarTransferencias(apiRows, ibsLines, opciones) {
   const feriados = opciones.feriados || new Set();
   const otrasFechas = opciones.otrasFechas || new Map();
   const rechazadosArchivo = opciones.rechazadosArchivo || [];
+  // Débitos pendientes de IBS (ver leerDebitosPendientes), por comprobante.
+  const debitosPendientes = opciones.debitosPendientes || [];
+  const pendientesPorComprobante = new Map();
+  for (const p of debitosPendientes) {
+    if (!pendientesPorComprobante.has(p.comnro)) pendientesPorComprobante.set(p.comnro, []);
+    pendientesPorComprobante.get(p.comnro).push(p);
+  }
+  const cuentaNumero = (cuenta) => String(parseInt(String(cuenta || '').trim(), 10));
+  // Un pendiente es de esta transferencia si coincide el comprobante y, cuando
+  // se conoce la cuenta del CBU de débito, la cuenta (el comnro puede repetirse
+  // con otros canales).
+  const buscarPendiente = (comprobante, cuentaEsperada) =>
+    (pendientesPorComprobante.get(comprobante) || []).find(
+      (p) => !p.usado && (!cuentaEsperada || cuentaNumero(p.cuecod) === cuentaNumero(cuentaEsperada))
+    ) || null;
+  const detallePendiente = (p, moneda) => `IBS tiene un débito pendiente por ${dineroMoneda(moneda, p.cents)} (cuenta ${p.cuecod}, ${p.fechaOrigen || 'sin fecha'}): ${p.motivo || 'sin motivo'}.`;
   const hastaEsperado = proximoDiaHabil(hasta, feriados);
   const { grupos, filasOtraFecha, movimientos } = leerIbsTransferencias(ibsLines, desde, hastaEsperado);
 
@@ -856,10 +910,21 @@ function conciliarTransferencias(apiRows, ibsLines, opciones) {
     if (g.envios.length === 0) {
       rechazadas++;
       const r = g.rechazos[0];
-      const estado = vigentes.length > 0 ? 'figura' : hayReversa ? 'revertida' : 'no-figura';
-      const detalleRechazo = estado === 'figura'
-        ? `IBS tiene ${vigentes.length} débito(s) sin revertir por ${dineroMoneda(monedaDe(r), vigentes[0].cents)} (${vigentes[0].fecha}).`
-        : estado === 'revertida' ? 'IBS la debitó y la revirtió (neto cero).' : '';
+      const pendRechazo = vigentes.length === 0 && !hayReversa ? buscarPendiente(comprobante, cuentaDesdeCbu(r.debito_cbu)) : null;
+      const estado = vigentes.length > 0 || pendRechazo ? 'figura' : hayReversa ? 'revertida' : 'no-figura';
+      const detalleRechazo = pendRechazo
+        ? detallePendiente(pendRechazo, monedaDe(r))
+        : estado === 'figura'
+          ? `IBS tiene ${vigentes.length} débito(s) sin revertir por ${dineroMoneda(monedaDe(r), vigentes[0].cents)} (${vigentes[0].fecha}).`
+          : estado === 'revertida' ? 'IBS la debitó y la revirtió (neto cero).' : '';
+      if (pendRechazo) {
+        pendRechazo.usado = true;
+        comprobantesConDiferencias++;
+        diferencias.push({
+          ...base(r, { tipo: 'Rechazada con débito pendiente en IBS' }),
+          detalle: `ApiCore la rechazó (${estadoDescripcion(r) || 'sin motivo'}), pero ${detalleRechazo}`,
+        });
+      }
       rechazados.push(filaRechazada(r, { estado, detalle: detalleRechazo, intentos: g.rechazos.length }));
       if (vigentes.length > 0) {
         comprobantesConDiferencias++;
@@ -884,7 +949,8 @@ function conciliarTransferencias(apiRows, ibsLines, opciones) {
     const cuentaEsperada = cuentaDesdeCbu(primero.debito_cbu);
     const esperada = proximoDiaHabil(String(primero.ejecutado_en).slice(0, 10), feriados);
     const errores = [];
-    const pendiente = j === 0 && !hayReversa && esperada >= hoy && g.envios.some((r) => !esError(r));
+    const pendIbs = j === 0 ? buscarPendiente(comprobante, cuentaEsperada) : null;
+    const pendiente = !pendIbs && j === 0 && !hayReversa && esperada >= hoy && g.envios.some((r) => !esError(r));
 
     if (k > 1) {
       errores.push({
@@ -894,7 +960,14 @@ function conciliarTransferencias(apiRows, ibsLines, opciones) {
     }
 
     if (j === 0) {
-      if (hayReversa) {
+      if (pendIbs) {
+        pendIbs.usado = true;
+        errores.push({
+          tipo: 'Débito pendiente en IBS',
+          detalle: `Realizada y ${estadoDescripcion(primero) || 'sin estado'}, pero IBS todavía no la debitó. ${detallePendiente(pendIbs, monedaDe(primero))}` +
+            (pendIbs.cents !== toCents(primero.importe) ? ` El importe pendiente no coincide con el de ApiCore (${dinero(toCents(primero.importe))}).` : ''),
+        });
+      } else if (hayReversa) {
         if (g.envios.some(esExitoso)) {
           errores.push({
             tipo: 'Revertida en IBS estando acreditada',
@@ -1061,7 +1134,7 @@ function conciliarTransferencias(apiRows, ibsLines, opciones) {
     });
   }
 
-  const avisos = [];
+  const avisos = [...(opciones.avisos || [])];
   if ((opciones.feriadosInvalidos || []).length > 0) {
     avisos.push(`Feriados de Parametría que no se reconocieron y se ignoraron: ${opciones.feriadosInvalidos.join(', ')}.`);
   }
@@ -1082,6 +1155,8 @@ function conciliarTransferencias(apiRows, ibsLines, opciones) {
       enviosRealizados,
       rechazadasApicore: rechazadas,
       rechazadasRevertidas,
+      debitosPendientesIbs: debitosPendientes.filter((p) => p.usado).length,
+      debitosPendientesLeidos: debitosPendientes.length,
       ...resumenRechazados(rechazados),
       revertidasOk,
       transferenciasOk: ok,
@@ -1110,6 +1185,8 @@ module.exports = {
   buildIbsAltasPfQuery,
   buildIbsPagosPfQuery,
   buildIbsTransferenciasQuery,
+  buildIbsDebitosPendientesQuery,
+  leerDebitosPendientes,
   getPagoPfConfig,
   ibsRowsToLines,
   comprobantesIbsTransferencias,

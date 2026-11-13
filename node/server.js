@@ -1240,6 +1240,23 @@ async function handleConciliacionTransferencias(res, session, payload, desde, co
     origen = 'consulta directa a IBS';
   }
 
+  // Débitos pendientes de IBS (tgl_deb_pendientes): explican las transferencias
+  // realizadas que todavía no tienen su débito. Solo con la consulta directa; si
+  // falla no frena la conciliación.
+  let debitosPendientes = [];
+  const avisosPendientes = [];
+  if (contenido.trim()) {
+    avisosPendientes.push('Con un archivo no se consultan los débitos pendientes de IBS: una transferencia realizada sin débito puede tener un débito pendiente.');
+  } else {
+    try {
+      debitosPendientes = conciliacionIbs.leerDebitosPendientes(
+        await sybaseClient.querySybase(parametria.sybase, conciliacionIbs.buildIbsDebitosPendientesQuery())
+      );
+    } catch (err) {
+      avisosPendientes.push(`No se pudieron consultar los débitos pendientes de IBS (${err.message}): una transferencia realizada sin débito puede estar pendiente.`);
+    }
+  }
+
   const apiRows = await debinOutputStore.getConsultaRowsEntre(rootDir, desde, hasta);
   let resultado;
   try {
@@ -1259,6 +1276,8 @@ async function handleConciliacionTransferencias(res, session, payload, desde, co
       feriadosInvalidos: invalidos,
       otrasFechas,
       rechazadosArchivo: readTransferenciasRechazadasArchivo(desde, hasta, apiRows),
+      debitosPendientes,
+      avisos: avisosPendientes,
     });
   } catch (err) {
     if (err.statusCode === 400) {
