@@ -146,6 +146,9 @@ async function upsertDbnConsultaRecords(rootDir, records, username) {
         // descripcionRespuesta de la consulta (ver DEBIN_CONSULTA_COLUMNS
         // en wwwroot/app.js).
         codigoRespuestaTransferencia, descripcionRespuestaTransferencia, realizado,
+        // Solo para importar corridas viejas (scripts/import-dbn-consulta.js):
+        // cuándo y quién hizo la transferencia, en vez de ahora y quien guarda.
+        ejecutadoEn, ejecutadoPor,
         ...rest
       } = record;
       const text = (value) => (value == null ? '' : String(value));
@@ -195,7 +198,7 @@ async function upsertDbnConsultaRecords(rootDir, records, username) {
              error_consulta, respuesta_json,
              id_mensaje, ejecutado_por, ejecutado_en
            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-          [...values, text(idMensaje), username, now]
+          [...values, text(idMensaje), text(ejecutadoPor) || username, text(ejecutadoEn) || now]
         );
       }
     }
@@ -393,6 +396,7 @@ module.exports = {
   addDbnOutRows,
   addDbnConsultaRows,
   upsertDbnConsultaRecords,
+  rowsToRecords,
   updateConsultaEstadoPorOperacion,
   getTransferidoHoyPorCuit,
   transferidoHoyKey,
