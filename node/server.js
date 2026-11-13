@@ -1041,6 +1041,82 @@ async function handleConciliacionGet(parsedUrl, res, session) {
   writeJsonResponse(res, 200, { name, content: lines.join('\r\n'), filas: rows.length });
 }
 
+// Rechazados de ApiCore del día para la conciliación con IBS: las filas de los
+// archivos de error de cada corrida, sin las que quedaron realizadas
+// (mismo idMensaje) — esas ya están del lado de las realizadas.
+function readAltasRechazadasDelDia(fecha, altas) {
+  const realizadas = new Set(altas.map((a) => a.id_mensaje).filter(Boolean));
+  const rows = [];
+  for (const { fecha: fechaCorrida, usuario, cols } of readErrorRowsDelDia('Alta de Plazo Fijos - File', fecha)) {
+    // cuit, apellidoNombre, monto, plazo, numeroComprobante, circuito, idMensaje, motivo
+    const idMensaje = cols[cols.length - 2] || '';
+    if (idMensaje && realizadas.has(idMensaje)) continue;
+    rows.push({
+      fecha: fechaCorrida,
+      idMensaje,
+      cuit: cols[0] || '',
+      apellidoNombre: cols[1] || '',
+      numeroComprobante: cols[4] || '',
+      circuito: cols[5] || '',
+      importe: cols[2] || '',
+      motivo: cols[cols.length - 1] || '',
+      usuario,
+    });
+  }
+  return rows;
+}
+
+function readPagosRechazadosDelDia(fecha, operaciones) {
+  const pagados = new Set(operaciones.map((o) => o.pf_pago_id_mensaje).filter(Boolean));
+  const rows = [];
+  for (const { fecha: fechaCorrida, usuario, record } of readRunRecordsDelDia('Pago de Plazo Fijos', fecha, '-error')) {
+    if (record.idMensaje && pagados.has(record.idMensaje)) continue;
+    rows.push({
+      fecha: fechaCorrida,
+      idMensaje: record.idMensaje || '',
+      cuit: record.cuit || '',
+      apellidoNombre: record.apellidoNombre || '',
+      numeroComprobante: record.numeroComprobante || '',
+      circuito: record.circuito || '',
+      importe: record.importe || '',
+      motivo: record.motivo || '',
+      usuario,
+    });
+  }
+  return rows;
+}
+
+// Filas del archivo de error de "Transferencia DEBIN - File" de cada día del
+// rango que nunca llegaron a dbn_consulta, con la forma de una fila de esa
+// tabla (para que el conciliador las trate igual que a las rechazadas).
+function readTransferenciasRechazadasArchivo(desde, hasta, apiRows) {
+  const enBase = new Set(apiRows.map((r) => r.id_mensaje).filter(Boolean));
+  const rows = [];
+  for (let dia = desde; dia <= hasta; dia = new Date(Date.parse(`${dia}T00:00:00Z`) + 86400000).toISOString().slice(0, 10)) {
+    for (const { fecha: fechaCorrida, usuario, cols } of readErrorRowsDelDia('Transferencia DEBIN - File', dia)) {
+      // creditoCuit, creditoCbu, creditoTitular, debitoCuit, debitoCbu, debitoTitular, idComprobante, moneda, importe, idMensaje, motivo
+      const idMensaje = cols[cols.length - 2] || '';
+      if (idMensaje && enBase.has(idMensaje)) continue;
+      rows.push({
+        ejecutado_en: fechaCorrida,
+        id_mensaje: idMensaje,
+        id_comprobante: cols[6] || '',
+        id_operacion: '',
+        debito_cuit: cols[3] || '',
+        debito_cbu: cols[4] || '',
+        debito_titular: cols[5] || '',
+        credito_cuit: cols[0] || '',
+        moneda: cols[7] || '',
+        importe: cols[8] || '',
+        realizado: 'n',
+        estado_descripcion: cols[cols.length - 1] || '',
+        ejecutado_por: usuario,
+      });
+    }
+  }
+  return rows;
+}
+
 // POST /api/conciliacion/ibs { fecha: yyyy-MM-dd, tipo?: 'altas' | 'pagos',
 // contenido?: <CSV del extracto de IBS> } — cruza las altas (o los pagos) de
 // Plazo Fijo de ese día contra los movimientos de IBS (ver conciliacionIbs.js)
@@ -1096,10 +1172,12 @@ async function handleConciliacionIbsPost(req, res, session) {
   try {
     if (tipo === 'pagos') {
       const operaciones = await processedOperationsStore.getOperacionesPorVencimiento(rootDir, formatDMY(fecha));
-      resultado = conciliacionIbs.conciliarPagosPf(operaciones, ibsLines, fecha, pagoConfig);
+      resultado = conciliacionIbs.conciliarPagosPf(operaciones, ibsLines, fecha, pagoConfig, {
+        rechazados: readPagosRechazadosDelDia(fecha, operaciones),
+      });
     } else {
       const altas = await processedOperationsStore.getAltasDelDia(rootDir, fecha);
-      resultado = conciliacionIbs.conciliarAltasPf(altas, ibsLines, fecha);
+      resultado = conciliacionIbs.conciliarAltasPf(altas, ibsLines, fecha, { rechazados: readAltasRechazadasDelDia(fecha, altas) });
     }
     resultado.origen = origen;
   } catch (err) {
@@ -1111,8 +1189,8 @@ async function handleConciliacionIbsPost(req, res, session) {
   }
   const r = resultado.resumen;
   const detalle = tipo === 'pagos'
-    ? `${r.pagosOk}/${r.pagadosApicore} pagos OK, ${r.pagosConDiferencias} con diferencias, ${r.pagadosEnIbsNoApicore} pagados en IBS sin marcar, ${r.soloEnIbs} solo en IBS`
-    : `${r.altasOk}/${r.altasApicore} OK, ${r.altasConDiferencias} con diferencias, ${r.soloEnIbs} solo en IBS`;
+    ? `${r.pagosOk}/${r.pagadosApicore} pagos OK, ${r.pagosConDiferencias} con diferencias, ${r.pagadosEnIbsNoApicore} pagados en IBS sin marcar, ${r.soloEnIbs} solo en IBS, ${r.rechazadosApicore} rechazados en ApiCore (${r.rechazadosEnIbs} figuran en IBS)`
+    : `${r.altasOk}/${r.altasApicore} OK, ${r.altasConDiferencias} con diferencias, ${r.soloEnIbs} solo en IBS, ${r.rechazadosApicore} rechazados en ApiCore (${r.rechazadosEnIbs} figuran en IBS)`;
   securityStore.writeSecurityLog(
     logsDir,
     `CONCILIACION IBS ${tipo} PF ${fecha} (${origen}) por '${session.username}': ${detalle}`
@@ -1180,6 +1258,7 @@ async function handleConciliacionTransferencias(res, session, payload, desde, co
       feriados,
       feriadosInvalidos: invalidos,
       otrasFechas,
+      rechazadosArchivo: readTransferenciasRechazadasArchivo(desde, hasta, apiRows),
     });
   } catch (err) {
     if (err.statusCode === 400) {
@@ -1192,7 +1271,7 @@ async function handleConciliacionTransferencias(res, session, payload, desde, co
   const r = resultado.resumen;
   securityStore.writeSecurityLog(
     logsDir,
-    `CONCILIACION IBS transferencias ${desde}..${hasta} (${origen}) por '${session.username}': ${r.transferenciasOk}/${r.realizadasApicore} OK, ${r.transferenciasConDiferencias} con diferencias, ${r.pendientes} pendientes, ${r.soloEnIbs} solo en IBS`
+    `CONCILIACION IBS transferencias ${desde}..${hasta} (${origen}) por '${session.username}': ${r.transferenciasOk}/${r.realizadasApicore} OK, ${r.transferenciasConDiferencias} con diferencias, ${r.pendientes} pendientes, ${r.soloEnIbs} solo en IBS, ${r.rechazadosApicore} rechazados en ApiCore (${r.rechazadosEnIbs} figuran en IBS)`
   );
   writeJsonResponse(res, 200, resultado);
 }
