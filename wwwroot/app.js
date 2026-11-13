@@ -3505,7 +3505,8 @@ async function loadQnetCorridas(seleccionar) {
       const option = document.createElement('option');
       option.value = c.id;
       const estado = c.exitCode === 0 ? '' : c.exitCode === 2 ? ' · con advertencias' : c.exitCode === 1 ? ' · con errores' : '';
-      option.textContent = `${c.fecha} · ${c.id}${estado}`;
+      const dia = c.fecha ? c.fecha.split('-').reverse().join('/') : 'sin fecha';
+      option.textContent = `${dia}${estado} · hecha ${c.fechaGenerada || ''} · ${c.id}`;
       select.appendChild(option);
     }
     if (seleccionar) select.value = seleccionar;
@@ -3543,6 +3544,11 @@ async function runQnet() {
     alert('Elegí al menos un archivo de BankService (Movimientos_BankService-mmaaaa.csv).');
     return;
   }
+  const fecha = document.getElementById('qnetFecha').value;
+  if (!fecha) {
+    alert('Elegí la fecha (un día) a conciliar.');
+    return;
+  }
   const runBtn = document.getElementById('qnetRunBtn');
   runBtn.disabled = true;
   setQnetProgreso('Leyendo los archivos...');
@@ -3552,7 +3558,7 @@ async function runQnet() {
     const res = await apiFetch('/api/qnet/ejecutar', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ archivos, desde: document.getElementById('qnetDesde').value, hasta: document.getElementById('qnetHasta').value }),
+      body: JSON.stringify({ archivos, fecha }),
     });
     const data = await res.json();
     if (!res.ok) {
@@ -3587,7 +3593,14 @@ async function pollQnet(jobId) {
     const r = data.resultado;
     const avisos = (r.avisos || []).filter((a) => a.nivel !== 'info');
     await loadQnetCorridas(r.id);
-    await loadQnetDashboard(r.id);
+    if (r.exitCode === 1) {
+      // Con errores no hay dashboard: solo el log.
+      qnetCorridaActual = r.id;
+      document.getElementById('qnetFrame').style.display = 'none';
+      document.getElementById('qnetDescargas').style.display = '';
+    } else {
+      await loadQnetDashboard(r.id);
+    }
     const texto = r.exitCode === 0 ? 'Conciliación terminada sin avisos.'
       : r.exitCode === 2 ? 'Conciliación terminada con advertencias: ' + avisos.map((a) => a.mensaje).join(' | ')
       : 'La conciliación no se pudo hacer: ' + avisos.map((a) => a.mensaje).join(' | ');
@@ -3611,7 +3624,98 @@ async function downloadQnetArchivo(name) {
   }
 }
 
+// Evolución día a día: una conciliación por fecha (la más nueva) con sus excepciones y su saldo pendiente.
+const QNET_COLORES = ['#1f4e8c', '#d9822b', '#2e9d6b', '#b42318', '#7a5af8', '#0e9384', '#c4320a', '#667085', '#dd2590', '#4e9f3d', '#9e77ed', '#ca8504'];
+
+function qnetBarras(dias, serie, titulo, formato, formatoDetalle) {
+  // serie: dia -> { clave: valor }; barras apiladas por clave
+  const claves = [...new Set(dias.flatMap((d) => Object.keys(serie(d))))].sort();
+  const total = (d) => Object.values(serie(d)).reduce((s, v) => s + v, 0);
+  const max = Math.max(1, ...dias.map(total));
+  const W = 860, H = 230, L = 56, B = 44, T = 8, R = 6;
+  const bw = (W - L - R) / dias.length;
+  let svg = `<svg viewBox="0 0 ${W} ${H}" width="100%" role="img" aria-label="${escapeHtml(titulo)}" style="max-width: 100%;">`;
+  for (let i = 0; i <= 4; i++) {
+    const y = T + (H - T - B) * (1 - i / 4);
+    svg += `<line x1="${L}" x2="${W - R}" y1="${y}" y2="${y}" stroke="currentColor" opacity=".12"/><text x="${L - 4}" y="${y + 3}" text-anchor="end" font-size="10" fill="currentColor" opacity=".7">${escapeHtml(formato((max * i) / 4))}</text>`;
+  }
+  dias.forEach((d, i) => {
+    let acum = 0;
+    for (const k of claves) {
+      const v = serie(d)[k] || 0;
+      if (!v) continue;
+      const h = ((H - T - B) * v) / max;
+      const y = H - B - ((H - T - B) * (acum + v)) / max;
+      svg += `<rect x="${L + i * bw + 1}" y="${y}" width="${Math.max(bw - 2, 1)}" height="${h}" fill="${QNET_COLORES[claves.indexOf(k) % QNET_COLORES.length]}"><title>${escapeHtml(d.fecha.split('-').reverse().join('/'))} · ${escapeHtml(k)}: ${escapeHtml((formatoDetalle || formato)(v))}</title></rect>`;
+      acum += v;
+    }
+    if (dias.length <= 16 || i % Math.ceil(dias.length / 16) === 0) {
+      svg += `<text transform="translate(${L + i * bw + bw / 2},${H - B + 12}) rotate(60)" font-size="10" fill="currentColor" opacity=".7">${escapeHtml(d.fecha.split('-').reverse().slice(0, 2).join('/'))}</text>`;
+    }
+  });
+  const leyenda = claves.map((k) => `<span style="margin-right:12px;white-space:nowrap;"><i style="display:inline-block;width:10px;height:10px;border-radius:2px;margin-right:4px;background:${QNET_COLORES[claves.indexOf(k) % QNET_COLORES.length]}"></i>${escapeHtml(k)}</span>`).join('');
+  return `<h3>${escapeHtml(titulo)}</h3>${svg}</svg><div class="muted" style="font-size:12px;">${leyenda}</div>`;
+}
+
+async function toggleQnetEvolucion() {
+  const box = document.getElementById('qnetEvolucion');
+  if (box.style.display !== 'none') {
+    box.style.display = 'none';
+    document.getElementById('qnetEvolucionBtn').textContent = 'Evolución día a día';
+    return;
+  }
+  box.style.display = '';
+  document.getElementById('qnetEvolucionBtn').textContent = 'Ocultar evolución';
+  box.innerHTML = '<p class="muted">Cargando...</p>';
+  try {
+    const res = await apiFetch('/api/qnet/evolucion');
+    const data = await res.json();
+    const dias = data.dias || [];
+    if (dias.length === 0) {
+      box.innerHTML = '<p class="muted">Todavía no hay conciliaciones guardadas.</p>';
+      return;
+    }
+    const moneda = (m, v) => (m === 'USD' ? 'US$ ' : '$ ') + formatImporte(v / 100);
+    const fecha = (f) => f.split('-').reverse().join('/');
+    const filas = dias.map((d) => {
+      const ars = d.monedas.ARS || { sinCubrir: 0 };
+      const usd = d.monedas.USD || { sinCubrir: 0 };
+      const sA = d.saldoPendiente.ARS || { cantidad: 0, importe: 0 };
+      const sU = d.saldoPendiente.USD || { cantidad: 0, importe: 0 };
+      const estado = d.exitCode === 2 ? 'advertencias' : d.exitCode === 0 ? 'ok' : '';
+      return `<tr>
+        <td class="mono">${fecha(d.fecha)}${d.diaAbierto ? ' (abierto)' : ''}</td>
+        <td>${estado}</td>
+        <td class="num">${d.comprobantes.toLocaleString('es-AR')}</td>
+        <td class="num">${d.conMarca.toLocaleString('es-AR')}</td>
+        <td class="num">${d.excepciones.toLocaleString('es-AR')}</td>
+        <td class="num">${sA.cantidad} · ${moneda('ARS', sA.importe)}</td>
+        <td class="num">${sU.cantidad} · ${moneda('USD', sU.importe)}</td>
+        <td class="num">${moneda('ARS', ars.sinCubrir)}</td>
+        <td class="num">${moneda('USD', usd.sinCubrir)}</td>
+        <td><button type="button" data-qnet-abrir="${d.id}">Abrir</button></td>
+      </tr>`;
+    }).join('');
+    box.innerHTML =
+      qnetBarras(dias, (d) => d.porTipo, 'Excepciones por fecha y tipo', (v) => String(Math.round(v))) +
+      qnetBarras(dias, (d) => ({ 'Saldo pendiente ARS': (d.saldoPendiente.ARS || { importe: 0 }).importe }), 'Saldo de débitos pendientes por fecha (pesos, en millones)', (v) => '$ ' + (v / 100 / 1e6).toLocaleString('es-AR', { maximumFractionDigits: 1 }) + ' M', (v) => '$ ' + formatImporte(v / 100)) +
+      `<h3>Día a día</h3><div class="conciliacion-table-wrap"><table>
+        <thead><tr><th>Fecha</th><th>Estado</th><th>Comprobantes</th><th>Con marca</th><th>Excepciones</th><th>Saldo pendiente ARS</th><th>Saldo pendiente USD</th><th>Sin cubrir ARS</th><th>Sin cubrir USD</th><th></th></tr></thead>
+        <tbody>${filas}</tbody></table></div>`;
+    for (const b of box.querySelectorAll('[data-qnet-abrir]')) {
+      b.addEventListener('click', () => {
+        document.getElementById('qnetCorridas').value = b.dataset.qnetAbrir;
+        loadQnetDashboard(b.dataset.qnetAbrir);
+        document.getElementById('qnetFrame').scrollIntoView();
+      });
+    }
+  } catch (err) {
+    box.innerHTML = '<p class="muted">Error cargando la evolución: ' + escapeHtml(err.message) + '</p>';
+  }
+}
+
 async function openQnetSection() {
+  if (!document.getElementById('qnetFecha').value) document.getElementById('qnetFecha').value = formatDateOnlyLocal(new Date());
   showMainSection('qnetSection');
   const hay = await loadQnetCorridas();
   const select = document.getElementById('qnetCorridas');
@@ -3621,6 +3725,7 @@ async function openQnetSection() {
 document.getElementById('qnetBtn').addEventListener('click', openQnetSection);
 document.getElementById('closeQnetBtn').addEventListener('click', () => showMainSection('flowDetail'));
 document.getElementById('qnetRunBtn').addEventListener('click', runQnet);
+document.getElementById('qnetEvolucionBtn').addEventListener('click', toggleQnetEvolucion);
 document.getElementById('qnetAbrirBtn').addEventListener('click', () => {
   const id = document.getElementById('qnetCorridas').value;
   if (id) loadQnetDashboard(id);

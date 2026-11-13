@@ -44,12 +44,19 @@ function tablaResumen(resultado) {
   }
   const c = resultado.cruce;
   const cruce = [
-    ['Operaciones en BankService', c.total], ['APPROVED', c.approved], ['FAILED', c.failed], ['PENDING_EXECUTION', c.pending],
-    ['APPROVED encontradas en Loop', c.encontradas], ['  sin diferencias', c.sinDiferencias], ['APPROVED sin registro', c.approvedSinRegistro],
-    ['APPROVED pendientes de contabilizar (último día de Loop o posterior)', c.pendientesDeContabilizar], ['APPROVED fuera del período de Loop', c.fueraDelPeriodo],
+    ['Operaciones en los archivos de BankService', c.totalEnArchivos], ['Operaciones del día (fecha contable)', c.delDia], ['  APPROVED', c.approved], ['  FAILED', c.failed],
+    ['PENDING_EXECUTION sin ejecutar (hasta el día)', c.pending], ['APPROVED encontradas en Loop', c.encontradas], ['  sin diferencias', c.sinDiferencias],
+    ['APPROVED sin registro', c.approvedSinRegistro], ['APPROVED pendientes de contabilizar (el día sigue abierto)', c.pendientesDeContabilizar], ['Operaciones de otros días', c.otrosDias],
   ];
   for (const [concepto, n] of cruce) filas.push(['Cruce con transfers', concepto, '', n, '']);
-  for (const p of resultado.pendientesPosteriores) filas.push(['Pendiente posterior a Loop', `Comprobante ${p.comprobante} del ${fechaDMY(p.fecha)}`, p.moneda, 1, importe(p.importe)]);
+  for (const p of resultado.pendientesPosteriores) filas.push(['Pendiente posterior al día', `Comprobante ${p.comprobante} del ${fechaDMY(p.fecha)}`, p.moneda, 1, importe(p.importe)]);
+  const anteriores = {};
+  for (const p of resultado.pendientesAnteriores) {
+    anteriores[p.moneda] = anteriores[p.moneda] || { n: 0, c: 0 };
+    anteriores[p.moneda].n++;
+    anteriores[p.moneda].c += p.importe;
+  }
+  for (const [moneda, a] of Object.entries(anteriores).sort()) filas.push(['Pendientes de días anteriores', 'Sin partida en Loop del día (entran en la antigüedad)', moneda, a.n, importe(a.c)]);
   return filas;
 }
 
@@ -63,8 +70,7 @@ function tablaPendientesPorDia(resultado) {
 function tablaFuentes(resultado, archivos, origenes) {
   const filas = [['Bloque', 'Concepto', 'Valor', 'Hash', 'Filas', 'Estado']];
   for (const a of archivos) filas.push(['Archivo', a.tipo, a.nombre, a.hash, a.filas, a.estado]);
-  filas.push(['Período de Loop', 'Desde', fechaDMY(resultado.periodo.primerDia), '', '', '']);
-  filas.push(['Período de Loop', 'Hasta', fechaDMY(resultado.periodo.ultimoDia), '', '', '']);
+  filas.push(['Fecha conciliada', 'Día de Loop', fechaDMY(resultado.fecha), '', '', '']);
   filas.push(['Corte de transfers', 'Última Ejecutada', resultado.corte.ejecutada, '', '', '']);
   for (const [k, v] of Object.entries(origenes || {})) filas.push(['Origen', k, v, '', '', '']);
   return filas;

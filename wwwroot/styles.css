@@ -348,3 +348,6 @@ fieldset legend { color: var(--navy); font-weight: 600; padding: 0 6px; }
 #adConfigForm label:has(input[type="checkbox"]),
 #userForm label:has(input[type="checkbox"]) { flex-direction: row; align-items: center; }
 #usersTable { margin-bottom: 8px; }
+
+/* Conciliación Loop: la tabla de evolución día a día no parte los textos */
+#qnetEvolucion th, #qnetEvolucion td { white-space: nowrap; }

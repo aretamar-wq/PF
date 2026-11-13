@@ -43,8 +43,8 @@ function cliente() {
   // Encabezado y avisos
   const estado = D.exitCode === 0 ? '<span class="badge ok">sin avisos</span>' : D.exitCode === 2 ? '<span class="badge warn">con advertencias</span>' : '<span class="badge err">con errores</span>';
   $('cab').innerHTML =
-    `<h1>Conciliación Loop ${estado}</h1><div class="mut">Corrida ${esc(D.id)} · Loop del ${fecha(D.periodo.primerDia)} al ${fecha(D.periodo.ultimoDia)} · ` +
-    `corte de transfers ${esc(D.corte.ejecutada)}</div>`;
+    `<h1>Conciliación Loop del ${fecha(D.fecha)} ${estado}${D.diaAbierto ? ' <span class="badge warn">día abierto</span>' : ''}</h1>` +
+    `<div class="mut">Corrida ${esc(D.id)} · corte de BankService ${esc(D.corte.ejecutada)}</div>`;
   const avisos = (D.avisos || []).filter((a) => a.nivel !== 'info');
   $('avisos').innerHTML = avisos.map((a) => `<div class="aviso ${a.nivel === 'error' ? 'error' : ''}">${esc(a.mensaje)}</div>`).join('');
 
@@ -63,46 +63,26 @@ function cliente() {
         tarjeta(`Sin cubrir ${m}`, money(t.sinCubrir, m), t.sinCubrir < 0 ? 'pendientes de más' : 'debe tender a 0', t.sinCubrir === 0 ? 'ok' : 'err');
     }).join('') + '</div>' +
     '<div class="grupo">Cruce con transfers</div><div class="cards">' +
-    tarjeta('Operaciones', c.total.toLocaleString('es-AR'), `${c.approved.toLocaleString('es-AR')} APPROVED · ${c.failed} FAILED · ${c.pending} pendientes de ejecutar`) +
+    tarjeta('Operaciones del día', c.delDia.toLocaleString('es-AR'), `${c.approved.toLocaleString('es-AR')} APPROVED · ${c.failed} FAILED`) +
     tarjeta('APPROVED en Loop', c.encontradas.toLocaleString('es-AR'), `${c.sinDiferencias.toLocaleString('es-AR')} sin diferencias`, c.encontradas === c.sinDiferencias ? 'ok' : 'warn') +
     tarjeta('APPROVED sin registro', c.approvedSinRegistro, '', c.approvedSinRegistro ? 'err' : 'ok') +
-    tarjeta('Pendientes de contabilizar', c.pendientesDeContabilizar, 'último día de Loop o posterior') +
-    tarjeta('Fuera del período', c.fueraDelPeriodo, 'anteriores a Loop') + '</div>';
+    tarjeta('Pendientes de contabilizar', c.pendientesDeContabilizar, D.diaAbierto ? 'el día sigue abierto' : 'día cerrado'  ) +
+    tarjeta('Transfers sin ejecutar', c.pending, 'PENDING_EXECUTION hasta el día', c.pending ? 'warn' : 'ok') +
+    tarjeta('Operaciones de otros días', c.otrosDias.toLocaleString('es-AR'), 'en los archivos, fuera de este día') + '</div>';
 
-  // Gráfico de barras apiladas: excepciones por fecha y tipo
+  // Gráfico: excepciones del día por tipo (la evolución entre días está en el histórico de la app)
   const excs = D.excepciones;
   const tipos = [...new Set(excs.map((e) => e.tipo))].sort();
   const colores = ['#1f4e8c', '#d9822b', '#2e9d6b', '#b42318', '#7a5af8', '#0e9384', '#c4320a', '#667085', '#dd2590', '#4e9f3d', '#9e77ed', '#ca8504'];
-  const colorDe = (t) => colores[tipos.indexOf(t) % colores.length];
-  const fechas = [...new Set(excs.map((e) => e.fecha).filter(Boolean))].sort();
-  const porFecha = {};
-  for (const e of excs) if (e.fecha) { porFecha[e.fecha] = porFecha[e.fecha] || {}; porFecha[e.fecha][e.tipo] = (porFecha[e.fecha][e.tipo] || 0) + 1; }
-  if (fechas.length === 0) {
+  const cantidadDe = (t) => excs.filter((e) => e.tipo === t).length;
+  if (tipos.length === 0) {
     $('grafico').innerHTML = '<div class="mut">Sin excepciones.</div>';
   } else {
-    const W = 900, H = 260, L = 38, B = 44, T = 8, R = 6;
-    const max = Math.max(...fechas.map((f) => Object.values(porFecha[f]).reduce((a, b) => a + b, 0)));
-    const paso = Math.pow(10, Math.floor(Math.log10(max || 1)));
-    const techo = Math.ceil(max / paso) * paso;
-    const bw = (W - L - R) / fechas.length;
-    let svg = `<svg viewBox="0 0 ${W} ${H}" width="100%" role="img" aria-label="Excepciones por fecha y tipo">`;
-    for (let i = 0; i <= 4; i++) {
-      const y = T + (H - T - B) * (1 - i / 4);
-      svg += `<line x1="${L}" x2="${W - R}" y1="${y}" y2="${y}" stroke="currentColor" opacity=".12"/><text x="${L - 4}" y="${y + 3}" text-anchor="end">${Math.round((techo * i) / 4)}</text>`;
-    }
-    fechas.forEach((f, i) => {
-      let acum = 0;
-      for (const t of tipos) {
-        const n = porFecha[f][t] || 0;
-        if (!n) continue;
-        const h = ((H - T - B) * n) / techo;
-        const y = H - B - ((H - T - B) * (acum + n)) / techo;
-        svg += `<rect x="${L + i * bw + 1}" y="${y}" width="${Math.max(bw - 2, 1)}" height="${h}" fill="${colorDe(t)}"><title>${esc(fecha(f))} · ${esc(t)}: ${n}</title></rect>`;
-        acum += n;
-      }
-      if (fechas.length <= 16 || i % Math.ceil(fechas.length / 16) === 0) svg += `<text transform="translate(${L + i * bw + bw / 2},${H - B + 12}) rotate(60)">${fecha(f).slice(0, 5)}</text>`;
-    });
-    $('grafico').innerHTML = svg + '</svg><div class="leyenda">' + tipos.map((t) => `<span><i style="background:${colorDe(t)}"></i>${esc(t)}</span>`).join('') + '</div>';
+    const maximo = Math.max(...tipos.map(cantidadDe));
+    $('grafico').innerHTML = '<div class="scroll"><table class="tabla">' + tipos.map((t, i) => {
+      const n = cantidadDe(t);
+      return `<tr><td style="width:34%">${esc(t)}</td><td><div style="background:${colores[i % colores.length]};height:14px;border-radius:3px;width:${Math.max(2, Math.round((100 * n) / maximo))}%"></div></td><td class="num" style="width:70px">${n.toLocaleString('es-AR')}</td></tr>`;
+    }).join('') + '</table></div>';
   }
 
   // Débitos pendientes: último día vs días anteriores, y saldo por día
@@ -115,7 +95,7 @@ function cliente() {
     '<table class="tabla"><tr><th>Fecha del crédito</th><th>Moneda</th><th class="num">Cantidad</th><th class="num">Importe</th><th class="num">Acumulado</th><th>Tramo</th></tr>' +
     (A.filas.length ? A.filas.map((f) => `<tr><td>${fecha(f.fecha)}</td><td>${esc(f.moneda)}</td><td class="num">${f.cantidad}</td><td class="num">${money(f.importe, f.moneda)}</td><td class="num">${money(f.acumulado, f.moneda)}</td><td>${esc(f.tramo)}</td></tr>`).join('') : '<tr><td colspan="6" class="mut">Sin débitos pendientes.</td></tr>') + '</table>';
   $('posteriores').innerHTML = D.pendientesPosteriores.length
-    ? '<h2>Débitos pendientes posteriores al último día de Loop</h2><div class="scroll"><table class="tabla"><tr><th>Comprobante</th><th>Cuenta</th><th>Fecha</th><th class="num">Importe</th></tr>' +
+    ? '<h2>Débitos pendientes posteriores al día</h2><div class="scroll"><table class="tabla"><tr><th>Comprobante</th><th>Cuenta</th><th>Fecha</th><th class="num">Importe</th></tr>' +
       D.pendientesPosteriores.map((p) => `<tr><td>${esc(p.comprobante)}</td><td>${esc(p.cuenta)}</td><td>${fecha(p.fecha)}</td><td class="num">${money(p.importe, p.moneda)}</td></tr>`).join('') + '</table></div>'
     : '';
 
@@ -153,9 +133,9 @@ function cliente() {
 
 const ESQUELETO = `
 <div id="cab"></div><div id="avisos"></div><div id="kpis"></div>
-<h2>Excepciones por fecha y tipo</h2><div id="grafico"></div>
+<h2>Excepciones del día por tipo</h2><div id="grafico"></div>
 <h2>Débitos pendientes</h2><div class="scroll" id="tramos"></div>
-<h2>Saldo por día</h2><div class="scroll" id="saldo"></div>
+<h2>Saldo de débitos pendientes por día</h2><div class="scroll" id="saldo"></div>
 <div id="posteriores"></div>
 <h2>Excepciones</h2>
 <div class="filtros"><select id="ftipo"></select><select id="fmoneda"></select><input id="fq" type="search" placeholder="Buscar comprobante, cuenta o detalle"><span class="mut" id="cuenta" style="align-self:center"></span>

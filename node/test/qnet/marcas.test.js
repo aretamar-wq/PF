@@ -7,10 +7,9 @@ const { par, soloCredito, partida, pendiente } = require('./fixtures');
 
 const D1 = '2026-11-10';
 const D2 = '2026-11-12'; // último día de Loop
+const HOY = '2026-12-01'; // el día D2 ya cerró
 const marcaDe = (partidas, pendientes = [], com = '100') => {
-  // un comprobante de relleno fija el último día de Loop
-  const relleno = par('9000', 7777, D2, D2, 1);
-  const r = conciliar({ partidas: [...partidas, ...relleno], pendientes, transfers: [], config });
+  const r = conciliar({ partidas, pendientes, transfers: [], config, fecha: D2, hoy: HOY });
   return r.comprobantes.find((c) => c.comnro === com);
 };
 
@@ -52,7 +51,7 @@ test('Débito pendiente anterior: la fecha del crédito es anterior al último d
 
 test('Pendiente con importe distinto, y señala un posible débito cruzado en la misma cuenta', () => {
   const partidas = [...soloCredito('100', D1, 500), ...par('200', 5001, D1, D1, 480)];
-  const r = conciliar({ partidas: [...partidas, ...par('9000', 7777, D2, D2, 1)], pendientes: [pendiente('100', 5001, 480, D1)], transfers: [], config });
+  const r = conciliar({ partidas, pendientes: [pendiente('100', 5001, 480, D1)], transfers: [], config, fecha: D2, hoy: HOY });
   const c = r.comprobantes.find((x) => x.comnro === '100');
   assert.strictEqual(c.marca, MARCAS.PEND_DISTINTO);
   assert.match(c.detalle, /200/);
@@ -65,14 +64,14 @@ test('Una partida con pendiente, pero la partida es un débito: no es débito pe
 });
 
 test('La clave es moneda + comnro: el mismo número en USD es otro comprobante', () => {
-  const r = conciliar({ partidas: [...par('100', 5001, D1, D1, 500), ...par('100', 6001, D1, D1, 20, 20, 2), ...par('9000', 7777, D2, D2, 1)], pendientes: [], transfers: [], config });
+  const r = conciliar({ partidas: [...par('100', 5001, D1, D1, 500), ...par('100', 6001, D1, D1, 20, 20, 2)], pendientes: [], transfers: [], config, fecha: D2, hoy: HOY });
   assert.strictEqual(r.comprobantes.filter((c) => c.comnro === '100').length, 2);
 });
 
 test('Totales: neto - pendientes = sin cubrir; la antigüedad separa el último día', () => {
   const partidas = [...soloCredito('100', D2, 500), ...soloCredito('101', D1, 300), ...soloCredito('102', D1, 200, 2), ...par('103', 5003, D1, D1, 50)];
   const pend = [pendiente('100', 5001, 500, D2), pendiente('101', 5002, 300, D1), pendiente('102', 6001, 190, D1, 2)];
-  const r = conciliar({ partidas, pendientes: pend, transfers: [], config });
+  const r = conciliar({ partidas, pendientes: pend, transfers: [], config, fecha: D2, hoy: HOY });
   assert.strictEqual(r.totales.ARS.neto, 80000); // 500 + 300 + 0 (par neto 0)
   assert.strictEqual(r.totales.ARS.pendientes, 80000);
   assert.strictEqual(r.totales.ARS.sinCubrir, 0);
@@ -85,10 +84,13 @@ test('Totales: neto - pendientes = sin cubrir; la antigüedad separa el último 
   assert.deepStrictEqual(r.antiguedad.filas.filter((f) => f.moneda === 'ARS').map((f) => f.acumulado), [30000, 80000]);
 });
 
-test('Los pendientes sin comprobante en Loop: posteriores al último día se informan aparte; el resto es excepción', () => {
+test('Pendientes sin comprobante en Loop del día: posteriores se informan aparte, del día son excepción, anteriores solo entran en la antigüedad', () => {
   const partidas = par('9000', 7777, D2, D2, 1);
-  const pend = [pendiente('300', 5001, 550000, '2026-11-13'), pendiente('301', 5002, 10, D1)];
-  const r = conciliar({ partidas, pendientes: pend, transfers: [], config });
+  const pend = [pendiente('300', 5001, 550000, '2026-11-13'), pendiente('301', 5002, 10, D1), pendiente('302', 5003, 20, D2)];
+  const r = conciliar({ partidas, pendientes: pend, transfers: [], config, fecha: D2, hoy: HOY });
   assert.deepStrictEqual(r.pendientesPosteriores.map((p) => p.comprobante), ['300']);
-  assert.deepStrictEqual(r.excepciones.filter((e) => e.tipo === 'Débito pendiente sin asiento en Loop').map((e) => e.comprobante), ['301']);
+  assert.deepStrictEqual(r.pendientesAnteriores.map((p) => p.comprobante), ['301']);
+  assert.deepStrictEqual(r.excepciones.filter((e) => e.tipo === 'Débito pendiente sin asiento en Loop').map((e) => e.comprobante), ['302']);
+  // la antigüedad suma los del día (302) y los anteriores (301), no los posteriores (300)
+  assert.deepStrictEqual(r.antiguedad.tramos.map((x) => [x.tramo, x.cantidad, x.importe]).sort(), [['Días anteriores', 1, 1000], ['Último día', 1, 2000]].sort());
 });

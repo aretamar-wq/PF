@@ -241,21 +241,21 @@
         </div>
         <p class="muted">
           Verifica que cada transferencia QNET esté en Loop con su débito al cliente y su crédito a la cuenta puente, que lo
-          que falta esté en los débitos pendientes y que todo cierre contra BankService. Loop y los débitos pendientes se
-          consultan directo en Sybase; subí acá los archivos de BankService (uno por mes,
+          que falta esté en los débitos pendientes y que todo cierre contra BankService. Se concilia <strong>un día</strong>:
+          Loop y los débitos pendientes se consultan directo en Sybase; subí los archivos de BankService (uno por mes,
           <code>Movimientos_BankService-mmaaaa.csv</code>; si son de dos meses seguidos se combinan y gana el más nuevo).
-          El período es el de BankService salvo que indiques otro.
+          Cada conciliación queda guardada: abrila de nuevo o mirá cómo se movió día a día.
         </p>
         <div class="actions conciliacion-actions">
           <label>Archivos de BankService <input type="file" id="qnetFiles" accept=".csv,text/csv" multiple /></label>
-          <label>Desde (opcional) <input type="date" id="qnetDesde" /></label>
-          <label>Hasta (opcional) <input type="date" id="qnetHasta" /></label>
+          <label>Fecha a conciliar <input type="date" id="qnetFecha" /></label>
           <button type="button" id="qnetRunBtn">Conciliar</button>
         </div>
         <div id="qnetProgreso" class="muted" style="margin: 8px 0;"></div>
         <div class="actions conciliacion-actions">
-          <label>Corridas anteriores <select id="qnetCorridas"></select></label>
+          <label>Histórico <select id="qnetCorridas"></select></label>
           <button type="button" id="qnetAbrirBtn">Abrir</button>
+          <button type="button" id="qnetEvolucionBtn">Evolución día a día</button>
           <span id="qnetDescargas" style="display: none;">
             Descargar:
             <button type="button" data-qnet-archivo="excepciones.csv">Excepciones</button>
@@ -266,6 +266,7 @@
             <button type="button" data-qnet-archivo="corrida.log">Log</button>
           </span>
         </div>
+        <div id="qnetEvolucion" style="display: none; margin-top: 10px;"></div>
         <iframe id="qnetFrame" title="Dashboard de la conciliación Loop" sandbox="allow-scripts" style="display: none; width: 100%; height: 85vh; border: 1px solid var(--border, #ccc); border-radius: 6px; margin-top: 10px;"></iframe>
       </section>
 

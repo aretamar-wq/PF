@@ -13,4 +13,8 @@ module.exports = {
   monedas: { ARS: '0', USD: '2' }, // Moneda de BankService -> moncod
   digitosCbuMoneda: { ARS: '02', USD: '06' }, // dígitos 9 y 10 del CBU origen
   etiquetasMoneda: { 0: 'ARS', 2: 'USD' },
+  // Lo ejecutado un fin de semana o feriado se contabiliza el próximo día hábil
+  // (calendario de feriados de Parametría). Si Loop contabiliza por la fecha de la
+  // operación, ponerlo en false.
+  postergarNoHabiles: true,
 };
