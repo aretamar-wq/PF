@@ -25,3 +25,7 @@ certs/
 # Backend Node.js (alternativa a server.ps1, ver README > "Instalación en Linux"):
 # dependencias instaladas, nunca se versionan (package-lock.json sí se versiona)
 node/node_modules/
+
+# Conciliación QNET: el histórico guarda los archivos de entrada tal como llegaron
+# (BankService trae nombres, CUIT y CBU), nunca se versiona
+/qnet/

@@ -5,7 +5,8 @@
   "description": "ApiCore — backend Node.js alternativo a server.ps1, para deployments Linux sin PowerShell.",
   "main": "server.js",
   "scripts": {
-    "start": "node server.js"
+    "start": "node server.js",
+    "test": "node --test test/qnet/*.test.js"
   },
   "engines": {
     "node": ">=20"
