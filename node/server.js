@@ -26,7 +26,7 @@ const processedOperationsStore = require('./lib/processedOperationsStore');
 const debinOutputStore = require('./lib/debinOutputStore');
 const conciliacionIbs = require('./lib/conciliacionIbs');
 const sybaseClient = require('./lib/sybaseClient');
-const { convertDMYToISO, formatLocal } = require('./lib/dateUtil');
+const { convertDMYToISO, formatLocal, formatDateOnly } = require('./lib/dateUtil');
 
 function parsePort() {
   const args = process.argv.slice(2);
@@ -1055,9 +1055,14 @@ async function handleConciliacionIbsPost(req, res, session) {
     writeJsonResponse(res, 400, { error: 'Fecha inválida (formato yyyy-MM-dd).' });
     return;
   }
-  const tipo = payload.tipo === 'pagos' ? 'pagos' : 'altas';
+  const tipo = payload.tipo === 'pagos' ? 'pagos' : payload.tipo === 'transferencias' ? 'transferencias' : 'altas';
   const contenido = String(payload.contenido || '');
   const parametria = await parametriaStore.getParametria(rootDir);
+
+  if (tipo === 'transferencias') {
+    await handleConciliacionTransferencias(res, session, payload, fecha, contenido, parametria);
+    return;
+  }
 
   let pagoConfig = null;
   if (tipo === 'pagos') {
@@ -1111,6 +1116,83 @@ async function handleConciliacionIbsPost(req, res, session) {
   securityStore.writeSecurityLog(
     logsDir,
     `CONCILIACION IBS ${tipo} PF ${fecha} (${origen}) por '${session.username}': ${detalle}`
+  );
+  writeJsonResponse(res, 200, resultado);
+}
+
+const CONCILIACION_TRANSFERENCIAS_MAX_DIAS = 31;
+
+// Transferencias DEBIN: cruza las filas de dbn_consulta ejecutadas entre
+// fecha y payload.hasta (yyyy-MM-dd, inclusive) contra los débitos de IBS
+// (28600 mismo titular / 28601 terceros, ver conciliarTransferencias). El
+// período de IBS va hasta el próximo día hábil de "hasta" según el calendario
+// de feriados de Parametría; los débitos de ese período que no corresponden a
+// ninguna transferencia del rango se buscan en dbn_consulta (sin límite de
+// fecha) para explicar los de transferencias de otros días.
+async function handleConciliacionTransferencias(res, session, payload, desde, contenido, parametria) {
+  const hasta = String(payload.hasta || desde);
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(hasta) || hasta < desde) {
+    writeJsonResponse(res, 400, { error: 'El rango de fechas es inválido (Hasta no puede ser anterior a Desde).' });
+    return;
+  }
+  const dias = Math.round((Date.parse(`${hasta}T00:00:00Z`) - Date.parse(`${desde}T00:00:00Z`)) / 86400000) + 1;
+  if (dias > CONCILIACION_TRANSFERENCIAS_MAX_DIAS) {
+    writeJsonResponse(res, 400, { error: `El rango no puede superar ${CONCILIACION_TRANSFERENCIAS_MAX_DIAS} días (pediste ${dias}).` });
+    return;
+  }
+
+  const { fechas: feriados, invalidos } = conciliacionIbs.parseFeriados((parametria.calendario || {}).feriados);
+  const hastaEsperado = conciliacionIbs.proximoDiaHabil(hasta, feriados);
+
+  let ibsLines;
+  let origen;
+  if (contenido.trim()) {
+    ibsLines = parseCsvText(contenido.replace(/^\uFEFF/, ''));
+    origen = 'archivo';
+  } else {
+    try {
+      ibsLines = conciliacionIbs.ibsRowsToLines(
+        await sybaseClient.querySybase(parametria.sybase, conciliacionIbs.buildIbsTransferenciasQuery(desde, hastaEsperado)),
+        { conConcod: true }
+      );
+    } catch (err) {
+      writeJsonResponse(res, 502, { error: `No se pudo consultar IBS (Sybase): ${err.message}` });
+      return;
+    }
+    origen = 'consulta directa a IBS';
+  }
+
+  const apiRows = await debinOutputStore.getConsultaRowsEntre(rootDir, desde, hasta);
+  let resultado;
+  try {
+    const enRango = new Set(apiRows.map((r) => String(r.id_comprobante || '').trim()));
+    const faltantes = conciliacionIbs.comprobantesIbsTransferencias(ibsLines, desde, hastaEsperado).filter((c) => !enRango.has(c));
+    const otrasFechas = new Map();
+    for (const r of await debinOutputStore.getConsultaRowsPorComprobante(rootDir, faltantes)) {
+      const c = String(r.id_comprobante || '').trim();
+      if (!otrasFechas.has(c)) otrasFechas.set(c, []);
+      otrasFechas.get(c).push(r);
+    }
+    resultado = conciliacionIbs.conciliarTransferencias(apiRows, ibsLines, {
+      desde,
+      hasta,
+      hoy: formatDateOnly(new Date()),
+      feriados,
+      feriadosInvalidos: invalidos,
+      otrasFechas,
+    });
+  } catch (err) {
+    if (err.statusCode === 400) {
+      writeJsonResponse(res, 400, { error: err.message });
+      return;
+    }
+    throw err;
+  }
+  resultado.origen = origen;
+  const r = resultado.resumen;
+  securityStore.writeSecurityLog(
+    logsDir,
+    `CONCILIACION IBS transferencias ${desde}..${hasta} (${origen}) por '${session.username}': ${r.transferenciasOk}/${r.realizadasApicore} OK, ${r.transferenciasConDiferencias} con diferencias, ${r.pendientes} pendientes, ${r.soloEnIbs} solo en IBS`
   );
   writeJsonResponse(res, 200, resultado);
 }

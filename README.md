@@ -800,6 +800,16 @@ cambian de una ejecución a otra, agrupados por tipo de cuenta:
   límite para esa combinación (no bloquea nada). Ver "Límite diario por
   CUIT origen, moneda y destinatario" en "Flow 'Transferencia DEBIN - File'"
   más abajo para el detalle completo.
+- **Calendario de feriados bancarios**: un texto con un feriado por línea (o
+  separados por coma), como `2026-11-06` o `06/11/2026`. IBS pasa los
+  movimientos de los fines de semana y feriados al próximo día hábil; la
+  conciliación de transferencias con IBS lo usa para calcular en qué fecha
+  tiene que estar cada débito. Los sábados y domingos ya se toman como no
+  hábiles: solo se cargan feriados y días de cierre. Las fechas que no se
+  reconocen se ignoran (y la conciliación lo avisa). Columna
+  `calendario_feriados` de `parametria` (ver `deploy/mariadb-schema.sql`):
+  mientras no se corra esa migración, el resto de la Parametría se sigue
+  guardando pero la lista de feriados no.
 
 Se guardan en la tabla `parametria` de MariaDB (fila singleton, ver "Base de
 datos (MariaDB)") — la contraseña de Sybase se guarda cifrada (ver "Campos
@@ -1231,10 +1241,10 @@ operaciones duplicadas"), pero no las filas que fallaron por otra cosa
 cortada antes de consultar su estado queda con `realizado` = `SI` y
 `errorConsulta` = `Consulta de estado pendiente`.
 
-### Conciliación con IBS (altas y pagos de Plazo Fijo)
+### Conciliación con IBS (altas y pagos de Plazo Fijo, transferencias DEBIN)
 
 Panel **"Conciliación con IBS"** (menú): se elige **qué conciliar** (altas o
-pagos de Plazo Fijo, ver más abajo para los pagos), la fecha y hay dos formas
+pagos de Plazo Fijo, o transferencias DEBIN — ver más abajo), la fecha y hay dos formas
 de traer los movimientos de IBS de ese día:
 
 - **"Conciliar contra IBS"** (la normal): el servidor los consulta directo
@@ -1248,7 +1258,8 @@ de traer los movimientos de IBS de ese día:
   (el mismo resultado de la query), por si Sybase no está disponible.
 
 Los dos van a `POST /api/conciliacion/ibs` con `{ fecha, tipo }` o
-`{ fecha, tipo, contenido }` (`tipo` = `altas` o `pagos`). El servidor cruza las altas de
+`{ fecha, tipo, contenido }` (`tipo` = `altas`, `pagos` o `transferencias`; para
+estas últimas también `hasta`). El servidor cruza las altas de
 `operaciones_procesadas` de ese día (`processed_at`) contra esos movimientos:
 
 - **Circuito 0:** tiene que estar el `25020` (débito en Cuenta Corriente) y
@@ -1315,6 +1326,71 @@ Se muestran indicadores (PF que vencían, pagados en ApiCore, conciliados,
 con diferencias, pagados en IBS sin marcar, solo en IBS, pendientes), totales
 ApiCore vs IBS de los dos movimientos, la tabla de diferencias con filtro y
 descarga en CSV, y los pendientes.
+
+#### Transferencias DEBIN
+
+Con "Transferencias DEBIN" se concilia "Transferencia DEBIN - File" para un
+**rango de fechas** (Desde/Hasta, hasta 31 días; sin Hasta es un solo día),
+porque el débito en IBS no cae el día de la transferencia: los fines de semana
+y feriados pasan al próximo día hábil. El período de IBS va desde "Desde"
+hasta el próximo día hábil de "Hasta" (calendario de Parametría) — ver
+`buildIbsTransferenciasQuery` en `node/lib/conciliacionIbs.js`.
+
+Cada transferencia **realizada** de ApiCore (`dbn_consulta`, `realizado` = `s`,
+por `ejecutado_en`) se espera en IBS como un débito en la Caja de Ahorro del
+cliente (`sistcod` 5) con `comnro` = `id_comprobante`:
+
+- **`movcod` 28600** si es a su propia cuenta (mismo CUIT de débito y crédito)
+  y **28601** si es a terceros.
+- Por el `importe`, en la moneda (`moncod` 0 = pesos / `32`, 2 = dólares /
+  `840`) y en la cuenta que sale del CBU de débito: 11 dígitos desde la
+  posición 11 del CBU, sin ceros a la izquierda (`cuentaDesdeCbu`).
+- El otro sistema también **debita y revierte** las rechazadas: un débito
+  (`signo` -1, `concod` `M`) y su contra-asiento (`signo` +1, `concod` `C`),
+  que netean cero. Por eso la query de IBS **no** filtra por `concod` y los
+  "débitos vigentes" de un comprobante son los que no fueron revertidos
+  (débitos menos contra-asientos).
+- La fecha esperada es el **próximo día hábil** (no sábado, domingo ni feriado
+  de Parametría) desde el día de la transferencia. Si todavía no llegó esa
+  fecha, la transferencia queda como **pendiente** (informativo) en vez de
+  diferencia.
+
+Diferencias que detecta:
+
+- **Sin débito en IBS**: realizada y vencida su fecha, sin ningún débito.
+- **Débito fuera de fecha**: el débito está, pero otro día que el esperado
+  (si hubo un feriado, revisar que esté cargado en Parametría).
+- **Enviada más de una vez**: más de un envío realizado del mismo comprobante
+  (ver "Prevención de operaciones duplicadas"); además **Débitos de más / de
+  menos en IBS** si la cantidad de débitos vigentes no coincide con la de
+  envíos.
+- **Importe distinto / Moneda distinta / Cuenta distinta / Movimiento distinto
+  al esperado** (28600 vs 28601).
+- **Acreditación no exitosa, sin reversa**: el estado de acreditación no es
+  `ACREDITADO` (ej. `0606 - ERROR BANCO CREDITO - CUENTA NO HABILITADA`) pero
+  el débito sigue vigente: hay que revertirlo. Si el débito sí se revirtió, es
+  correcto y no es una diferencia.
+- **Revertida en IBS estando acreditada**: el débito se revirtió pero la
+  transferencia figura acreditada.
+- **Sin estado de acreditación**: la consulta de estado no devolvió nada.
+- **Rechazada con débito en IBS**: ApiCore la rechazó y IBS tiene un débito
+  sin revertir.
+- **Solo en IBS**: un débito sin ninguna transferencia en ApiCore. Los débitos
+  de transferencias hechas fuera del rango pero que sí figuran realizadas en
+  `dbn_consulta` se explican aparte (informativo, "débitos de otras fechas").
+
+Los totales por moneda y tipo (pesos/dólares × mismo titular/terceros)
+comparan lo que ApiCore espera debitado (sin las pendientes ni las
+acreditaciones con error) contra los débitos vigentes de IBS. Hay descarga en
+CSV de las diferencias (con moneda y fecha).
+
+Hace falta correr `deploy/mariadb-schema.sql`: agrega la columna
+`calendario_feriados` y dos índices de `dbn_consulta` (`ejecutado_en` y
+`id_comprobante`) para que las búsquedas por rango y por comprobante no
+recorran toda la tabla. Una corrida cortada antes de registrar sus
+transferencias no aparece (las transferencias se registran fila por fila, ver
+"Prevención de operaciones duplicadas"); las anteriores a esa mejora y a que
+`dbn_consulta` funcionara (2/11) pueden no estar.
 
 ### Prevención de operaciones duplicadas
 

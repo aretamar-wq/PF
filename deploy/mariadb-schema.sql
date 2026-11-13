@@ -105,6 +105,9 @@ CREATE TABLE IF NOT EXISTS parametria (
   debin_limite_diario_ars_terceros VARCHAR(50) NOT NULL DEFAULT '',
   debin_limite_diario_usd_mismo_cuit VARCHAR(50) NOT NULL DEFAULT '',
   debin_limite_diario_usd_terceros VARCHAR(50) NOT NULL DEFAULT '',
+  -- Feriados bancarios (yyyy-MM-dd o dd/MM/yyyy, separados por salto de línea o coma): IBS pasa
+  -- los movimientos de fines de semana y feriados al próximo día hábil (conciliación de transferencias).
+  calendario_feriados VARCHAR(4000) NOT NULL DEFAULT '',
   updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
   PRIMARY KEY (id),
   CONSTRAINT chk_parametria_singleton CHECK (id = 1)
@@ -118,6 +121,7 @@ ALTER TABLE parametria ADD COLUMN IF NOT EXISTS debin_limite_diario_ars_mismo_cu
 ALTER TABLE parametria ADD COLUMN IF NOT EXISTS debin_limite_diario_ars_terceros VARCHAR(50) NOT NULL DEFAULT '';
 ALTER TABLE parametria ADD COLUMN IF NOT EXISTS debin_limite_diario_usd_mismo_cuit VARCHAR(50) NOT NULL DEFAULT '';
 ALTER TABLE parametria ADD COLUMN IF NOT EXISTS debin_limite_diario_usd_terceros VARCHAR(50) NOT NULL DEFAULT '';
+ALTER TABLE parametria ADD COLUMN IF NOT EXISTS calendario_feriados VARCHAR(4000) NOT NULL DEFAULT '';
 
 -- Migración: cc_transaccion / ca_transaccion pasan a ser cc_transaccion_debito
 -- / ca_transaccion_credito (mismo valor que ya tenían cargado, solo cambia el
@@ -342,3 +346,8 @@ ALTER TABLE dbn_consulta ADD COLUMN IF NOT EXISTS importe VARCHAR(50) NOT NULL D
 ALTER TABLE dbn_consulta ADD COLUMN IF NOT EXISTS codigo_respuesta VARCHAR(100) NOT NULL DEFAULT '';
 ALTER TABLE dbn_consulta ADD COLUMN IF NOT EXISTS descripcion_respuesta VARCHAR(500) NOT NULL DEFAULT '';
 ALTER TABLE dbn_consulta ADD COLUMN IF NOT EXISTS realizado VARCHAR(1) NOT NULL DEFAULT '';
+
+-- Para la conciliación de transferencias con IBS: búsqueda por rango de
+-- fechas de ejecución y por comprobante, sin recorrer toda la tabla.
+CREATE INDEX IF NOT EXISTS idx_dbn_consulta_ejecutado_en ON dbn_consulta (ejecutado_en);
+CREATE INDEX IF NOT EXISTS idx_dbn_consulta_comprobante ON dbn_consulta (id_comprobante);

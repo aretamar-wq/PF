@@ -324,6 +324,45 @@ async function findTransferenciasRealizadas(rootDir, transferencias) {
   return rows.map((row) => ({ debitoCuit: row.debito_cuit, idComprobante: row.id_comprobante, ejecutadoEn: row.ejecutado_en }));
 }
 
+// Columnas de dbn_consulta que usa la conciliación de transferencias con IBS
+// (estadoCodigo/estadoDescripcion no son columnas: están en respuesta_json).
+const CONCILIACION_COLUMNAS = `ejecutado_en, ejecutado_por, id_mensaje, id_comprobante, id_operacion,
+            debito_cuit, debito_cbu, debito_titular, credito_cuit, credito_cbu, credito_titular,
+            moneda, importe, realizado, codigo_respuesta, descripcion_respuesta, error_consulta,
+            JSON_UNQUOTE(JSON_EXTRACT(respuesta_json, '$.estadoCodigo')) AS estado_codigo,
+            JSON_UNQUOTE(JSON_EXTRACT(respuesta_json, '$.estadoDescripcion')) AS estado_descripcion`;
+
+// Todas las filas de dbn_consulta de un rango de días de ejecución (yyyy-MM-dd,
+// ambos inclusive). Rango sobre ejecutado_en sin DATE() para poder usar el índice.
+async function getConsultaRowsEntre(rootDir, desde, hasta) {
+  return db.query(
+    rootDir,
+    `SELECT ${CONCILIACION_COLUMNAS}
+     FROM dbn_consulta
+     WHERE ejecutado_en >= ? AND ejecutado_en < DATE_ADD(?, INTERVAL 1 DAY)
+     ORDER BY ejecutado_en, id`,
+    [desde, hasta]
+  );
+}
+
+// Las filas de esos comprobantes sin importar la fecha — para explicar en la
+// conciliación un débito de IBS de una transferencia hecha fuera del rango.
+async function getConsultaRowsPorComprobante(rootDir, comprobantes) {
+  const unicos = [...new Set((comprobantes || []).map((c) => String(c || '').trim()).filter(Boolean))];
+  const rows = [];
+  for (let i = 0; i < unicos.length; i += 500) {
+    const lote = unicos.slice(i, i + 500);
+    rows.push(
+      ...(await db.query(
+        rootDir,
+        `SELECT ${CONCILIACION_COLUMNAS} FROM dbn_consulta WHERE id_comprobante IN (${lote.map(() => '?').join(',')}) ORDER BY ejecutado_en, id`,
+        lote
+      ))
+    );
+  }
+  return rows;
+}
+
 module.exports = {
   addDbnOutRows,
   addDbnConsultaRows,
@@ -331,5 +370,7 @@ module.exports = {
   getTransferidoHoyPorCuit,
   transferidoHoyKey,
   getConsultaRowsDelDia,
+  getConsultaRowsEntre,
+  getConsultaRowsPorComprobante,
   findTransferenciasRealizadas,
 };
