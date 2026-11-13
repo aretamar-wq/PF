@@ -18,6 +18,7 @@ const { leerPendientes } = require('./lectura/pendientes');
 const { leerBankService } = require('./lectura/bankservice');
 const { conciliar } = require('./conciliacion');
 const { escribirReportes } = require('./reportes/csv');
+const { construirDashboardHtml } = require('./reportes/dashboard');
 
 function cargarConfig(sobrescritura) {
   return { ...baseConfig, ...(sobrescritura || {}) };
@@ -77,7 +78,9 @@ async function ejecutarCorrida({ fuente, bankservice, desde, hasta, config: cfg,
   if (resultado.conciliacion) {
     escribirReportes(resultado.dir, resultado.conciliacion, archivos, config, { fuente: fuente.nombre, desde: periodoDesde, hasta: periodoHasta });
     const { comprobantes, ...liviano } = resultado.conciliacion;
-    escribir(resultado.dir, 'resultado.json', JSON.stringify({ id: resultado.id, exitCode: resultado.exitCode, archivos, ...liviano }, null, 1));
+    const datos = { id: resultado.id, exitCode: resultado.exitCode, archivos, ...liviano, avisos: avisos.lista };
+    escribir(resultado.dir, 'resultado.json', JSON.stringify(datos, null, 1));
+    escribir(resultado.dir, 'dashboard.html', construirDashboardHtml(datos));
   }
   const lineas = [`Corrida ${resultado.id} — ${ahora.toISOString()} — código de salida ${resultado.exitCode}`];
   for (const a of avisos.lista) lineas.push(`[${a.nivel.toUpperCase()}] ${a.mensaje}`);

@@ -26,6 +26,10 @@ const processedOperationsStore = require('./lib/processedOperationsStore');
 const debinOutputStore = require('./lib/debinOutputStore');
 const conciliacionIbs = require('./lib/conciliacionIbs');
 const sybaseClient = require('./lib/sybaseClient');
+const crypto = require('crypto');
+const qnetCorrida = require('./lib/qnet/corrida');
+const qnetConfig = require('./lib/qnet/config');
+const { crearFuenteSybase } = require('./lib/qnet/fuentes/sybase');
 const { convertDMYToISO, formatLocal, formatDateOnly } = require('./lib/dateUtil');
 
 function parsePort() {
@@ -1117,6 +1121,127 @@ function readTransferenciasRechazadasArchivo(desde, hasta, apiRows) {
   return rows;
 }
 
+// --- Conciliación QNET (Loop + débitos pendientes desde Sybase, BankService por archivo) ---
+// La corrida hace ~30 consultas a Sybase: corre en segundo plano y la pantalla
+// consulta el avance (POST /api/qnet/ejecutar -> GET /api/qnet/estado). Una sola a la vez.
+
+const QNET_DIR = path.join(rootDir, 'qnet', 'corridas');
+const QNET_ID = /^[0-9a-f]{12}$/;
+const QNET_ARCHIVOS_DESCARGA = ['excepciones.csv', 'resumen.csv', 'conciliacion-comprobantes.csv', 'pendientes-por-dia.csv', 'fuentes.csv', 'corrida.log'];
+const QNET_MAX_BYTES = 25 * 1024 * 1024;
+const qnetJobs = new Map();
+
+function qnetJobCorriendo() {
+  return [...qnetJobs.values()].find((j) => j.estado === 'corriendo') || null;
+}
+
+async function handleQnetEjecutarPost(req, res, session) {
+  const payload = await readJsonBody(req);
+  const archivos = Array.isArray(payload.archivos) ? payload.archivos : [];
+  const validos = archivos.filter((a) => a && typeof a.nombre === 'string' && typeof a.contenido === 'string' && a.contenido.trim());
+  if (validos.length === 0) {
+    writeJsonResponse(res, 400, { error: 'Subí al menos un archivo Movimientos_BankService-mmaaaa.csv.' });
+    return;
+  }
+  if (validos.length > 6 || validos.reduce((s, a) => s + a.contenido.length, 0) > QNET_MAX_BYTES) {
+    writeJsonResponse(res, 400, { error: 'Demasiados archivos o demasiado grandes (máximo 6 y 25 MB en total).' });
+    return;
+  }
+  for (const campo of ['desde', 'hasta']) {
+    if (payload[campo] && !/^\d{4}-\d{2}-\d{2}$/.test(payload[campo])) {
+      writeJsonResponse(res, 400, { error: `${campo === 'desde' ? 'Desde' : 'Hasta'} inválida (formato aaaa-mm-dd).` });
+      return;
+    }
+  }
+  if (qnetJobCorriendo()) {
+    writeJsonResponse(res, 409, { error: 'Ya hay una conciliación QNET en curso: esperá a que termine.' });
+    return;
+  }
+
+  const job = { id: crypto.randomBytes(6).toString('hex'), estado: 'corriendo', progreso: [], usuario: session.username, inicio: Date.now(), resultado: null, error: null };
+  qnetJobs.set(job.id, job);
+  for (const [id, j] of qnetJobs) if (qnetJobs.size > 10 && j.estado !== 'corriendo') qnetJobs.delete(id); // no acumular
+  securityStore.writeSecurityLog(logsDir, `CONCILIACION QNET iniciada por '${session.username}' (${validos.length} archivo(s) de BankService)`);
+
+  (async () => {
+    try {
+      const progreso = (m) => job.progreso.push(m);
+      const parametria = await parametriaStore.getParametria(rootDir);
+      const fuente = crearFuenteSybase(parametria.sybase, sybaseClient.querySybase, qnetConfig, { progreso });
+      const r = await qnetCorrida.ejecutarCorrida({
+        fuente,
+        bankservice: validos.map((a) => ({ nombre: path.basename(a.nombre), contenido: a.contenido })),
+        desde: payload.desde || undefined,
+        hasta: payload.hasta || undefined,
+        salidaDir: QNET_DIR,
+        progreso,
+      });
+      job.resultado = { id: r.id, exitCode: r.exitCode, avisos: r.avisos };
+      job.estado = 'listo';
+      securityStore.writeSecurityLog(logsDir, `CONCILIACION QNET ${r.id} terminada (código de salida ${r.exitCode}) para '${session.username}'`);
+    } catch (err) {
+      job.estado = 'error';
+      job.error = err.message;
+      securityStore.writeSecurityLog(logsDir, `CONCILIACION QNET falló para '${session.username}': ${err.message}`);
+    }
+  })();
+  writeJsonResponse(res, 202, { jobId: job.id });
+}
+
+function handleQnetEstadoGet(parsedUrl, res) {
+  const job = qnetJobs.get(parsedUrl.searchParams.get('job') || '');
+  if (!job) {
+    writeJsonResponse(res, 404, { error: 'No se encontró esa conciliación (se reinició el servidor o ya expiró).' });
+    return;
+  }
+  writeJsonResponse(res, 200, { estado: job.estado, progreso: job.progreso.slice(-40), resultado: job.resultado, error: job.error, segundos: Math.round((Date.now() - job.inicio) / 1000) });
+}
+
+function handleQnetCorridasGet(res) {
+  let ids = [];
+  try {
+    ids = fs.readdirSync(QNET_DIR).filter((n) => QNET_ID.test(n));
+  } catch (err) {
+    // Sin corridas todavía.
+  }
+  const corridas = ids
+    .map((id) => {
+      const dir = path.join(QNET_DIR, id);
+      let exitCode = null;
+      try {
+        const m = /código de salida (\d)/.exec(fs.readFileSync(path.join(dir, 'corrida.log'), 'utf8').split('\n')[0]);
+        exitCode = m ? Number(m[1]) : null;
+      } catch (err) {
+        // Sin log.
+      }
+      return { id, fecha: formatLocal(fs.statSync(dir).mtime), exitCode, conDashboard: fs.existsSync(path.join(dir, 'dashboard.html')) };
+    })
+    .sort((a, b) => b.fecha.localeCompare(a.fecha))
+    .slice(0, 30);
+  writeJsonResponse(res, 200, { corridas });
+}
+
+function handleQnetDashboardGet(parsedUrl, res) {
+  const id = parsedUrl.searchParams.get('id') || '';
+  const archivo = QNET_ID.test(id) ? path.join(QNET_DIR, id, 'dashboard.html') : '';
+  if (!archivo || !fs.existsSync(archivo)) {
+    writeJsonResponse(res, 404, { error: 'No se encontró el dashboard de esa corrida (si terminó con errores, mirá el log).' });
+    return;
+  }
+  writeJsonResponse(res, 200, { id, html: fs.readFileSync(archivo, 'utf8') });
+}
+
+function handleQnetArchivoGet(parsedUrl, res, session) {
+  const id = parsedUrl.searchParams.get('id') || '';
+  const name = parsedUrl.searchParams.get('name') || '';
+  if (!QNET_ID.test(id) || !QNET_ARCHIVOS_DESCARGA.includes(name) || !fs.existsSync(path.join(QNET_DIR, id, name))) {
+    writeJsonResponse(res, 404, { error: 'No se encontró el archivo.' });
+    return;
+  }
+  securityStore.writeSecurityLog(logsDir, `CONCILIACION QNET ${id}: '${name}' descargado por '${session.username}'`);
+  writeJsonResponse(res, 200, { name: `qnet-${id}-${name}`, content: fs.readFileSync(path.join(QNET_DIR, id, name), 'utf8') });
+}
+
 // POST /api/conciliacion/ibs { fecha: yyyy-MM-dd, tipo?: 'altas' | 'pagos',
 // contenido?: <CSV del extracto de IBS> } — cruza las altas (o los pagos) de
 // Plazo Fijo de ese día contra los movimientos de IBS (ver conciliacionIbs.js)
@@ -1749,6 +1874,11 @@ async function handleRequest(req, res) {
     if (method === 'GET' && pathname === '/api/output-files/content') return void handleOutputFileContentGet(parsedUrl, res, session);
     if (method === 'GET' && pathname === '/api/conciliacion') return void (await handleConciliacionGet(parsedUrl, res, session));
     if (method === 'POST' && pathname === '/api/conciliacion/ibs') return void (await handleConciliacionIbsPost(req, res, session));
+    if (method === 'POST' && pathname === '/api/qnet/ejecutar') return void (await handleQnetEjecutarPost(req, res, session));
+    if (method === 'GET' && pathname === '/api/qnet/estado') return void handleQnetEstadoGet(parsedUrl, res);
+    if (method === 'GET' && pathname === '/api/qnet/corridas') return void handleQnetCorridasGet(res);
+    if (method === 'GET' && pathname === '/api/qnet/dashboard') return void handleQnetDashboardGet(parsedUrl, res);
+    if (method === 'GET' && pathname === '/api/qnet/archivo') return void handleQnetArchivoGet(parsedUrl, res, session);
     if (method === 'GET' && pathname === '/api/http-logs/content') return void handleHttpLogContentGet(parsedUrl, res, session);
     if (method === 'GET' && pathname === '/api/certs-browse') return void handleCertsBrowseGet(parsedUrl, res, session);
     if (method === 'POST' && pathname === '/api/check-operations') return void (await handleCheckOperations(req, res, session));
