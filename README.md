@@ -201,6 +201,7 @@ node/
   scripts/
     migrate-json-to-mariadb.js  Migración única de *.local.json viejos a MariaDB, ver "Base de datos (MariaDB)"
     repair-dbn-consulta-summaries.js  Reparación única del ArchivoOK de corridas viejas de "Transferencia DEBIN - File" (dry-run por default, --apply para aplicar)
+    import-dbn-consulta.js            Carga a dbn_consulta las transferencias de un -consulta-debin-solo.csv que quedó solo como archivo (dry-run por default, --apply para cargar)
   lib/
     jsonPath.js               Navegación de JSON por notación de puntos ("data.balance", "items[0].id")
     variableSubstitution.js   Reemplazo de {{variable}} en templates
@@ -1409,6 +1410,12 @@ Diferencias que detecta:
   avisa "Estado guardado en ApiCore"; la próxima conciliación ya lo ve.
 - **Rechazada con débito en IBS**: ApiCore la rechazó y IBS tiene un débito
   sin revertir.
+- **Solo en IBS** de una transferencia que ApiCore sí hizo pero que nunca llegó a
+  `dbn_consulta` (corridas viejas, quedaron solo en `files/`): se carga con
+  `node scripts/import-dbn-consulta.js --apply ../files/<runId>-consulta-debin-solo.csv`
+  desde `node/`. Sin `--apply` solo muestra qué cargaría. Solo inserta (un
+  `idMensaje` que ya está se saltea) y toma la fecha de la transferencia del
+  `idMensaje`, no la de hoy.
 - **Solo en IBS**: un débito sin ninguna transferencia en ApiCore. Los débitos
   de transferencias hechas fuera del rango pero que sí figuran realizadas en
   `dbn_consulta` se explican aparte (informativo, "débitos de otras fechas").
