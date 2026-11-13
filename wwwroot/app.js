@@ -3482,7 +3482,7 @@ document.getElementById('conciliacionIbsFileBtn').addEventListener('click', () =
 document.getElementById('conciliacionIbsDownloadBtn').addEventListener('click', downloadConciliacionIbsDiferencias);
 conciliacionIbsTipoFilter.addEventListener('change', applyConciliacionIbsFilter);
 
-// --- Conciliación QNET ----------------------------------------------------------
+// --- Conciliación Loop ----------------------------------------------------------
 // Loop y los débitos pendientes se consultan en Sybase desde el servidor; acá se
 // suben los archivos de BankService, se sigue el avance y se muestra el dashboard
 // (un HTML autocontenido generado por el servidor, ver node/lib/qnet/reportes/dashboard.js).

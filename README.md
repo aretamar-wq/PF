@@ -1422,7 +1422,7 @@ operaciones duplicadas"), pero no las filas que fallaron por otra cosa
 cortada antes de consultar su estado queda con `realizado` = `SI` y
 `errorConsulta` = `Consulta de estado pendiente`.
 
-### Conciliación QNET (Loop, débitos pendientes y BankService)
+### Conciliación Loop (transferencias QNET contra Loop, débitos pendientes y BankService)
 
 Verifica cada día que cada transferencia QNET esté bien contabilizada en Loop
 (un débito a la cuenta del cliente y un crédito a la cuenta puente), que lo que
@@ -1444,7 +1444,7 @@ falta esté en los débitos pendientes y que todo cierre contra BankService.
 - Las reglas son configurables (`node/lib/qnet/config.js`, o un JSON con
   `--config`): códigos de movimiento, cuentas puente, umbral del centavo.
 
-**Desde la app:** menú **Conciliación QNET**. Se suben los archivos de BankService (uno
+**Desde la app:** menú **Conciliación Loop**. Se suben los archivos de BankService (uno
 por mes), opcionalmente se acota el período, y **Conciliar** corre en segundo
 plano (unas 30 consultas a Sybase; una conciliación a la vez) mostrando el avance.
 Al terminar se ve el dashboard (indicadores de partidas, desbalance y cruce,

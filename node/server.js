@@ -1121,7 +1121,7 @@ function readTransferenciasRechazadasArchivo(desde, hasta, apiRows) {
   return rows;
 }
 
-// --- Conciliación QNET (Loop + débitos pendientes desde Sybase, BankService por archivo) ---
+// --- Conciliación Loop (Loop + débitos pendientes desde Sybase, BankService por archivo) ---
 // La corrida hace ~30 consultas a Sybase: corre en segundo plano y la pantalla
 // consulta el avance (POST /api/qnet/ejecutar -> GET /api/qnet/estado). Una sola a la vez.
 
@@ -1154,14 +1154,14 @@ async function handleQnetEjecutarPost(req, res, session) {
     }
   }
   if (qnetJobCorriendo()) {
-    writeJsonResponse(res, 409, { error: 'Ya hay una conciliación QNET en curso: esperá a que termine.' });
+    writeJsonResponse(res, 409, { error: 'Ya hay una conciliación Loop en curso: esperá a que termine.' });
     return;
   }
 
   const job = { id: crypto.randomBytes(6).toString('hex'), estado: 'corriendo', progreso: [], usuario: session.username, inicio: Date.now(), resultado: null, error: null };
   qnetJobs.set(job.id, job);
   for (const [id, j] of qnetJobs) if (qnetJobs.size > 10 && j.estado !== 'corriendo') qnetJobs.delete(id); // no acumular
-  securityStore.writeSecurityLog(logsDir, `CONCILIACION QNET iniciada por '${session.username}' (${validos.length} archivo(s) de BankService)`);
+  securityStore.writeSecurityLog(logsDir, `CONCILIACION LOOP iniciada por '${session.username}' (${validos.length} archivo(s) de BankService)`);
 
   (async () => {
     try {
@@ -1178,11 +1178,11 @@ async function handleQnetEjecutarPost(req, res, session) {
       });
       job.resultado = { id: r.id, exitCode: r.exitCode, avisos: r.avisos };
       job.estado = 'listo';
-      securityStore.writeSecurityLog(logsDir, `CONCILIACION QNET ${r.id} terminada (código de salida ${r.exitCode}) para '${session.username}'`);
+      securityStore.writeSecurityLog(logsDir, `CONCILIACION LOOP ${r.id} terminada (código de salida ${r.exitCode}) para '${session.username}'`);
     } catch (err) {
       job.estado = 'error';
       job.error = err.message;
-      securityStore.writeSecurityLog(logsDir, `CONCILIACION QNET falló para '${session.username}': ${err.message}`);
+      securityStore.writeSecurityLog(logsDir, `CONCILIACION LOOP falló para '${session.username}': ${err.message}`);
     }
   })();
   writeJsonResponse(res, 202, { jobId: job.id });
@@ -1238,7 +1238,7 @@ function handleQnetArchivoGet(parsedUrl, res, session) {
     writeJsonResponse(res, 404, { error: 'No se encontró el archivo.' });
     return;
   }
-  securityStore.writeSecurityLog(logsDir, `CONCILIACION QNET ${id}: '${name}' descargado por '${session.username}'`);
+  securityStore.writeSecurityLog(logsDir, `CONCILIACION LOOP ${id}: '${name}' descargado por '${session.username}'`);
   writeJsonResponse(res, 200, { name: `qnet-${id}-${name}`, content: fs.readFileSync(path.join(QNET_DIR, id, name), 'utf8') });
 }
 
