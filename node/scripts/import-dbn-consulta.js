@@ -58,6 +58,11 @@ function leerFormatoViejo(archivo, rowsToRecords) {
   const salidas = fs.existsSync(outPath) ? rowsToRecords(fs.readFileSync(outPath, 'utf8')) : [];
   const salidaPorMensaje = new Map(salidas.map((o) => [text(o.idMensaje), o]));
 
+  // Los dbnout viejos marcaban realizado = 's' aunque el banco hubiera
+  // contestado con un error (ej. 103 "No existe saldo"): solo el código 00 es
+  // una transferencia hecha.
+  const realizadaSegunCodigo = (realizado, codigo) => (text(realizado) === 's' && ['', '00'].includes(text(codigo)) ? 's' : text(realizado) === 's' ? 'n' : text(realizado));
+
   const records = consulta.map((c) => {
     const o = salidaPorMensaje.get(text(c.idMensaje));
     // Si ya trae las columnas nuevas (archivo de la etapa intermedia) se respetan.
@@ -75,7 +80,7 @@ function leerFormatoViejo(archivo, rowsToRecords) {
       importe: text(c.importe) || text(o && o.importe) || text(c.detalleImporte),
       codigoRespuestaTransferencia: text(c.codigoRespuestaTransferencia) || text(o && o.codigoRespuesta),
       descripcionRespuestaTransferencia: text(c.descripcionRespuestaTransferencia) || text(o && o.descripcionRespuesta),
-      realizado: text(c.realizado) || text(o && o.realizado) || (idOperacion ? 's' : 'n'),
+      realizado: realizadaSegunCodigo(text(c.realizado) || text(o && o.realizado) || (idOperacion ? 's' : 'n'), text(c.codigoRespuestaTransferencia) || text(o && o.codigoRespuesta)),
     };
   });
 
@@ -97,7 +102,7 @@ function leerFormatoViejo(archivo, rowsToRecords) {
       importe: o.importe,
       codigoRespuestaTransferencia: o.codigoRespuesta,
       descripcionRespuestaTransferencia: o.descripcionRespuesta,
-      realizado: o.realizado,
+      realizado: realizadaSegunCodigo(o.realizado, o.codigoRespuesta),
     });
   }
   return records;
