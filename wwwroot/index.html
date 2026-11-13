@@ -154,12 +154,14 @@
             <select id="conciliacionIbsTipo">
               <option value="altas">Altas de Plazo Fijo</option>
               <option value="pagos">Pagos de Plazo Fijo</option>
+              <option value="transferencias">Transferencias DEBIN</option>
             </select>
           </label>
         </div>
         <p id="conciliacionIbsDescripcion" class="muted"></p>
         <div class="actions conciliacion-actions">
           <label><span id="conciliacionIbsFechaLabel">Fecha</span> <input type="date" id="conciliacionIbsFecha" /></label>
+          <label id="conciliacionIbsHastaLabel" style="display: none;">Hasta <input type="date" id="conciliacionIbsHasta" /></label>
           <button type="button" id="conciliacionIbsRunBtn">Conciliar contra IBS</button>
         </div>
         <div class="actions conciliacion-actions">
@@ -192,14 +194,14 @@
           <div class="conciliacion-table-wrap">
             <table id="conciliacionIbsDiferencias">
               <thead>
-                <tr><th>Tipo</th><th>Comprobante</th><th>Operación</th><th>Circ.</th><th>CUIT</th><th>Titular</th><th>Caja de Ahorro</th><th>Importe</th><th>Detalle</th></tr>
+                <tr><th>Tipo</th><th>Comprobante</th><th>Operación</th><th id="conciliacionIbsColCirc">Circ.</th><th>CUIT</th><th>Titular</th><th>Caja de Ahorro</th><th>Importe</th><th>Detalle</th></tr>
               </thead>
               <tbody></tbody>
             </table>
           </div>
 
           <div id="conciliacionIbsPendientesBox" style="display: none;">
-            <h3>Plazos fijos que vencían ese día y no se pagaron (informativo)</h3>
+            <h3 id="conciliacionIbsPendientesTitulo">Plazos fijos que vencían ese día y no se pagaron (informativo)</h3>
             <p id="conciliacionIbsPendientesTexto" class="muted"></p>
             <div class="conciliacion-table-wrap">
               <table id="conciliacionIbsPendientes">
@@ -212,7 +214,7 @@
           </div>
 
           <div id="conciliacionIbsOtrosCanalesBox" style="display: none;">
-            <h3>Altas de PF de otros canales (informativo)</h3>
+            <h3 id="conciliacionIbsOtrosCanalesTitulo">Altas de PF de otros canales (informativo)</h3>
             <p id="conciliacionIbsOtrosCanalesTexto" class="muted"></p>
           </div>
         </div>
@@ -377,6 +379,18 @@
             </label>
             <label>Límite diario USD — terceros
               <input name="debin.limiteDiarioUsdTerceros" type="number" min="0" step="0.01" placeholder="Sin límite" />
+            </label>
+          </fieldset>
+          <fieldset>
+            <legend>Calendario de feriados bancarios</legend>
+            <p class="muted">
+              IBS pasa los movimientos de los fines de semana y feriados al próximo día hábil: la conciliación de
+              transferencias lo usa para saber en qué fecha tendría que estar cada débito. Un feriado por línea (o
+              separados por coma), como <code>2026-11-06</code> o <code>06/11/2026</code>. Los sábados y domingos ya
+              se toman como no hábiles: solo cargá los feriados y los días de cierre del banco.
+            </p>
+            <label>Feriados
+              <textarea name="calendario.feriados" rows="6" placeholder="2026-11-06&#10;2026-11-09&#10;2026-11-10"></textarea>
             </label>
           </fieldset>
           <fieldset>
