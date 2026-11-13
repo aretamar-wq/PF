@@ -1501,10 +1501,24 @@ porque son los que definen qué movimientos son pagos.
   "Repetido en IBS". Si esas mismas transacciones se usan para otros
   movimientos que no son de este flow, van a aparecer acá.
 
+**Crédito de vencimiento (movcod 1200).** Además del débito/crédito del pago,
+IBS acredita en la Caja de Ahorro el capital + interés de cada plazo fijo que
+vence (movimiento `1200`, `sistcod` de la Caja de Ahorro, `comnro` = número de
+operación del PF). Si el extracto incluye movimientos 1200 (la consulta directa
+a Sybase los trae siempre), se verifica para **todos** los PF de ApiCore que
+vencían (circuito 0 y 1, pagados o no): "Vencimiento sin acreditar en IBS",
+"Cuenta de vencimiento distinta" (no se acreditó en `caja_ahorro`) e "Importe
+de vencimiento distinto". Un PF solo cuenta como conciliado si además está
+bien su 1200. Los 1200 de operaciones que no son de ApiCore (otros canales)
+no son diferencia: se informan como "otros vencimientos" y suman en el total.
+Si el extracto no trae ningún 1200 (formato anterior), esta verificación se
+omite.
+
 Se muestran indicadores (PF que vencían, pagados en ApiCore, conciliados,
 con diferencias, pagados en IBS sin marcar, solo en IBS, pendientes), totales
-ApiCore vs IBS de los dos movimientos, la tabla de diferencias con filtro y
-descarga en CSV, y los pendientes.
+ApiCore vs IBS de los movimientos (incluida la fila de créditos de
+vencimiento), la tabla de diferencias con filtro y descarga en CSV, y los
+pendientes.
 
 #### Transferencias DEBIN
 
