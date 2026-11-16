@@ -67,8 +67,41 @@ where a.fecmov >= '${desde}'
   return filtros.map(select).join('\nunion all\n');
 }
 
+// Los 25020/25021 salen como siempre. El alta (152) se limita a las operaciones de
+// Plazo Fijo (tgl_operacion: sistcod 4, prodcod 50) cuyo titular, por documento, es
+// también titular de la caja de ahorro del movimiento (tcl_VinculoCli_Cue): deja
+// afuera los 152 de otros productos y de cuentas sin vínculo con la operación.
 function buildIbsAltasPfQuery(fecha) {
-  return buildIbsQuery(fecha, ['a.movcod in (25020, 25021)', 'a.movcod in (152) and a.sistcod = 5']);
+  const base = buildIbsQuery(fecha, ['a.movcod in (25020, 25021)']);
+  const desde = fecha.replace(/-/g, '');
+  return `${base}
+union all
+select a.sistcod, a.moncod, a.cuecod,
+       convert(varchar(10), a.fecmov, 103) as Fecha_Mov,
+       a.comnro, a.movcod, b.signo, b.accimp,
+       b.signo * b.accimp as Importe
+from tgl_movimientos a
+join tgl_movimientos_aper b
+  on  b.fecreal = a.fecreal
+  and b.tercod  = a.tercod
+  and b.funcod  = 1
+join tgl_operacion e
+  on  e.sistcod = 4
+  and e.openro  = a.comnro
+  and e.prodcod = 50
+where a.fecmov  = '${desde}'
+  and a.concod  = ' '
+  and a.movcod  = ${MOV_ALTA_PF}
+  and a.sistcod = 5
+  and exists (select 1
+              from tcl_VinculoCli_Cue c, tcl_VinculoCli_Cue d
+              where c.sistcod = a.sistcod
+                and c.moncod  = a.moncod
+                and c.cuecod  = a.cuecod
+                and d.sistcod = e.sistcod
+                and d.moncod  = e.moncod
+                and d.cuecod  = e.cuecod
+                and d.nrodoc  = c.nrodoc)`;
 }
 
 // Pagos de Plazo Fijo: débito en Caja de Ahorro y crédito en la Cuenta
