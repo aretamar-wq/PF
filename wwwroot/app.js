@@ -2152,6 +2152,19 @@ function saveLog() {
 
 // Dispara la descarga del navegador para un archivo de texto ya generado en
 // memoria (mismo patrón que saveLog para el log en .txt).
+// CSV para abrir en Excel con configuración argentina: UTF-8 con marca (BOM) para
+// los acentos, ";" de separador y coma decimal en los importes.
+function csvExcelLine(values) {
+  return values.map((v) => {
+    const s = v == null ? '' : String(v);
+    return /[";\r\n]/.test(s) ? '"' + s.replace(/"/g, '""') + '"' : s;
+  }).join(';');
+}
+
+function downloadCsvExcel(fileName, lines) {
+  downloadTextFile(fileName, '\uFEFF' + lines.join('\r\n') + '\r\n', 'text/csv;charset=utf-8');
+}
+
 function downloadTextFile(fileName, content, mimeType) {
   const blob = new Blob([content], { type: mimeType || 'text/plain' });
   const url = URL.createObjectURL(blob);
@@ -3409,9 +3422,11 @@ async function runConciliacionIbs(conArchivo) {
 function downloadConciliacionIbsDiferencias() {
   if (!lastConciliacionIbs) return;
   const headers = ['tipo', 'numeroComprobante', 'operacion', 'circuito', 'cuit', 'apellidoNombre', 'cajaAhorro', 'importe', 'moneda', 'fecha', 'detalle'];
-  const lines = [headers.join(',')];
-  for (const d of lastConciliacionIbs.diferencias) lines.push(headers.map((h) => csvEscape(h === 'fecha' ? fechaDMYCorta(d[h]) : d[h])).join(','));
-  downloadTextFile(`conciliacion-ibs-${lastConciliacionIbs.tipo === 'pagos' ? 'pagos-pf' : lastConciliacionIbs.tipo === 'transferencias' ? 'transferencias' : 'altas-pf'}-${lastConciliacionIbs.fecha}${lastConciliacionIbs.hasta && lastConciliacionIbs.hasta !== lastConciliacionIbs.fecha ? '-a-' + lastConciliacionIbs.hasta : ''}-diferencias.csv`, lines.join('\r\n'), 'text/csv');
+  const lines = [csvExcelLine(headers)];
+  for (const d of lastConciliacionIbs.diferencias) {
+    lines.push(csvExcelLine(headers.map((h) => (h === 'fecha' ? fechaDMYCorta(d[h]) : h === 'importe' && typeof d[h] === 'number' ? d[h].toFixed(2).replace('.', ',') : d[h]))));
+  }
+  downloadCsvExcel(`conciliacion-ibs-${lastConciliacionIbs.tipo === 'pagos' ? 'pagos-pf' : lastConciliacionIbs.tipo === 'transferencias' ? 'transferencias' : 'altas-pf'}-${lastConciliacionIbs.fecha}${lastConciliacionIbs.hasta && lastConciliacionIbs.hasta !== lastConciliacionIbs.fecha ? '-a-' + lastConciliacionIbs.hasta : ''}-diferencias.csv`, lines);
 }
 
 const CONCILIACION_IBS_DESCRIPCIONES = {

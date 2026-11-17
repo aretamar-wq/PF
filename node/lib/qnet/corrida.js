@@ -85,7 +85,7 @@ async function ejecutarCorrida({ fuente, bankservice, fecha, hoy, diaContable, c
   const lineas = [`Corrida ${resultado.id} — fecha ${fecha || '?'} — ${ahora.toISOString()} — código de salida ${resultado.exitCode}`];
   for (const a of avisos.lista) lineas.push(`[${a.nivel.toUpperCase()}] ${a.mensaje}`);
   if (avisos.lista.length === 0) lineas.push('Sin avisos.');
-  escribir(resultado.dir, 'corrida.log', lineas.join('\n') + '\n');
+  escribir(resultado.dir, 'corrida.log', '\uFEFF' + lineas.join('\r\n') + '\r\n'); // UTF-8 con BOM: los acentos se ven bien en el Bloc de notas
   // Puntero a la última corrida, para el dashboard.
   fs.mkdirSync(salidaDir, { recursive: true });
   fs.writeFileSync(path.join(salidaDir, 'ultima.txt'), resultado.id);

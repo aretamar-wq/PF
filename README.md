@@ -1310,7 +1310,8 @@ configuración: correrla dos veces con lo mismo escribe lo mismo): `entradas/` (
 archivos tal como llegaron, permisos 0600), `conciliacion-comprobantes.csv`,
 `excepciones.csv`, `resumen.csv` (por tipo, desbalance por moneda y cruce con
 transfers), `pendientes-por-dia.csv` (antigüedad), `fuentes.csv`, `resultado.json` y
-`corrida.log`. Las salidas no llevan nombres, CUIT ni CBU. `qnet/` no se versiona.
+`corrida.log`. Los CSV (y el CSV de diferencias de "Conciliación con IBS") están pensados para abrir en Excel
+con configuración argentina: UTF-8 con BOM, `;` de separador y coma decimal. Las salidas no llevan nombres, CUIT ni CBU. `qnet/` no se versiona.
 Pruebas: `npm test` en `node/`.
 
 ### Conciliación con IBS (altas y pagos de Plazo Fijo, transferencias DEBIN)

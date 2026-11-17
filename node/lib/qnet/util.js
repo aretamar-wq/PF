@@ -57,6 +57,16 @@ const csvLinea = (valores) => valores.map(csvCelda).join(',');
 // CRLF y punto decimal, como los archivos de Loop.
 const csvTexto = (filas) => filas.map(csvLinea).join('\r\n') + '\r\n';
 
+// Para abrir en Excel con configuración regional argentina: UTF-8 con marca (BOM,
+// si no los acentos salen rotos), ";" como separador (Excel usa la coma como
+// decimal) y CRLF. Los importes van con coma decimal (ver importeExcel).
+const celdaExcel = (v) => {
+  const s = v == null ? '' : String(v);
+  return /[";\r\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s;
+};
+const csvExcel = (filas) => '\uFEFF' + filas.map((f) => f.map(celdaExcel).join(';')).join('\r\n') + '\r\n';
+const importeExcel = (centavosValor) => (centavosValor == null ? '' : (centavosValor / 100).toFixed(2).replace('.', ','));
+
 // "15600.000" / "1.234,56" -> centavos enteros. Vacío o inválido -> null.
 function centavos(valor) {
   let s = String(valor == null ? '' : valor).trim();
@@ -99,4 +109,4 @@ function sumarDias(iso, n) {
 // 'aaaa-mm-dd' -> 'dd/mm/aaaa'
 const fechaDMY = (iso) => (iso ? iso.split('-').reverse().join('/') : '');
 
-module.exports = { sha256, parseCsv, csvCelda, csvLinea, csvTexto, centavos, fmtCentavos, parseFechaHora, sumarDias, fechaDMY };
+module.exports = { sha256, parseCsv, csvCelda, csvLinea, csvTexto, csvExcel, importeExcel, centavos, fmtCentavos, parseFechaHora, sumarDias, fechaDMY };
