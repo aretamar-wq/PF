@@ -50,7 +50,11 @@
         ["mensaje", "OPERACION RECHAZADA - PSP CREDITO", "OPERACION RECHAZADA - PSP CREDITO"],
         ["mensaje", "ERROR CUENTA VIRTUAL DEL VENDEDOR", "ERROR CUENTA VIRTUAL DEL VENDEDOR"],
         ["mensaje", "NO EXISTE EL CBU VENDEDOR", "NO EXISTE EL CBU VENDEDOR"],
-        ["mensaje", "MONEDA DEL VENDEDOR DIFERENTE A LA REQUERIDA", "MONEDA DEL VENDEDOR DIFERENTE A LA REQUERIDA"]
+        ["mensaje", "MONEDA DEL VENDEDOR DIFERENTE A LA REQUERIDA", "MONEDA DEL VENDEDOR DIFERENTE A LA REQUERIDA"],
+        ["mensaje", "Cuenta No tiene Un estado Valido de Bloqueo para la Transaccion", "Cuenta No tiene Un estado Valido de Bloqueo para la Transaccion"]
+      ],
+      "failIfEmpty": [
+        ["idRespuesta", "Rechazado por el banco (sin id de operación)", "mensaje"]
       ],
       "expectedStatusCode": 200
     }
