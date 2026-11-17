@@ -474,6 +474,22 @@ const DEBIN_CONSULTAR_FLOW_NAME = 'Consulta DEBIN (solo)';
 // a Nova-Link a terminar de resolver el DEBIN antes de preguntar por su
 // estado.
 const DEBIN_CONSULTA_DELAY_SECONDS = 30;
+// Estados de la consulta DEBIN (grilla de Nova-Link): 2000 (iniciado) y 0500
+// (en curso) son intermedios y se reconsultan; 0600 (acreditado) acepta; todos
+// los demás códigos son finales con error y la transferencia se rechaza.
+const DEBIN_CONSULTA_REINTENTO_SECONDS = 20;
+const DEBIN_CONSULTA_MAX_INTENTOS = 6;
+const DEBIN_ESTADOS_INTERMEDIOS = ['2000', '0500'];
+const DEBIN_ESTADO_ACREDITADO = '0600';
+
+function clasificarEstadoDebin(codigo) {
+  const digitos = String(codigo == null ? '' : codigo).replace(/\D/g, '');
+  if (!digitos) return 'sin-estado';
+  const normalizado = digitos.padStart(4, '0');
+  if (DEBIN_ESTADOS_INTERMEDIOS.includes(normalizado)) return 'intermedio';
+  if (normalizado === DEBIN_ESTADO_ACREDITADO) return 'aceptar';
+  return 'rechazar';
+}
 
 // Todas las columnas de dbnconsulta-...csv que salen de la respuesta de
 // "Consulta DEBIN (solo)" (todo lo que trae params.response, sin recortar
@@ -1738,25 +1754,50 @@ async function runFlowFromCsv() {
         };
         for (const col of DEBIN_CONSULTA_COLUMNS) consultaRow[col] = '';
 
-        try {
-          const consultaEntries = await runFlowByName(
-            DEBIN_CONSULTAR_FLOW_NAME,
-            { idOperacion: detailRow.idRespuesta },
-            batchLogFileName
-          );
-          batchLogFileName = consultaEntries.runLogFileName || batchLogFileName;
-          const lastEntry = consultaEntries[consultaEntries.length - 1];
-          if (lastEntry && lastEntry.status === 'Success' && lastEntry.responseSummary) {
-            const parsed = JSON.parse(lastEntry.responseSummary);
-            Object.assign(consultaRow, extractDebinConsultaFields(parsed));
-          } else {
-            consultaRow.errorConsulta = (lastEntry && lastEntry.errorMessage) || 'No se pudo consultar el estado de la transferencia.';
+        // Se consulta de nuevo mientras el estado sea intermedio (2000 / 0500,
+        // ver clasificarEstadoDebin); un estado final decide: 0600 acepta,
+        // cualquier otro rechaza.
+        let clasificacion = 'sin-estado';
+        for (let intento = 1; intento <= DEBIN_CONSULTA_MAX_INTENTOS; intento++) {
+          consultaRow.errorConsulta = '';
+          try {
+            const consultaEntries = await runFlowByName(
+              DEBIN_CONSULTAR_FLOW_NAME,
+              { idOperacion: detailRow.idRespuesta },
+              batchLogFileName
+            );
+            batchLogFileName = consultaEntries.runLogFileName || batchLogFileName;
+            const lastEntry = consultaEntries[consultaEntries.length - 1];
+            if (lastEntry && lastEntry.status === 'Success' && lastEntry.responseSummary) {
+              const parsed = JSON.parse(lastEntry.responseSummary);
+              Object.assign(consultaRow, extractDebinConsultaFields(parsed));
+              clasificacion = clasificarEstadoDebin(consultaRow.estadoCodigo);
+            } else {
+              consultaRow.errorConsulta = (lastEntry && lastEntry.errorMessage) || 'No se pudo consultar el estado de la transferencia.';
+              clasificacion = 'sin-estado';
+            }
+          } catch (err) {
+            consultaRow.errorConsulta = err.message;
+            clasificacion = 'sin-estado';
           }
-        } catch (err) {
-          consultaRow.errorConsulta = err.message;
+          if (clasificacion === 'aceptar' || clasificacion === 'rechazar') break;
+          if (intento < DEBIN_CONSULTA_MAX_INTENTOS) {
+            for (let remaining = DEBIN_CONSULTA_REINTENTO_SECONDS; remaining > 0; remaining--) {
+              progressEl.textContent = `Transferencia ${i + 1} de ${toQuery.length}: estado ${consultaRow.estadoCodigo || 'sin definir'}, reconsultando en ${remaining}s (intento ${intento} de ${DEBIN_CONSULTA_MAX_INTENTOS})...`;
+              await sleep(1000);
+            }
+          }
+        }
+
+        if (clasificacion === 'rechazar') {
+          consultaRow.realizado = 'n';
+          detailRow.realizado = 'n';
+        } else if (clasificacion === 'intermedio' && !consultaRow.errorConsulta) {
+          consultaRow.errorConsulta = `Estado ${consultaRow.estadoCodigo} sin resolver tras ${DEBIN_CONSULTA_MAX_INTENTOS} consultas`;
         }
 
         state.debinConsultaRows.push(consultaRow);
+        await registrarDbnConsultaRow(consultaRow);
       }
     }
 
