@@ -738,6 +738,31 @@ function buildIbsTransferenciasQuery(desde, hasta) {
   });
 }
 
+// Débitos imputados en una fecha POSTERIOR al período conciliado: busca, para
+// los comprobantes indicados (solo dígitos), los débitos 28600/28601 vigentes
+// entre desde y hasta (yyyy-MM-dd, normalmente hoy) — el mismo esquema que la
+// consulta del período, pero por comprobante y con un rango más largo.
+function buildIbsMovimientosPosterioresQuery(desde, hasta, comprobantes) {
+  const lista = [...new Set((comprobantes || []).map((c) => String(c).trim()))];
+  if (lista.length === 0 || lista.some((c) => !/^\d{1,12}$/.test(c))) throw new Error('Comprobantes inválidos para buscar movimientos posteriores.');
+  return buildIbsQuery(desde, [`a.movcod in (${MOV_TRANSFERENCIA_MISMO_TITULAR}, ${MOV_TRANSFERENCIA_TERCEROS}) and a.sistcod = 5 and a.comnro in (${lista.join(', ')})`], { hasta });
+}
+
+// Comprobantes de ApiCore con transferencias realizadas que no tienen débito
+// vigente en el extracto del período: son los candidatos a haberse imputado
+// en una fecha posterior (ver buildIbsMovimientosPosterioresQuery).
+function comprobantesSinDebitoIbs(apiRows, ibsLines, desde, hastaEsperado) {
+  const { grupos } = leerIbsTransferencias(ibsLines, desde, hastaEsperado);
+  const resultado = new Set();
+  for (const r of apiRows) {
+    const c = String(r.id_comprobante || '').trim();
+    if (!c || r.realizado !== 's' || !/^\d{1,12}$/.test(c)) continue;
+    const g = grupos.get(c);
+    if (!g || (g.vigentes.length === 0 && !g.hayReversa)) resultado.add(c);
+  }
+  return [...resultado];
+}
+
 // Débitos pendientes de IBS (tgl_deb_pendientes): lo que el banco no pudo
 // debitar todavía (por ejemplo, sin saldo) y quedó encolado con un mensaje. Una
 // transferencia realizada de ApiCore sin débito en tgl_movimientos puede estar
@@ -864,6 +889,14 @@ function conciliarTransferencias(apiRows, ibsLines, opciones) {
   const detallePendiente = (p, moneda) => `IBS tiene un débito pendiente por ${dineroMoneda(moneda, p.cents)} (cuenta ${p.cuecod}, ${p.fechaOrigen || 'sin fecha'}): ${p.motivo || 'sin motivo'}.`;
   const hastaEsperado = proximoDiaHabil(hasta, feriados);
   const { grupos, filasOtraFecha, movimientos } = leerIbsTransferencias(ibsLines, desde, hastaEsperado);
+  // Débitos imputados después del período (Map comprobante -> grupo, como
+  // `grupos`), buscados aparte solo para los comprobantes sin débito.
+  const posteriores = opciones.movimientosPosteriores || new Map();
+  const buscarPosterior = (comprobante, cuentaEsperada) => {
+    const g = posteriores.get(comprobante);
+    if (!g) return null;
+    return g.vigentes.find((m) => !m.usado && m.fecha > hastaEsperado && (!cuentaEsperada || cuentaNumero(m.cuecod) === cuentaNumero(cuentaEsperada))) || null;
+  };
 
   const tipoDe = (r) => (String(r.debito_cuit || '').trim() === String(r.credito_cuit || '').trim() ? 'mismo' : 'terceros');
   const etiquetaTipo = (tipo) => (tipo === 'mismo' ? 'mismo titular' : 'terceros');
@@ -985,6 +1018,7 @@ function conciliarTransferencias(apiRows, ibsLines, opciones) {
     const esperada = proximoDiaHabil(String(primero.ejecutado_en).slice(0, 10), feriados);
     const errores = [];
     const pendIbs = j === 0 ? buscarPendiente(comprobante, cuentaEsperada) : null;
+    const posterior = j === 0 && !pendIbs && !hayReversa ? buscarPosterior(comprobante, cuentaEsperada) : null;
     const pendiente = !pendIbs && j === 0 && !hayReversa && esperada >= hoy && g.envios.some((r) => !esError(r));
 
     if (k > 1) {
@@ -1001,6 +1035,13 @@ function conciliarTransferencias(apiRows, ibsLines, opciones) {
           tipo: 'Débito pendiente en IBS',
           detalle: `Realizada y ${estadoDescripcion(primero) || 'sin estado'}, pero IBS todavía no la debitó. ${detallePendiente(pendIbs, monedaDe(primero))}` +
             (pendIbs.cents !== toCents(primero.importe) ? ` El importe pendiente no coincide con el de ApiCore (${dinero(toCents(primero.importe))}).` : ''),
+        });
+      } else if (posterior) {
+        posterior.usado = true;
+        errores.push({
+          tipo: 'Débito imputado en fecha posterior',
+          detalle: `IBS la debitó el ${posterior.fecha} (${dinero(posterior.cents)}, cuenta ${posterior.cuecod}) y correspondía el ${esperada}.` +
+            (posterior.cents !== toCents(primero.importe) ? ` El importe no coincide con el de ApiCore (${dinero(toCents(primero.importe))}).` : ''),
         });
       } else if (hayReversa) {
         if (g.envios.some(esExitoso)) {
@@ -1221,6 +1262,9 @@ module.exports = {
   buildIbsPagosPfQuery,
   buildIbsTransferenciasQuery,
   buildIbsDebitosPendientesQuery,
+  buildIbsMovimientosPosterioresQuery,
+  comprobantesSinDebitoIbs,
+  leerIbsTransferencias,
   leerDebitosPendientes,
   getPagoPfConfig,
   ibsRowsToLines,
