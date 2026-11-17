@@ -1012,6 +1012,19 @@ async function buildConciliacionPagosPlazosFijos(fecha) {
   return rows;
 }
 
+// GET /api/dbn-consulta-dia?fecha=yyyy-MM-dd — filas de dbn_consulta de ese día
+// (con el detalle de la consulta DEBIN) para regenerar el archivo dbnconsulta.
+async function handleDbnConsultaDiaGet(parsedUrl, res, session) {
+  const fecha = parsedUrl.searchParams.get('fecha') || '';
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(fecha)) {
+    writeJsonResponse(res, 400, { error: 'Fecha inválida (formato yyyy-MM-dd).' });
+    return;
+  }
+  const rows = await debinOutputStore.getConsultaRowsCompletosDelDia(rootDir, fecha);
+  securityStore.writeSecurityLog(logsDir, `DBNCONSULTA del ${fecha} generado por '${session.username}' (${rows.length} fila(s))`);
+  writeJsonResponse(res, 200, { fecha, filas: rows.length, rows });
+}
+
 // GET /api/conciliacion?tipo=transferencias|plazos-fijos|pagos-plazos-fijos&fecha=yyyy-MM-dd —
 // archivo diario para conciliar contra el core, con realizado SI/NO por fila.
 async function handleConciliacionGet(parsedUrl, res, session) {
@@ -1880,6 +1893,7 @@ async function handleRequest(req, res) {
     if (method === 'GET' && pathname === '/api/output-files') return void handleOutputFilesGet(res);
     if (method === 'GET' && pathname === '/api/dashboard') return void handleDashboardGet(parsedUrl, res);
     if (method === 'GET' && pathname === '/api/output-files/content') return void handleOutputFileContentGet(parsedUrl, res, session);
+    if (method === 'GET' && pathname === '/api/dbn-consulta-dia') return void (await handleDbnConsultaDiaGet(parsedUrl, res, session));
     if (method === 'GET' && pathname === '/api/conciliacion') return void (await handleConciliacionGet(parsedUrl, res, session));
     if (method === 'POST' && pathname === '/api/conciliacion/ibs') return void (await handleConciliacionIbsPost(req, res, session));
     if (method === 'POST' && pathname === '/api/qnet/ejecutar') return void (await handleQnetEjecutarPost(req, res, session));
