@@ -1188,9 +1188,9 @@ igual en los dos backends:
 
 #### Conciliación diaria
 
-Arriba de la lista de corridas, el bloque **"Conciliación diaria"** baja
-tres archivos de un día (fecha elegida, hoy por defecto) para conciliar
-contra el core, vía
+Estos tres archivos de un día se bajan solo por la API (el bloque de "Archivos
+de salida" que los ofrecía se quitó; las diferencias se descargan desde "Conciliación
+con IBS" y "Conciliación Loop"), vía
 `GET /api/conciliacion?tipo=transferencias|plazos-fijos|pagos-plazos-fijos&fecha=yyyy-MM-dd`
 (devuelve `{ name, content, filas }`, igual que
 `/api/output-files/content`; queda en `logs/security.log` quién lo bajó).
