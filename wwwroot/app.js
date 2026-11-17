@@ -3442,6 +3442,65 @@ function renderConciliacionIbs(data) {
 
   document.getElementById('conciliacionIbsResultado').style.display = '';
   document.getElementById('conciliacionIbsDownloadBtn').disabled = !conDiferencias;
+
+  // Transferencias "Sin estado de acreditación": botón para consultar el estado de todas.
+  const sinEstado = conciliacionIbsSinEstado(data);
+  const consultarBtn = document.getElementById('conciliacionIbsConsultarEstadosBtn');
+  consultarBtn.style.display = data.tipo === 'transferencias' && sinEstado.length > 0 ? '' : 'none';
+  consultarBtn.disabled = false;
+  consultarBtn.textContent = `Consultar estado de ${sinEstado.length} sin estado`;
+}
+
+// Ids de DEBIN (únicos) de las diferencias "Sin estado de acreditación".
+function conciliacionIbsSinEstado(data) {
+  const ids = (data.diferencias || [])
+    .filter((d) => d.tipo === 'Sin estado de acreditación' && String(d.operacion || '').trim())
+    .map((d) => String(d.operacion).trim());
+  return [...new Set(ids)];
+}
+
+// Consulta masiva del estado de los DEBIN sin estado: cada consulta guarda el
+// estado en dbn_consulta (/api/dbn-consulta-estado, mismo camino que la
+// consulta manual) y al final se vuelve a conciliar.
+async function consultarEstadosSinEstado() {
+  if (!lastConciliacionIbs) return;
+  const ids = conciliacionIbsSinEstado(lastConciliacionIbs);
+  if (ids.length === 0) return;
+  const btn = document.getElementById('conciliacionIbsConsultarEstadosBtn');
+  btn.disabled = true;
+  let guardadas = 0;
+  let sinResultado = 0;
+  let logFileName = null;
+  for (let i = 0; i < ids.length; i++) {
+    btn.textContent = `Consultando estados (${i + 1} de ${ids.length})...`;
+    try {
+      const entries = await runFlowByName(DEBIN_CONSULTAR_FLOW_NAME, { idOperacion: ids[i] }, logFileName);
+      logFileName = entries.runLogFileName || logFileName;
+      const lastEntry = entries[entries.length - 1];
+      if (!lastEntry || lastEntry.status !== 'Success' || !lastEntry.responseSummary) {
+        sinResultado++;
+        continue;
+      }
+      const campos = extractDebinConsultaFields(JSON.parse(lastEntry.responseSummary));
+      if (!campos.estadoCodigo) {
+        sinResultado++;
+        continue;
+      }
+      const res = await apiFetch('/api/dbn-consulta-estado', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ idOperacion: ids[i], campos }),
+      });
+      const data = await res.json();
+      if (res.ok && data.actualizadas > 0) guardadas++;
+      else sinResultado++;
+    } catch (err) {
+      sinResultado++;
+    }
+  }
+  btn.textContent = 'Reconciliando...';
+  await runConciliacionIbs(lastConciliacionIbs.origen === 'archivo' && conciliacionIbsFile.files[0] ? true : false);
+  alert(`Estados consultados: ${guardadas} guardado(s)` + (sinResultado ? `, ${sinResultado} sin estado en la consulta` : '') + '.');
 }
 
 // conArchivo = false: el servidor consulta los movimientos directo en IBS
@@ -3535,6 +3594,7 @@ document.getElementById('closeConciliacionIbsBtn').addEventListener('click', () 
 document.getElementById('conciliacionIbsRunBtn').addEventListener('click', () => runConciliacionIbs(false));
 document.getElementById('conciliacionIbsFileBtn').addEventListener('click', () => runConciliacionIbs(true));
 document.getElementById('conciliacionIbsDownloadBtn').addEventListener('click', downloadConciliacionIbsDiferencias);
+document.getElementById('conciliacionIbsConsultarEstadosBtn').addEventListener('click', consultarEstadosSinEstado);
 conciliacionIbsTipoOpciones.addEventListener('change', applyConciliacionIbsFilter);
 document.getElementById('conciliacionIbsTipoTodos').addEventListener('click', () => {
   for (const i of conciliacionIbsTipoOpciones.querySelectorAll('input')) i.checked = false;
