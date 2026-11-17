@@ -287,6 +287,8 @@ fieldset legend { color: var(--navy); font-weight: 600; padding: 0 6px; }
 .dashboard-tile .dashboard-tile-value { font-size: 1.6rem; font-weight: 700; color: var(--navy); }
 .dashboard-tile.ok .dashboard-tile-value { color: var(--success); }
 .dashboard-tile.error .dashboard-tile-value { color: var(--error); }
+.dashboard-tile.warn .dashboard-tile-value { color: #ea7600; }
+.dashboard-motivo-pill.warn { background: #ffe0b3; color: #b45309; font-weight: 600; }
 
 .dashboard-flow-cards { display: flex; flex-direction: column; gap: 10px; margin-bottom: 10px; }
 .dashboard-flow-card {

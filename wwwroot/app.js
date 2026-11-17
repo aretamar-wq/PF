@@ -3186,7 +3186,7 @@ function renderConciliacionIbsTiles(tipo, resumen) {
       tile('Conciliadas OK', resumen.transferenciasOk, 'ok') +
       tile('Con diferencias', resumen.transferenciasConDiferencias, malo(resumen.transferenciasConDiferencias)) +
       tile('Pendientes de débito (día hábil)', resumen.pendientes) +
-      tile('Con débito pendiente en IBS', resumen.debitosPendientesIbs, malo(resumen.debitosPendientesIbs)) +
+      tile('Con débito pendiente en IBS', resumen.debitosPendientesIbs, resumen.debitosPendientesIbs > 0 ? 'warn' : 'ok') +
       tile('Débitos solo en IBS', resumen.soloEnIbs, malo(resumen.soloEnIbs)) +
       tile('Rechazadas en ApiCore', resumen.rechazadosApicore) +
       tile('Rechazadas que figuran en IBS', resumen.rechazadosEnIbs, malo(resumen.rechazadosEnIbs))
@@ -3238,13 +3238,14 @@ function fechaDMYCorta(valor) {
 function applyConciliacionIbsFilter() {
   if (!lastConciliacionIbs) return;
   const tipo = conciliacionIbsTipoFilter.value;
-  const filas = tipo ? lastConciliacionIbs.diferencias.filter((d) => d.tipo === tipo) : lastConciliacionIbs.diferencias;
+  const filas = (tipo ? lastConciliacionIbs.diferencias.filter((d) => d.tipo === tipo) : lastConciliacionIbs.diferencias.slice())
+    .sort((a, b) => String(a.tipo).localeCompare(String(b.tipo), 'es'));
   const tbody = document.querySelector('#conciliacionIbsDiferencias tbody');
   tbody.innerHTML = '';
   for (const d of filas) {
     const tr = document.createElement('tr');
     tr.innerHTML = `
-      <td><span class="dashboard-motivo-pill">${escapeHtml(d.tipo)}</span></td>
+      <td><span class="dashboard-motivo-pill${/pendiente/i.test(d.tipo) ? ' warn' : ''}">${escapeHtml(d.tipo)}</span></td>
       <td class="mono">${escapeHtml(fechaDMYCorta(d.fecha) || '—')}</td>
       <td class="mono">${escapeHtml(d.numeroComprobante || '—')}</td>
       <td class="mono operacion">${escapeHtml(d.operacion || '—')}</td>
@@ -3464,7 +3465,7 @@ function downloadConciliacionIbsDiferencias() {
   if (!lastConciliacionIbs) return;
   const headers = ['tipo', 'numeroComprobante', 'operacion', 'circuito', 'cuit', 'apellidoNombre', 'cajaAhorro', 'importe', 'moneda', 'fecha', 'detalle'];
   const lines = [csvExcelLine(headers)];
-  for (const d of lastConciliacionIbs.diferencias) {
+  for (const d of lastConciliacionIbs.diferencias.slice().sort((x, y) => String(x.tipo).localeCompare(String(y.tipo), 'es'))) {
     lines.push(csvExcelLine(headers.map((h) => (h === 'fecha' ? fechaDMYCorta(d[h]) : h === 'importe' && typeof d[h] === 'number' ? d[h].toFixed(2).replace('.', ',') : d[h]))));
   }
   downloadCsvExcel(`conciliacion-ibs-${lastConciliacionIbs.tipo === 'pagos' ? 'pagos-pf' : lastConciliacionIbs.tipo === 'transferencias' ? 'transferencias' : 'altas-pf'}-${lastConciliacionIbs.fecha}${lastConciliacionIbs.hasta && lastConciliacionIbs.hasta !== lastConciliacionIbs.fecha ? '-a-' + lastConciliacionIbs.hasta : ''}-diferencias.csv`, lines);
