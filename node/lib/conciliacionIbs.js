@@ -1022,7 +1022,9 @@ function conciliarTransferencias(apiRows, ibsLines, opciones) {
     const posterior = j === 0 && !pendIbs && !hayReversa ? buscarPosterior(comprobante, cuentaEsperada) : null;
     const pendiente = !pendIbs && j === 0 && !hayReversa && esperada >= hoy && g.envios.some((r) => !esError(r));
 
-    if (k > 1) {
+    // Enviada más de una vez: solo es diferencia si IBS no tiene un débito por
+    // cada envío (si están todos los movimientos en IBS, se considera conciliada).
+    if (k > 1 && j < k) {
       errores.push({
         tipo: 'Enviada más de una vez',
         detalle: `Se realizó ${k} veces (DEBIN ${g.envios.map((r) => r.id_operacion || '?').join(', ')}). Pedir la devolución de las de más.`,
