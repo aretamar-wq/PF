@@ -2216,6 +2216,54 @@ function downloadCsvExcel(fileName, lines) {
   downloadTextFile(fileName, '\uFEFF' + lines.join('\r\n') + '\r\n', 'text/csv;charset=utf-8');
 }
 
+// Regenera el dbnconsulta-...csv de un día entero desde dbn_consulta (mismas
+// columnas que el archivo que se guarda al terminar cada corrida).
+async function generarDbnConsultaDia() {
+  const fecha = document.getElementById('dbnConsultaDiaFecha').value;
+  if (!fecha) {
+    alert('Elegí la fecha del día.');
+    return;
+  }
+  const btn = document.getElementById('dbnConsultaDiaBtn');
+  btn.disabled = true;
+  try {
+    const res = await apiFetch(`/api/dbn-consulta-dia?fecha=${encodeURIComponent(fecha)}`);
+    const data = await res.json();
+    if (!res.ok) {
+      alert(data.error || 'No se pudo generar el archivo.');
+      return;
+    }
+    if (data.rows.length === 0) {
+      alert(`No hay transferencias registradas el ${fecha}.`);
+      return;
+    }
+    const headers = [
+      'idMensaje', 'idComprobante', 'idOperacion',
+      'creditoCuit', 'creditoCbu', 'creditoTitular',
+      'debitoCuit', 'debitoCbu', 'debitoTitular',
+      'moneda', 'importe',
+      'codigoRespuestaTransferencia', 'descripcionRespuestaTransferencia', 'realizado',
+      ...DEBIN_CONSULTA_COLUMNS, 'errorConsulta',
+    ];
+    const lines = [headers.join(',')];
+    for (const r of data.rows) {
+      const valores = {
+        idMensaje: r.id_mensaje, idComprobante: r.id_comprobante, idOperacion: r.id_operacion,
+        creditoCuit: r.credito_cuit, creditoCbu: r.credito_cbu, creditoTitular: r.credito_titular,
+        debitoCuit: r.debito_cuit, debitoCbu: r.debito_cbu, debitoTitular: r.debito_titular,
+        moneda: r.moneda, importe: r.importe,
+        codigoRespuestaTransferencia: r.codigo_respuesta, descripcionRespuestaTransferencia: r.descripcion_respuesta,
+        realizado: r.realizado, errorConsulta: r.error_consulta,
+        ...r.extra,
+      };
+      lines.push(headers.map((h) => csvEscape(valores[h])).join(','));
+    }
+    downloadTextFile(`dbnconsulta-${fecha}.csv`, lines.join('\r\n'), 'text/csv');
+  } finally {
+    btn.disabled = false;
+  }
+}
+
 function downloadTextFile(fileName, content, mimeType) {
   const blob = new Blob([content], { type: mimeType || 'text/plain' });
   const url = URL.createObjectURL(blob);
@@ -3594,6 +3642,7 @@ document.getElementById('closeConciliacionIbsBtn').addEventListener('click', () 
 document.getElementById('conciliacionIbsRunBtn').addEventListener('click', () => runConciliacionIbs(false));
 document.getElementById('conciliacionIbsFileBtn').addEventListener('click', () => runConciliacionIbs(true));
 document.getElementById('conciliacionIbsDownloadBtn').addEventListener('click', downloadConciliacionIbsDiferencias);
+document.getElementById('dbnConsultaDiaBtn').addEventListener('click', generarDbnConsultaDia);
 document.getElementById('conciliacionIbsConsultarEstadosBtn').addEventListener('click', consultarEstadosSinEstado);
 conciliacionIbsTipoOpciones.addEventListener('change', applyConciliacionIbsFilter);
 document.getElementById('conciliacionIbsTipoTodos').addEventListener('click', () => {

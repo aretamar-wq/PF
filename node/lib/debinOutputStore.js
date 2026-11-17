@@ -323,6 +323,33 @@ async function getConsultaRowsDelDia(rootDir, fecha) {
   );
 }
 
+// Todas las columnas de dbn_consulta de un día de ejecución (yyyy-MM-dd), con
+// respuesta_json ya parseado en `extra` (estado, comprador, vendedor, etc.), para
+// regenerar el archivo dbnconsulta-...csv de ese día.
+async function getConsultaRowsCompletosDelDia(rootDir, fecha) {
+  const rows = await db.query(
+    rootDir,
+    `SELECT ejecutado_en, ejecutado_por, id_mensaje, id_comprobante, id_operacion,
+            credito_cuit, credito_cbu, credito_titular, debito_cuit, debito_cbu, debito_titular,
+            moneda, importe, codigo_respuesta, descripcion_respuesta, realizado, error_consulta, respuesta_json
+     FROM dbn_consulta
+     WHERE ejecutado_en >= ? AND ejecutado_en < DATE_ADD(?, INTERVAL 1 DAY)
+     ORDER BY ejecutado_en, id`,
+    [fecha, fecha]
+  );
+  return rows.map((r) => {
+    let extra = {};
+    try {
+      const parsed = typeof r.respuesta_json === 'string' ? JSON.parse(r.respuesta_json) : r.respuesta_json;
+      if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) extra = parsed;
+    } catch (err) {
+      // respuesta_json no es JSON válido: queda sin campos extra.
+    }
+    const { respuesta_json: ignorado, ...resto } = r;
+    return { ...resto, extra };
+  });
+}
+
 // Antiduplicado de "Transferencia DEBIN - File": de los pares (debitoCuit,
 // idComprobante) pedidos, cuáles ya tienen una transferencia realizada
 // (realizado = 's') en dbn_consulta. Las rechazadas no cuentan: se pueden
@@ -410,6 +437,7 @@ module.exports = {
   transferidoHoyKey,
   getConsultaRowsDelDia,
   getConsultaRowsEntre,
+  getConsultaRowsCompletosDelDia,
   getConsultaRowsPorComprobante,
   findTransferenciasRealizadas,
 };
