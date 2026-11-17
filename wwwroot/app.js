@@ -482,13 +482,23 @@ const DEBIN_CONSULTA_MAX_INTENTOS = 6;
 const DEBIN_ESTADOS_INTERMEDIOS = ['2000', '0500'];
 const DEBIN_ESTADO_ACREDITADO = '0600';
 
-function clasificarEstadoDebin(codigo) {
-  const digitos = String(codigo == null ? '' : codigo).replace(/\D/g, '');
-  if (!digitos) return 'sin-estado';
-  const normalizado = digitos.padStart(4, '0');
-  if (DEBIN_ESTADOS_INTERMEDIOS.includes(normalizado)) return 'intermedio';
-  if (normalizado === DEBIN_ESTADO_ACREDITADO) return 'aceptar';
-  return 'rechazar';
+// La consulta devuelve el estado como texto en "codigo" (INICIADO, EN CURSO,
+// ACREDITADO, ERROR DATOS, ...) y en "descripcion" el detalle; la grilla también
+// los identifica con un id numérico (2000, 0500, 0600, ...). Se aceptan ambos.
+const DEBIN_ESTADOS_INTERMEDIOS_TEXTO = ['INICIADO', 'EN CURSO'];
+function clasificarEstadoDebin(codigo, descripcion) {
+  const texto = (v) => String(v == null ? '' : v).trim().toUpperCase();
+  const cod = texto(codigo);
+  const desc = texto(descripcion);
+  const numero = [cod, desc].map((v) => v.replace(/\D/g, '')).find((d) => /^\d{3,4}$/.test(d));
+  if (numero) {
+    const normalizado = numero.padStart(4, '0');
+    if (DEBIN_ESTADOS_INTERMEDIOS.includes(normalizado)) return 'intermedio';
+    return normalizado === DEBIN_ESTADO_ACREDITADO ? 'aceptar' : 'rechazar';
+  }
+  if (!cod) return 'sin-estado';
+  if (DEBIN_ESTADOS_INTERMEDIOS_TEXTO.includes(cod)) return 'intermedio';
+  return cod === 'ACREDITADO' ? 'aceptar' : 'rechazar';
 }
 
 // Todas las columnas de dbnconsulta-...csv que salen de la respuesta de
@@ -1771,7 +1781,7 @@ async function runFlowFromCsv() {
             if (lastEntry && lastEntry.status === 'Success' && lastEntry.responseSummary) {
               const parsed = JSON.parse(lastEntry.responseSummary);
               Object.assign(consultaRow, extractDebinConsultaFields(parsed));
-              clasificacion = clasificarEstadoDebin(consultaRow.estadoCodigo);
+              clasificacion = clasificarEstadoDebin(consultaRow.estadoCodigo, consultaRow.estadoDescripcion);
             } else {
               consultaRow.errorConsulta = (lastEntry && lastEntry.errorMessage) || 'No se pudo consultar el estado de la transferencia.';
               clasificacion = 'sin-estado';
