@@ -353,3 +353,8 @@ fieldset legend { color: var(--navy); font-weight: 600; padding: 0 6px; }
 
 /* Conciliación Loop: la tabla de evolución día a día no parte los textos */
 #qnetEvolucion th, #qnetEvolucion td { white-space: nowrap; }
+
+.multi-filter { position: relative; display: inline-block; }
+.multi-filter summary { cursor: pointer; padding: 6px 10px; border: 1px solid var(--border, #ccc); border-radius: 6px; background: #fff; }
+.multi-filter-panel { position: absolute; z-index: 10; margin-top: 4px; padding: 8px; min-width: 280px; background: #fff; border: 1px solid var(--border, #ccc); border-radius: 6px; box-shadow: 0 4px 12px rgba(0,0,0,.15); }
+.multi-filter-option { display: block; padding: 3px 0; white-space: nowrap; cursor: pointer; }
