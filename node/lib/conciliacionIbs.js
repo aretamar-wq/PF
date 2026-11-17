@@ -370,6 +370,7 @@ function conciliarAltasPf(altas, ibsLines, fecha, opciones = {}) {
     },
   ];
 
+  for (const d of diferencias) if (!d.fecha) d.fecha = fecha; // movimientos del día conciliado
   return {
     tipo: 'altas',
     fecha,
@@ -591,6 +592,7 @@ function conciliarPagosPf(operaciones, ibsLines, fecha, config, opciones = {}) {
   const otrosVencimientos = vencimientos.filter((m) => !m.usado);
   const conOperacion = operaciones.filter((o) => String(o.operacion || '').trim());
 
+  for (const d of diferencias) if (!d.fecha) d.fecha = fecha; // movimientos del día conciliado
   return {
     tipo: 'pagos',
     fecha,

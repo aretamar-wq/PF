@@ -3175,6 +3175,12 @@ function renderConciliacionIbsTotales(totales) {
   }
 }
 
+// "2026-11-12" o "2026-11-12 10:30:00" -> "12/11/2026"
+function fechaDMYCorta(valor) {
+  const m = /^(\d{4})-(\d{2})-(\d{2})/.exec(String(valor || ''));
+  return m ? `${m[3]}/${m[2]}/${m[1]}` : String(valor || '');
+}
+
 function applyConciliacionIbsFilter() {
   if (!lastConciliacionIbs) return;
   const tipo = conciliacionIbsTipoFilter.value;
@@ -3185,6 +3191,7 @@ function applyConciliacionIbsFilter() {
     const tr = document.createElement('tr');
     tr.innerHTML = `
       <td><span class="dashboard-motivo-pill">${escapeHtml(d.tipo)}</span></td>
+      <td class="mono">${escapeHtml(fechaDMYCorta(d.fecha) || '—')}</td>
       <td class="mono">${escapeHtml(d.numeroComprobante || '—')}</td>
       <td class="mono operacion">${escapeHtml(d.operacion || '—')}</td>
       <td>${escapeHtml(d.circuito || '—')}</td>
@@ -3403,7 +3410,7 @@ function downloadConciliacionIbsDiferencias() {
   if (!lastConciliacionIbs) return;
   const headers = ['tipo', 'numeroComprobante', 'operacion', 'circuito', 'cuit', 'apellidoNombre', 'cajaAhorro', 'importe', 'moneda', 'fecha', 'detalle'];
   const lines = [headers.join(',')];
-  for (const d of lastConciliacionIbs.diferencias) lines.push(headers.map((h) => csvEscape(d[h])).join(','));
+  for (const d of lastConciliacionIbs.diferencias) lines.push(headers.map((h) => csvEscape(h === 'fecha' ? fechaDMYCorta(d[h]) : d[h])).join(','));
   downloadTextFile(`conciliacion-ibs-${lastConciliacionIbs.tipo === 'pagos' ? 'pagos-pf' : lastConciliacionIbs.tipo === 'transferencias' ? 'transferencias' : 'altas-pf'}-${lastConciliacionIbs.fecha}${lastConciliacionIbs.hasta && lastConciliacionIbs.hasta !== lastConciliacionIbs.fecha ? '-a-' + lastConciliacionIbs.hasta : ''}-diferencias.csv`, lines.join('\r\n'), 'text/csv');
 }
 
