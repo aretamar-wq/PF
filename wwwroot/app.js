@@ -3166,6 +3166,11 @@ dashboardErrorFlowFilter.addEventListener('change', applyDashboardErrorFilter);
 const conciliacionIbsFecha = document.getElementById('conciliacionIbsFecha');
 const conciliacionIbsFile = document.getElementById('conciliacionIbsFile');
 const conciliacionIbsTipoFilter = document.getElementById('conciliacionIbsTipoFilter');
+const conciliacionIbsTipoOpciones = document.getElementById('conciliacionIbsTipoOpciones');
+// Tipos tildados en el filtro (vacío = todos).
+function conciliacionIbsTiposSeleccionados() {
+  return [...conciliacionIbsTipoOpciones.querySelectorAll('input:checked')].map((i) => i.value);
+}
 const conciliacionIbsTipo = document.getElementById('conciliacionIbsTipo');
 const conciliacionIbsHasta = document.getElementById('conciliacionIbsHasta');
 let lastConciliacionIbs = null;
@@ -3237,8 +3242,9 @@ function fechaDMYCorta(valor) {
 
 function applyConciliacionIbsFilter() {
   if (!lastConciliacionIbs) return;
-  const tipo = conciliacionIbsTipoFilter.value;
-  const filas = (tipo ? lastConciliacionIbs.diferencias.filter((d) => d.tipo === tipo) : lastConciliacionIbs.diferencias.slice())
+  const tiposSel = conciliacionIbsTiposSeleccionados();
+  document.getElementById('conciliacionIbsTipoResumen').textContent = tiposSel.length === 0 ? 'Todos' : tiposSel.length === 1 ? tiposSel[0] : `${tiposSel.length} seleccionados`;
+  const filas = (tiposSel.length ? lastConciliacionIbs.diferencias.filter((d) => tiposSel.includes(d.tipo)) : lastConciliacionIbs.diferencias.slice())
     .sort((a, b) => String(a.tipo).localeCompare(String(b.tipo), 'es'));
   const tbody = document.querySelector('#conciliacionIbsDiferencias tbody');
   tbody.innerHTML = '';
@@ -3358,13 +3364,13 @@ function renderConciliacionIbs(data) {
   renderConciliacionIbsTotales(data.totales);
 
   const tipos = [...new Set(data.diferencias.map((d) => d.tipo))].sort();
-  conciliacionIbsTipoFilter.innerHTML = '<option value="">Todas</option>';
+  conciliacionIbsTipoOpciones.innerHTML = '';
   for (const tipo of tipos) {
     const count = data.diferencias.filter((d) => d.tipo === tipo).length;
-    const option = document.createElement('option');
-    option.value = tipo;
-    option.textContent = `${tipo} (${count})`;
-    conciliacionIbsTipoFilter.appendChild(option);
+    const label = document.createElement('label');
+    label.className = 'multi-filter-option';
+    label.innerHTML = `<input type="checkbox" value="${escapeHtml(tipo)}"> ${escapeHtml(tipo)} (${count})`;
+    conciliacionIbsTipoOpciones.appendChild(label);
   }
   applyConciliacionIbsFilter();
 
@@ -3518,7 +3524,11 @@ document.getElementById('closeConciliacionIbsBtn').addEventListener('click', () 
 document.getElementById('conciliacionIbsRunBtn').addEventListener('click', () => runConciliacionIbs(false));
 document.getElementById('conciliacionIbsFileBtn').addEventListener('click', () => runConciliacionIbs(true));
 document.getElementById('conciliacionIbsDownloadBtn').addEventListener('click', downloadConciliacionIbsDiferencias);
-conciliacionIbsTipoFilter.addEventListener('change', applyConciliacionIbsFilter);
+conciliacionIbsTipoOpciones.addEventListener('change', applyConciliacionIbsFilter);
+document.getElementById('conciliacionIbsTipoTodos').addEventListener('click', () => {
+  for (const i of conciliacionIbsTipoOpciones.querySelectorAll('input')) i.checked = false;
+  applyConciliacionIbsFilter();
+});
 
 // --- Conciliación Loop ----------------------------------------------------------
 // Loop y los débitos pendientes se consultan en Sybase desde el servidor; acá se

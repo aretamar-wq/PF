@@ -175,11 +175,13 @@
 
           <h3>Diferencias</h3>
           <div class="actions">
-            <label>Tipo
-              <select id="conciliacionIbsTipoFilter">
-                <option value="">Todas</option>
-              </select>
-            </label>
+            <details id="conciliacionIbsTipoFilter" class="multi-filter">
+              <summary>Tipo: <span id="conciliacionIbsTipoResumen">Todos</span></summary>
+              <div class="multi-filter-panel">
+                <button type="button" id="conciliacionIbsTipoTodos" class="secondary">Todos</button>
+                <div id="conciliacionIbsTipoOpciones"></div>
+              </div>
+            </details>
           </div>
           <p id="conciliacionIbsSinDiferencias" class="muted" style="display: none;">Sin diferencias: ApiCore e IBS coinciden en cuenta e importe, y no hay movimientos de IBS sin su operación en ApiCore.</p>
           <div class="conciliacion-table-wrap">
