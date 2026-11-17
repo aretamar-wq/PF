@@ -710,6 +710,32 @@ async function invokeHttpStep(step, flowObj, variables, profileObj, logsDir, run
     }
   }
 
+  // failIfEmpty (opcional, array de tuplas [nombreVariable, mensajeSiNoHayMotivo,
+  // variableConElMotivo]): el step cuenta como fallido si esa variable extraída
+  // viene vacía — red de seguridad para respuestas HTTP 200 que en realidad son un
+  // rechazo con un texto que todavía no está en failIfEquals (ej. "Transferencia
+  // DEBIN": si Nova-Link no devuelve el id de la operación, no se creó ningún
+  // DEBIN). El motivo que se muestra es el de variableConElMotivo (por ejemplo
+  // "mensaje") si vino, o mensajeSiNoHayMotivo.
+  if (step.failIfEmpty) {
+    for (const [name, fallbackMessage, reasonName] of step.failIfEmpty) {
+      const value = variables[name] !== undefined && variables[name] !== null ? String(variables[name]).trim() : '';
+      if (value === '') {
+        const reason = reasonName && variables[reasonName] ? String(variables[reasonName]).trim() : '';
+        entry.status = 'Error';
+        entry.errorMessage = `El campo '${name}' vino vacío — rechazo de negocio, no un error de transporte.${reason ? ` Motivo: ${reason}.` : ''}`;
+        entry.isBusinessRejection = true;
+        entry.businessRejectionMessage = reason || fallbackMessage;
+        const rejectionLogText = [
+          `<<< ERROR [${formatLocal(new Date(), true)}] Flow=${flowObj.name} | Step=${step.name} | ${entry.errorMessage} (${Date.now() - stepStartedAt} ms)`,
+          '---',
+        ].join('\n');
+        writeHttpLog(logsDir, runLogFileName, rejectionLogText);
+        return;
+      }
+    }
+  }
+
   // requireVariablesEqual (opcional, array de pares [nombreA, nombreB]): el
   // step solo cuenta como exitoso si cada par de variables terminó con el
   // mismo valor (ej. ConsultaCBU de "Transferencia DEBIN - File": el titular
