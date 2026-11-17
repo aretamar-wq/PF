@@ -1371,6 +1371,25 @@ async function handleConciliacionTransferencias(res, session, payload, desde, co
   }
 
   const apiRows = await debinOutputStore.getConsultaRowsEntre(rootDir, desde, hasta);
+
+  // Débitos imputados en días posteriores al período: para las transferencias
+  // realizadas que no tienen débito en el extracto, se busca en IBS hasta hoy.
+  // Solo con la consulta directa; si falla no frena la conciliación.
+  let movimientosPosteriores = new Map();
+  const hoyIso = formatDateOnly(new Date());
+  if (!contenido.trim() && hastaEsperado < hoyIso) {
+    try {
+      const candidatos = conciliacionIbs.comprobantesSinDebitoIbs(apiRows, ibsLines, desde, hastaEsperado);
+      if (candidatos.length > 0) {
+        const lineasPosteriores = conciliacionIbs.ibsRowsToLines(
+          await sybaseClient.querySybase(parametria.sybase, conciliacionIbs.buildIbsMovimientosPosterioresQuery(desde, hoyIso, candidatos))
+        );
+        movimientosPosteriores = conciliacionIbs.leerIbsTransferencias(lineasPosteriores, desde, hoyIso).grupos;
+      }
+    } catch (err) {
+      avisosPendientes.push(`No se pudieron buscar los débitos imputados en fechas posteriores (${err.message}): una transferencia sin débito puede haberse debitado días después.`);
+    }
+  }
   let resultado;
   try {
     const enRango = new Set(apiRows.map((r) => String(r.id_comprobante || '').trim()));
@@ -1390,6 +1409,7 @@ async function handleConciliacionTransferencias(res, session, payload, desde, co
       otrasFechas,
       rechazadosArchivo: readTransferenciasRechazadasArchivo(desde, hasta, apiRows),
       debitosPendientes,
+      movimientosPosteriores,
       avisos: avisosPendientes,
     });
   } catch (err) {
