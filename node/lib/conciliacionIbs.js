@@ -969,6 +969,7 @@ function conciliarTransferencias(apiRows, ibsLines, opciones) {
   let enviosRealizados = 0;
   let rechazadas = 0;
   let comprobantesConDiferencias = 0;
+  let debitosPosteriores = 0;
 
   for (const [comprobante, g] of apiGrupos) {
     const ibsGrupo = grupos.get(comprobante);
@@ -1037,12 +1038,17 @@ function conciliarTransferencias(apiRows, ibsLines, opciones) {
             (pendIbs.cents !== toCents(primero.importe) ? ` El importe pendiente no coincide con el de ApiCore (${dinero(toCents(primero.importe))}).` : ''),
         });
       } else if (posterior) {
+        // Imputado en una fecha posterior: se considera OK (no es diferencia),
+        // salvo que el importe no coincida.
         posterior.usado = true;
-        errores.push({
-          tipo: 'Débito imputado en fecha posterior',
-          detalle: `IBS la debitó el ${posterior.fecha} (${dinero(posterior.cents)}, cuenta ${posterior.cuecod}) y correspondía el ${esperada}.` +
-            (posterior.cents !== toCents(primero.importe) ? ` El importe no coincide con el de ApiCore (${dinero(toCents(primero.importe))}).` : ''),
-        });
+        debitosPosteriores++;
+        sumar(totIbs, claveIbs(posterior), posterior.cents);
+        if (posterior.cents !== toCents(primero.importe)) {
+          errores.push({
+            tipo: 'Importe distinto',
+            detalle: `IBS la debitó el ${posterior.fecha} (imputada en fecha posterior) por ${dinero(posterior.cents)} y ApiCore transfirió ${dinero(toCents(primero.importe))}.`,
+          });
+        }
       } else if (hayReversa) {
         if (g.envios.some(esExitoso)) {
           errores.push({
@@ -1232,6 +1238,7 @@ function conciliarTransferencias(apiRows, ibsLines, opciones) {
       rechazadasApicore: rechazadas,
       rechazadasRevertidas,
       debitosPendientesIbs: debitosPendientes.filter((p) => p.usado).length,
+      debitosPosteriores,
       debitosPendientesLeidos: debitosPendientes.length,
       ...resumenRechazados(rechazados),
       revertidasOk,
