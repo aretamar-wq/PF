@@ -23,11 +23,17 @@ test('comprobantes sin débito son candidatos', () => {
   assert.deepStrictEqual(ci.comprobantesSinDebitoIbs(api, ibsPeriodo, '2026-11-04', '2026-11-05'), ['16319']);
 });
 
-test('débito imputado días después se informa y no es "Sin débito en IBS"', () => {
+test('débito imputado días después es OK (no es diferencia)', () => {
   const r = ci.conciliarTransferencias(api, ibsPeriodo, { desde: '2026-11-04', hasta: '2026-11-04', hoy: '2026-11-17', movimientosPosteriores: posteriores() });
-  const tipos = r.diferencias.map((d) => d.tipo);
-  assert.deepStrictEqual(tipos, ['Débito imputado en fecha posterior']);
-  assert.match(r.diferencias[0].detalle, /2026-11-10/);
+  assert.deepStrictEqual(r.diferencias, []);
+  assert.strictEqual(r.resumen.transferenciasOk, 1);
+  assert.strictEqual(r.resumen.debitosPosteriores, 1);
+});
+
+test('débito posterior con importe distinto sí es diferencia', () => {
+  const distinto = [{ ...api[0], importe: '900.00' }];
+  const r = ci.conciliarTransferencias(distinto, ibsPeriodo, { desde: '2026-11-04', hasta: '2026-11-04', hoy: '2026-11-17', movimientosPosteriores: posteriores() });
+  assert.deepStrictEqual(r.diferencias.map((d) => d.tipo), ['Importe distinto']);
 });
 
 test('sin movimiento posterior sigue siendo "Sin débito en IBS"', () => {
