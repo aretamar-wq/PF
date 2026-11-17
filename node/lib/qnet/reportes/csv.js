@@ -1,14 +1,14 @@
 'use strict';
 
-// Salidas en CSV (punto decimal, CRLF, UTF-8, fechas dd/mm/aaaa): conciliación por
+// Salidas en CSV para abrir en Excel (UTF-8 con BOM, ";" de separador, coma decimal, CRLF, fechas dd/mm/aaaa): conciliación por
 // comprobante, excepciones, resumen, pendientes por día y fuentes. No llevan
 // nombres, CUIT ni CBU: solo comprobante, cuenta, moneda e importes.
 
 const fs = require('fs');
 const path = require('path');
-const { csvTexto, fmtCentavos, fechaDMY } = require('../util');
+const { csvExcel, importeExcel, fechaDMY } = require('../util');
 
-const importe = (c) => (c == null ? '' : fmtCentavos(c));
+const importe = importeExcel;
 
 function tablaComprobantes(resultado, config) {
   const filas = [['Clave', 'Moneda', 'Comprobante', 'Partidas', 'Débito', 'Crédito', 'Neto', 'Fecha débito', 'Fecha crédito', 'Cuenta', 'Marca', 'Estado BankService', 'Débito pendiente', 'Fecha pendiente']];
@@ -85,7 +85,7 @@ function escribirReportes(dir, resultado, archivos, config, origenes) {
     'pendientes-por-dia.csv': tablaPendientesPorDia(resultado),
     'fuentes.csv': tablaFuentes(resultado, archivos, origenes),
   };
-  for (const [nombre, filas] of Object.entries(salidas)) fs.writeFileSync(path.join(dir, nombre), csvTexto(filas));
+  for (const [nombre, filas] of Object.entries(salidas)) fs.writeFileSync(path.join(dir, nombre), csvExcel(filas));
   return Object.keys(salidas);
 }
 

@@ -56,7 +56,8 @@ test('Corrida completa desde archivos: resultado, histórico y salidas CSV sin d
   assert.ok(!/APELLIDO|20111222333|30999888777|0070000000000/.test(salidas), 'las salidas no deben llevar nombres, CUIT ni CBU');
   const exc = fs.readFileSync(path.join(r.dir, 'excepciones.csv'), 'utf8');
   assert.match(exc, /\r\n/);
-  assert.match(exc, /Débito pendiente del último día,2,5002,ARS,02\/11\/2026,50\.00/);
+  assert.ok(exc.startsWith('\uFEFF'), 'UTF-8 con BOM para Excel');
+  assert.match(exc, /Débito pendiente del último día;2;5002;ARS;02\/11\/2026;50,00/);
 });
 
 test('Idempotente: dos corridas con los mismos archivos dan el mismo id y las mismas salidas', async () => {
