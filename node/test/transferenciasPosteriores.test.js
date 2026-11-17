@@ -40,3 +40,14 @@ test('sin movimiento posterior sigue siendo "Sin débito en IBS"', () => {
   const r = ci.conciliarTransferencias(api, ibsPeriodo, { desde: '2026-11-04', hasta: '2026-11-04', hoy: '2026-11-17' });
   assert.deepStrictEqual(r.diferencias.map((d) => d.tipo), ['Sin débito en IBS']);
 });
+
+test('enviada dos veces con los 2 débitos en IBS no es diferencia', () => {
+  const dos = [api[0], { ...api[0], id_operacion: 'A2' }];
+  const mov = (fecha) => ({ sistcod: 5, moncod: 0, cuecod: '75848', Fecha_Mov: fecha, comnro: '16319', movcod: '28600', concod: '', signo: -1, accimp: '1000.00', Importe: '-1000.00' });
+  const ibs = ci.ibsRowsToLines([mov('04/11/2026'), mov('04/11/2026')], { conConcod: true });
+  const r = ci.conciliarTransferencias(dos, ibs, { desde: '2026-11-04', hasta: '2026-11-04', hoy: '2026-11-17' });
+  assert.deepStrictEqual(r.diferencias, []);
+  const ibs1 = ci.ibsRowsToLines([mov('04/11/2026')], { conConcod: true });
+  const r1 = ci.conciliarTransferencias(dos, ibs1, { desde: '2026-11-04', hasta: '2026-11-04', hoy: '2026-11-17' });
+  assert.ok(r1.diferencias.some((d) => d.tipo === 'Enviada más de una vez'));
+});
