@@ -142,7 +142,7 @@ function isCsvFlow(flow) {
 // de flows) se muestran de una a la vez: mostrar una implica ocultar el
 // resto. Ningún panel (perfil, parametría, usuarios, archivos de salida) se
 // abre como <dialog> flotante, todos reemplazan el contenido de esta área.
-const MAIN_SECTION_IDS = ['flowDetail', 'outputFilesSection', 'dashboardSection', 'conciliacionIbsSection', 'qnetSection', 'profileSection', 'parametriaSection', 'usersSection'];
+const MAIN_SECTION_IDS = ['flowDetail', 'outputFilesSection', 'dashboardSection', 'conciliacionIbsSection', 'qnetSection', 'transfCaCcSection', 'profileSection', 'parametriaSection', 'usersSection'];
 
 function showMainSection(id) {
   for (const sectionId of MAIN_SECTION_IDS) {
@@ -3750,7 +3750,7 @@ async function cargarBankserviceQnet() {
       setQnetProgreso(data.error || 'No se pudo cargar BankService.', true);
       return;
     }
-    setQnetProgreso(`BankService cargado: ${data.nuevas} nuevas, ${data.actualizadas} actualizadas` + (data.descartadas ? `, ${data.descartadas} filas descartadas por datos inválidos` : '') + '.');
+    setQnetProgreso(`BankService cargado: ${data.nuevas} nuevas, ${data.actualizadas} actualizadas` + (data.descartadas ? `, ${data.descartadas} filas rechazadas` : '') + (data.conflictos ? `, ${data.conflictos} conflictos de estado` : '') + (data.yaCargados ? `, ${data.yaCargados} archivo(s) ya cargado(s)` : '') + '. El detalle fila por fila está en Conciliación Transferencias CA -> CC.');
     document.getElementById('qnetFiles').value = '';
     await loadQnetBaseResumen();
   } catch (err) {

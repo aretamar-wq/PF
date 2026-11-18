@@ -7,6 +7,7 @@
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
   <link href="https://fonts.googleapis.com/css2?family=Poppins:wght@400;600;700&display=swap" rel="stylesheet" />
   <link rel="stylesheet" href="/styles.css" />
+  <link rel="stylesheet" href="/transf-ca-cc.css" />
 </head>
 <body>
   <div id="loginScreen">
@@ -46,6 +47,7 @@
             <li><button type="button" id="dashboardBtn">Dashboard</button></li>
             <li><button type="button" id="conciliacionIbsBtn">Conciliación con IBS</button></li>
             <li><button type="button" id="qnetBtn">Conciliación Loop</button></li>
+            <li><button type="button" id="tccBtn">Conciliación Transferencias CA -&gt; CC</button></li>
             <li><button type="button" id="logoutBtn">Cerrar sesión</button></li>
           </ul>
         </div>
@@ -228,6 +230,75 @@
             <h3 id="conciliacionIbsOtrosCanalesTitulo">Altas de PF de otros canales (informativo)</h3>
             <p id="conciliacionIbsOtrosCanalesTexto" class="muted"></p>
           </div>
+        </div>
+      </section>
+
+      <section id="transfCaCcSection" class="tcc" style="display: none;">
+        <div class="section-head">
+          <h2>Conciliación Transferencias CA -&gt; CC</h2>
+          <button type="button" id="tccCerrarBtn">Volver a flows</button>
+        </div>
+        <div id="tccUltimaCarga" class="tcc-suave"></div>
+        <p id="tccResumen" class="tcc-resumen"></p>
+        <div id="tccAvisos"></div>
+
+        <div class="tcc-barra">
+          <label>IBS desde <input type="date" id="tccIbsDesde" /></label>
+          <label>IBS hasta (inclusive) <input type="date" id="tccIbsHasta" /></label>
+          <button type="button" id="tccActualizarBtn">Consultar IBS y conciliar</button>
+          <label>CSV de BankService <input type="file" id="tccArchivos" accept=".csv,text/csv" multiple /></label>
+          <button type="button" id="tccCargarBtn">Cargar BankService</button>
+          <span id="tccEstado" class="tcc-suave"></span>
+        </div>
+        <details id="tccCargasBox">
+          <summary>Historial de cargas de BankService</summary>
+          <div id="tccCargaResultado"></div>
+          <div class="tcc-scroll"><table id="tccCargas"><thead><tr><th>#</th><th>Archivo</th><th>Cargado</th><th>Usuario</th><th class="num">Leídas</th><th class="num">Insertadas</th><th class="num">Actualizadas</th><th class="num">Sin cambios</th><th class="num">Rechazadas</th><th class="num">Conflictos</th><th>Operaciones del</th><th>al</th><th></th></tr></thead><tbody></tbody></table></div>
+        </details>
+
+        <div id="tccContenido" style="display: none;">
+          <div class="tcc-barra">
+            <label>Día <input type="date" id="tccDia" /></label>
+            <button type="button" id="tccUltimoDiaBtn">Último día de IBS</button>
+            <button type="button" id="tccTodosBtn">Todos los días</button>
+            <span id="tccDiaTexto" class="tcc-suave"></span>
+          </div>
+
+          <h3>IBS - Transferencias Loop (25030 - 25031)</h3>
+          <div id="tccIbs"></div>
+
+          <h3>IBS - Activar Cuentas</h3>
+          <div id="tccActivar"></div>
+
+          <h3>BankService vs IBS</h3>
+          <div id="tccBs"></div>
+
+          <div class="tcc-barra" style="margin-top: 22px;">
+            <label>Desde <input type="date" id="tccPerDesde" /></label>
+            <label>Hasta <input type="date" id="tccPerHasta" /></label>
+            <span class="tcc-suave">Aplica solo al gráfico y al saldo de débitos pendientes.</span>
+            <span id="tccPerAviso" class="tcc-suave"></span>
+          </div>
+
+          <h3>Operaciones por fecha</h3>
+          <div id="tccGrafico" class="tcc-grafico"></div>
+
+          <h3>Saldo de débitos pendientes por día</h3>
+          <div id="tccSaldo" class="tcc-scroll"></div>
+
+          <h3>Excepciones a revisar</h3>
+          <div class="tcc-barra">
+            <label>Tipo <select id="tccExcTipo"><option value="">Todos</option></select></label>
+            <label>Buscar <input type="search" id="tccExcBuscar" placeholder="comprobante, cuenta, moneda, fecha, detalle" /></label>
+            <span id="tccExcCuenta" class="tcc-suave"></span>
+          </div>
+          <div class="tcc-scroll-v"><table id="tccExc"><thead><tr>
+            <th class="ordenable" data-orden="tipo">Tipo</th><th class="ordenable num" data-orden="comprobante">Comprobante</th>
+            <th class="ordenable num" data-orden="cuenta">Cuenta</th><th class="ordenable" data-orden="moneda">Moneda</th>
+            <th class="ordenable" data-orden="fecha">Fecha</th><th class="ordenable num" data-orden="importe">Importe</th>
+            <th class="ordenable" data-orden="usuario">Usuario</th><th class="ordenable" data-orden="estadoBs">Estado BankService</th>
+            <th class="ordenable" data-orden="detalle">Detalle</th>
+          </tr></thead><tbody></tbody></table></div>
         </div>
       </section>
 
@@ -546,5 +617,7 @@
   </dialog>
 
   <script src="/app.js"></script>
+  <script src="/transf-ca-cc-calculo.js"></script>
+  <script src="/transf-ca-cc.js"></script>
 </body>
 </html>

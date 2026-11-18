@@ -1,0 +1,82 @@
+/* Conciliación Transferencias CA -> CC: reporte financiero sobrio, claro/oscuro. */
+.tcc {
+  --tcc-bg: #ffffff;
+  --tcc-panel: #f7f8fa;
+  --tcc-borde: #d9dde3;
+  --tcc-texto: #1d2433;
+  --tcc-suave: #5b6576;
+  --tcc-acento: #1f4e8c;
+  --tcc-ok: #1e7b4f;
+  --tcc-ok-bg: #e6f4ec;
+  --tcc-err: #b42318;
+  --tcc-err-bg: #fdecea;
+  --tcc-warn: #b54708;
+  --tcc-warn-bg: #fff4e5;
+  --tcc-s1: #1f4e8c;
+  --tcc-s2: #d9822b;
+  --tcc-s3: #b42318;
+  --tcc-resaltado: #fff8d6;
+  background: var(--tcc-bg);
+  color: var(--tcc-texto);
+  padding: 4px 2px 24px;
+}
+@media (prefers-color-scheme: dark) {
+  .tcc {
+    --tcc-bg: #11151c;
+    --tcc-panel: #1a2029;
+    --tcc-borde: #2f3846;
+    --tcc-texto: #e4e8ef;
+    --tcc-suave: #9aa4b5;
+    --tcc-acento: #7fa8e0;
+    --tcc-ok: #5fcf96;
+    --tcc-ok-bg: #143324;
+    --tcc-err: #f27c72;
+    --tcc-err-bg: #3a1714;
+    --tcc-warn: #f5b05c;
+    --tcc-warn-bg: #3a2810;
+    --tcc-s1: #7fa8e0;
+    --tcc-s2: #f0a35a;
+    --tcc-s3: #f27c72;
+    --tcc-resaltado: #3a3412;
+  }
+}
+.tcc h2, .tcc h3 { color: var(--tcc-texto); }
+.tcc h3 { font-size: 1rem; margin: 22px 0 8px; border-bottom: 1px solid var(--tcc-borde); padding-bottom: 4px; }
+.tcc .tcc-suave { color: var(--tcc-suave); font-size: 0.85rem; }
+.tcc .tcc-barra { display: flex; flex-wrap: wrap; gap: 8px 14px; align-items: end; background: var(--tcc-panel); border: 1px solid var(--tcc-borde); border-radius: 6px; padding: 8px 10px; margin: 8px 0; }
+.tcc .tcc-barra label { display: flex; flex-direction: column; font-size: 0.8rem; color: var(--tcc-suave); gap: 2px; }
+.tcc input, .tcc select { background: var(--tcc-bg); color: var(--tcc-texto); border: 1px solid var(--tcc-borde); border-radius: 4px; padding: 4px 6px; }
+.tcc .tcc-resumen { font-size: 0.95rem; margin: 6px 0; }
+.tcc .tcc-aviso { background: var(--tcc-warn-bg); color: var(--tcc-warn); border-radius: 4px; padding: 6px 10px; margin: 6px 0; font-size: 0.85rem; }
+.tcc .tcc-grilla { display: grid; grid-template-columns: repeat(auto-fit, minmax(190px, 1fr)); gap: 10px; }
+.tcc .tcc-linea { display: grid; grid-template-columns: repeat(auto-fit, minmax(170px, 1fr)); gap: 10px; }
+.tcc .tcc-tile { background: var(--tcc-panel); border: 1px solid var(--tcc-borde); border-radius: 6px; padding: 8px 10px; min-width: 0; }
+.tcc .tcc-tile .t { font-size: 0.78rem; color: var(--tcc-suave); }
+.tcc .tcc-tile .v { font-size: 1.35rem; font-weight: 700; font-variant-numeric: tabular-nums; }
+.tcc .tcc-tile .d { font-size: 0.78rem; color: var(--tcc-suave); font-variant-numeric: tabular-nums; }
+.tcc .tcc-tile.ok { border-color: var(--tcc-ok); background: var(--tcc-ok-bg); }
+.tcc .tcc-tile.ok .v { color: var(--tcc-ok); }
+.tcc .tcc-tile.err { border-color: var(--tcc-err); background: var(--tcc-err-bg); }
+.tcc .tcc-tile.err .v { color: var(--tcc-err); }
+.tcc .tcc-control { margin-top: 8px; padding: 6px 10px; border-radius: 4px; font-size: 0.9rem; }
+.tcc .tcc-control.ok { background: var(--tcc-ok-bg); color: var(--tcc-ok); }
+.tcc .tcc-control.err { background: var(--tcc-err-bg); color: var(--tcc-err); }
+.tcc .tcc-scroll { overflow-x: auto; max-width: 100%; }
+.tcc .tcc-scroll-v { max-height: 520px; overflow: auto; border: 1px solid var(--tcc-borde); border-radius: 6px; }
+.tcc table { border-collapse: collapse; width: 100%; font-size: 0.85rem; }
+.tcc th, .tcc td { padding: 5px 8px; border-bottom: 1px solid var(--tcc-borde); text-align: left; white-space: nowrap; }
+.tcc th { background: var(--tcc-panel); color: var(--tcc-suave); font-weight: 600; }
+.tcc .tcc-scroll-v th { position: sticky; top: 0; z-index: 1; }
+.tcc th.ordenable { cursor: pointer; user-select: none; }
+.tcc td.num, .tcc th.num { text-align: right; font-variant-numeric: tabular-nums; }
+.tcc td.detalle { white-space: normal; min-width: 260px; }
+.tcc tr.resaltado td { background: var(--tcc-resaltado); }
+.tcc .tcc-pill { display: inline-block; border-radius: 999px; padding: 1px 9px; font-size: 0.75rem; color: #fff; white-space: nowrap; }
+.tcc .tcc-grafico { position: relative; background: var(--tcc-panel); border: 1px solid var(--tcc-borde); border-radius: 6px; padding: 8px; }
+.tcc .tcc-grafico svg text { fill: var(--tcc-suave); font-size: 10px; }
+.tcc .tcc-grafico rect.barra { cursor: pointer; }
+.tcc .tcc-leyenda { display: flex; gap: 14px; flex-wrap: wrap; font-size: 0.8rem; margin-top: 6px; }
+.tcc .tcc-leyenda i { display: inline-block; width: 10px; height: 10px; border-radius: 2px; margin-right: 4px; vertical-align: middle; }
+.tcc .tcc-tooltip { position: absolute; pointer-events: none; background: var(--tcc-texto); color: var(--tcc-bg); font-size: 0.78rem; padding: 6px 8px; border-radius: 4px; white-space: nowrap; display: none; z-index: 2; }
+.tcc details { margin: 8px 0; }
+.tcc summary { cursor: pointer; color: var(--tcc-acento); }

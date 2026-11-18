@@ -32,6 +32,7 @@ const qnetConfig = require('./lib/qnet/config');
 const qnetHistorial = require('./lib/qnet/historial');
 const { crearFuenteSybase } = require('./lib/qnet/fuentes/sybase');
 const qnetBankserviceStore = require('./lib/qnet/bankserviceStore');
+const transfCaCc = require('./lib/transfCaCc/servicio');
 const { convertDMYToISO, formatLocal, formatDateOnly } = require('./lib/dateUtil');
 
 function parsePort() {
@@ -1160,15 +1161,23 @@ function qnetArchivosDelPedido(payload) {
   return { validos: validos.map((a) => ({ nombre: path.basename(a.nombre), contenido: a.contenido })) };
 }
 
-// Carga archivos de BankService en qnet_bankservice. Devuelve { nuevas, actualizadas, descartadas }.
+// Carga archivos de BankService en bankservice_movimientos (misma carga que la
+// Conciliación Transferencias CA -> CC). Devuelve totales y el detalle por archivo.
 async function qnetCargarBankservice(archivos, usuario) {
-  const total = { nuevas: 0, actualizadas: 0, descartadas: 0 };
-  for (const a of archivos) {
-    const { filas, descartadas } = qnetBankserviceStore.filasDesdeCsv(a.nombre, a.contenido, qnetConfig);
-    const r = await qnetBankserviceStore.guardar(rootDir, filas, usuario, formatLocal(new Date()));
-    total.nuevas += r.nuevas;
-    total.actualizadas += r.actualizadas;
-    total.descartadas += descartadas;
+  const resultados = await transfCaCc.cargarBankService(rootDir, archivos, usuario, formatLocal(new Date()));
+  const errores = resultados.filter((r) => r.error);
+  if (errores.length > 0 && errores.length === resultados.length) {
+    const err = new Error(errores.map((r) => `${r.nombre}: ${r.error}`).join(' | '));
+    err.statusCode = 400;
+    throw err;
+  }
+  const total = { nuevas: 0, actualizadas: 0, descartadas: 0, yaCargados: 0, conflictos: 0, resultados };
+  for (const r of resultados) {
+    if (r.yaCargado) total.yaCargados++;
+    total.nuevas += r.insertadas || 0;
+    total.actualizadas += r.actualizadas || 0;
+    total.descartadas += r.rechazadas || 0;
+    total.conflictos += (r.conflictos || []).length;
   }
   return total;
 }
@@ -1194,6 +1203,65 @@ async function handleQnetBankserviceResumenGet(res) {
     writeJsonResponse(res, 200, await qnetBankserviceStore.resumen(rootDir));
   } catch (err) {
     writeJsonResponse(res, 500, { error: `No se pudo leer la tabla qnet_bankservice (¿se aplicó deploy/mariadb-schema.sql?): ${err.message}` });
+  }
+}
+
+// --- Conciliación Transferencias CA -> CC ----------------------------------------
+
+// POST /api/transf-ca-cc/bankservice { archivos: [{ nombre, contenido }] }: carga de
+// BankService (una transacción por archivo; un archivo ya cargado no se procesa).
+async function handleTransfCaCcCargaPost(req, res, session) {
+  const { validos, error } = qnetArchivosDelPedido(await readJsonBody(req));
+  if (error || validos.length === 0) {
+    writeJsonResponse(res, 400, { error: error || 'Elegí al menos un archivo de BankService.' });
+    return;
+  }
+  const resultados = await transfCaCc.cargarBankService(rootDir, validos, session.username, formatLocal(new Date()));
+  for (const r of resultados) {
+    securityStore.writeSecurityLog(
+      logsDir,
+      `BANKSERVICE '${r.nombre}' por '${session.username}': ` +
+        (r.error ? `error: ${r.error}` : r.yaCargado ? 'archivo ya cargado' : `${r.insertadas} insertadas, ${r.actualizadas} actualizadas, ${r.sinCambios} sin cambios, ${r.rechazadas} rechazadas, ${r.conflictos.length} conflictos`)
+    );
+  }
+  writeJsonResponse(res, 200, { resultados });
+}
+
+// GET /api/transf-ca-cc/cargas[?id=N]: historial de cargas, o rechazos y conflictos de una.
+async function handleTransfCaCcCargasGet(parsedUrl, res) {
+  const id = parsedUrl.searchParams.get('id');
+  if (id) {
+    const detalle = await transfCaCc.detalleCarga(rootDir, Number(id));
+    writeJsonResponse(res, detalle ? 200 : 404, detalle || { error: 'No existe esa carga.' });
+    return;
+  }
+  writeJsonResponse(res, 200, { cargas: await transfCaCc.historialCargas(rootDir), ultimaCarga: await transfCaCc.ultimaCarga(rootDir) });
+}
+
+// GET /api/transf-ca-cc/datos?desde=aaaa-mm-dd&hasta=aaaa-mm-dd (hasta exclusiva):
+// ejecuta las dos consultas de IBS, lee BankService de la base y devuelve todo
+// clasificado para el dashboard.
+async function handleTransfCaCcDatosGet(parsedUrl, res, session) {
+  const hoy = formatDateOnly(new Date());
+  const desde = parsedUrl.searchParams.get('desde') || qnetBankserviceStore.inicioDeMes(hoy, -1);
+  const hasta = parsedUrl.searchParams.get('hasta') || transfCaCc.sumarDias(hoy, 1);
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(desde) || !/^\d{4}-\d{2}-\d{2}$/.test(hasta) || desde >= hasta) {
+    writeJsonResponse(res, 400, { error: 'Rango inválido: desde y hasta (exclusiva) en formato aaaa-mm-dd, con desde anterior a hasta.' });
+    return;
+  }
+  const parametria = await parametriaStore.getParametria(rootDir);
+  try {
+    const datos = await transfCaCc.obtenerDatos({
+      rootDir,
+      querySybase: (sql) => sybaseClient.querySybase(parametria.sybase, sql),
+      desde,
+      hasta,
+      ahora: formatLocal(new Date()),
+    });
+    securityStore.writeSecurityLog(logsDir, `CONCILIACION CA->CC ${desde}..${hasta} consultada por '${session.username}': ${datos.movimientos.length} movimientos IBS, ${datos.pendientes.length} pendientes, ${datos.operaciones.length} operaciones BankService, ${datos.excepciones.length} excepciones`);
+    writeJsonResponse(res, 200, datos);
+  } catch (err) {
+    writeJsonResponse(res, 502, { error: `No se pudieron obtener los datos: ${err.message}` });
   }
 }
 
@@ -1947,6 +2015,9 @@ async function handleRequest(req, res) {
     if (method === 'GET' && pathname === '/api/dbn-consulta-dia') return void (await handleDbnConsultaDiaGet(parsedUrl, res, session));
     if (method === 'GET' && pathname === '/api/conciliacion') return void (await handleConciliacionGet(parsedUrl, res, session));
     if (method === 'POST' && pathname === '/api/conciliacion/ibs') return void (await handleConciliacionIbsPost(req, res, session));
+    if (method === 'POST' && pathname === '/api/transf-ca-cc/bankservice') return void (await handleTransfCaCcCargaPost(req, res, session));
+    if (method === 'GET' && pathname === '/api/transf-ca-cc/cargas') return void (await handleTransfCaCcCargasGet(parsedUrl, res));
+    if (method === 'GET' && pathname === '/api/transf-ca-cc/datos') return void (await handleTransfCaCcDatosGet(parsedUrl, res, session));
     if (method === 'POST' && pathname === '/api/qnet/bankservice') return void (await handleQnetBankservicePost(req, res, session));
     if (method === 'GET' && pathname === '/api/qnet/bankservice') return void (await handleQnetBankserviceResumenGet(res));
     if (method === 'POST' && pathname === '/api/qnet/ejecutar') return void (await handleQnetEjecutarPost(req, res, session));
