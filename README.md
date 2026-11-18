@@ -1457,8 +1457,16 @@ falta esté en los débitos pendientes y que todo cierre contra BankService.
 - Las reglas son configurables (`node/lib/qnet/config.js`, o un JSON con
   `--config`): códigos de movimiento, cuentas puente, umbral del centavo.
 
-**Desde la app:** menú **Conciliación Loop**. Se suben los archivos de BankService (uno
-por mes), se elige la **fecha** (un día) y **Conciliar** corre en segundo plano (dos
+**BankService en la base:** los movimientos se guardan en la tabla `qnet_bankservice`
+(MariaDB, ver `deploy/mariadb-schema.sql`; una fila por comprobante + moneda). Se cargan
+con **Cargar a la base** o subiendo los archivos al conciliar; un archivo más nuevo
+actualiza la fila, salvo que traiga `PENDING_EXECUTION` para algo ya `APPROVED`/`FAILED`.
+La conciliación de un día lee de la base los movimientos creados entre el mes anterior y
+el siguiente. Endpoints: `POST /api/qnet/bankservice` (cargar) y `GET /api/qnet/bankservice`
+(resumen).
+
+**Desde la app:** menú **Conciliación Loop**. Se cargan los archivos de BankService (o ya
+están en la base), se elige la **fecha** (un día) y **Conciliar** corre en segundo plano (dos
 consultas a Sybase; una conciliación a la vez) mostrando el avance. Al terminar se ve
 el dashboard (indicadores de partidas, desbalance y cruce, excepciones del día por
 tipo, débitos pendientes del día y de días anteriores, saldo por día y excepciones

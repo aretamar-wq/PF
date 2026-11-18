@@ -351,3 +351,31 @@ ALTER TABLE dbn_consulta ADD COLUMN IF NOT EXISTS realizado VARCHAR(1) NOT NULL 
 -- fechas de ejecución y por comprobante, sin recorrer toda la tabla.
 CREATE INDEX IF NOT EXISTS idx_dbn_consulta_ejecutado_en ON dbn_consulta (ejecutado_en);
 CREATE INDEX IF NOT EXISTS idx_dbn_consulta_comprobante ON dbn_consulta (id_comprobante);
+
+-- Conciliación Loop: movimientos de BankService (transferencias QNET). Se cargan
+-- los archivos Movimientos_BankService-mmaaaa.csv una vez (o se suben al conciliar)
+-- y la conciliación los lee de acá. Una fila por comprobante + moneda; un archivo
+-- más nuevo actualiza la fila, salvo que traiga PENDING_EXECUTION para algo que ya
+-- está APPROVED o FAILED.
+CREATE TABLE IF NOT EXISTS qnet_bankservice (
+  comprobante VARCHAR(50) NOT NULL,
+  moneda VARCHAR(10) NOT NULL,
+  creada DATETIME NOT NULL,
+  ejecutada DATETIME NULL,
+  estado VARCHAR(30) NOT NULL,
+  titular VARCHAR(255) NOT NULL DEFAULT '',
+  cuit_titular VARCHAR(20) NOT NULL DEFAULT '',
+  cbu_origen VARCHAR(30) NOT NULL DEFAULT '',
+  cbu_destino VARCHAR(30) NOT NULL DEFAULT '',
+  destinatario VARCHAR(255) NOT NULL DEFAULT '',
+  cuit_destinatario VARCHAR(20) NOT NULL DEFAULT '',
+  monto DECIMAL(18,2) NOT NULL,
+  codigo_qnet VARCHAR(100) NOT NULL DEFAULT '',
+  error VARCHAR(500) NOT NULL DEFAULT '',
+  archivo VARCHAR(255) NOT NULL DEFAULT '',
+  cargado_por VARCHAR(255) NOT NULL DEFAULT '',
+  cargado_en DATETIME NOT NULL,
+  PRIMARY KEY (comprobante, moneda),
+  KEY idx_qnet_bankservice_creada (creada),
+  KEY idx_qnet_bankservice_ejecutada (ejecutada)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;

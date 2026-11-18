@@ -3706,12 +3706,61 @@ async function loadQnetDashboard(id) {
   }
 }
 
-async function runQnet() {
+// Qué hay de BankService en la base (tabla qnet_bankservice).
+async function loadQnetBaseResumen() {
+  const el = document.getElementById('qnetBaseResumen');
+  try {
+    const res = await apiFetch('/api/qnet/bankservice');
+    const data = await res.json();
+    if (!res.ok) {
+      el.textContent = data.error || 'No se pudo leer BankService de la base.';
+      return;
+    }
+    el.textContent = data.total > 0
+      ? `BankService en la base: ${data.total.toLocaleString('es-AR')} movimientos, creados del ${fechaDMYCorta(data.desde)} al ${fechaDMYCorta(data.hasta)} (última carga ${data.ultimaCarga}).`
+      : 'Todavía no hay movimientos de BankService en la base: cargá el archivo del mes.';
+  } catch (err) {
+    el.textContent = 'Error de red leyendo BankService de la base: ' + err.message;
+  }
+}
+
+async function leerArchivosQnet() {
+  const archivos = [];
+  for (const file of document.getElementById('qnetFiles').files || []) archivos.push({ nombre: file.name, contenido: await readFileAsText(file) });
+  return archivos;
+}
+
+async function cargarBankserviceQnet() {
   const files = document.getElementById('qnetFiles').files;
   if (!files || files.length === 0) {
     alert('Elegí al menos un archivo de BankService (Movimientos_BankService-mmaaaa.csv).');
     return;
   }
+  const btn = document.getElementById('qnetCargarBtn');
+  btn.disabled = true;
+  setQnetProgreso('Cargando BankService en la base...');
+  try {
+    const res = await apiFetch('/api/qnet/bankservice', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ archivos: await leerArchivosQnet() }),
+    });
+    const data = await res.json();
+    if (!res.ok) {
+      setQnetProgreso(data.error || 'No se pudo cargar BankService.', true);
+      return;
+    }
+    setQnetProgreso(`BankService cargado: ${data.nuevas} nuevas, ${data.actualizadas} actualizadas` + (data.descartadas ? `, ${data.descartadas} filas descartadas por datos inválidos` : '') + '.');
+    document.getElementById('qnetFiles').value = '';
+    await loadQnetBaseResumen();
+  } catch (err) {
+    setQnetProgreso('Error: ' + err.message, true);
+  } finally {
+    btn.disabled = false;
+  }
+}
+
+async function runQnet() {
   const fecha = document.getElementById('qnetFecha').value;
   if (!fecha) {
     alert('Elegí la fecha (un día) a conciliar.');
@@ -3719,10 +3768,9 @@ async function runQnet() {
   }
   const runBtn = document.getElementById('qnetRunBtn');
   runBtn.disabled = true;
-  setQnetProgreso('Leyendo los archivos...');
+  setQnetProgreso('Iniciando...');
   try {
-    const archivos = [];
-    for (const file of files) archivos.push({ nombre: file.name, contenido: await readFileAsText(file) });
+    const archivos = await leerArchivosQnet();
     const res = await apiFetch('/api/qnet/ejecutar', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -3734,6 +3782,10 @@ async function runQnet() {
       return;
     }
     await pollQnet(data.jobId);
+    if (archivos.length > 0) {
+      document.getElementById('qnetFiles').value = '';
+      await loadQnetBaseResumen();
+    }
   } catch (err) {
     setQnetProgreso('Error: ' + err.message, true);
   } finally {
@@ -3885,6 +3937,7 @@ async function toggleQnetEvolucion() {
 async function openQnetSection() {
   if (!document.getElementById('qnetFecha').value) document.getElementById('qnetFecha').value = formatDateOnlyLocal(new Date());
   showMainSection('qnetSection');
+  loadQnetBaseResumen();
   const hay = await loadQnetCorridas();
   const select = document.getElementById('qnetCorridas');
   if (hay && !qnetCorridaActual) await loadQnetDashboard(select.value);
@@ -3893,6 +3946,7 @@ async function openQnetSection() {
 document.getElementById('qnetBtn').addEventListener('click', openQnetSection);
 document.getElementById('closeQnetBtn').addEventListener('click', () => showMainSection('flowDetail'));
 document.getElementById('qnetRunBtn').addEventListener('click', runQnet);
+document.getElementById('qnetCargarBtn').addEventListener('click', cargarBankserviceQnet);
 document.getElementById('qnetEvolucionBtn').addEventListener('click', toggleQnetEvolucion);
 document.getElementById('qnetAbrirBtn').addEventListener('click', () => {
   const id = document.getElementById('qnetCorridas').value;
