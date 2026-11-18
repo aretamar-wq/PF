@@ -48,12 +48,10 @@ const fecha = (v) => {
 };
 
 // Filas de la consulta de movimientos -> { movimientos, avisos }. La consulta no
-// filtra por sistcod: los créditos 25031 se toman de cualquier sistema y los débitos
-// 25030 solo de la cuenta del cliente (sistcod 5); el resto se ignora y se avisa.
+// filtra por sistcod: débitos 25030 y créditos 25031 se toman de cualquier sistema.
 function normalizarMovimientos(filas, config) {
   const movimientos = [];
   const avisos = [];
-  let otroSistema = 0;
   let invalidas = 0;
   for (const f of filas || []) {
     const sistcod = entero(f.sistcod);
@@ -62,7 +60,6 @@ function normalizarMovimientos(filas, config) {
     const signo = Number(txt(f.signo)) < 0 ? -1 : 1;
     const fechaMov = fecha(f.Fecha_Mov);
     if ((movcod !== config.movDebito && movcod !== config.movCredito) || accimp == null || !fechaMov || !entero(f.comnro)) { invalidas++; continue; }
-    if (movcod === config.movDebito && sistcod !== config.sistCliente) { otroSistema++; continue; }
     movimientos.push({
       usuario: entero(f.usrident),
       sistcod,
@@ -75,7 +72,6 @@ function normalizarMovimientos(filas, config) {
       importe: Math.abs(accimp),
     });
   }
-  if (otroSistema) avisos.push(`IBS: se ignoraron ${otroSistema} débito(s) 25030 con sistcod distinto de ${config.sistCliente}.`);
   if (invalidas) avisos.push(`IBS: se ignoraron ${invalidas} movimiento(s) con datos inválidos.`);
   return { movimientos, avisos };
 }
