@@ -29,7 +29,9 @@ function armar() {
     mov(99997, '16/11/2026', 25031, 0.01), // Activar Cuentas
     mov(200, '16/11/2026', 25030, 300), // débito de una FAILED
     mov(105, '16/11/2026', 25030, 999, { cuecod: 9999 }), // cuenta distinta e importe distinto
-    mov(1, '16/11/2026', 25030, 5, { sistcod: 3 }), // otro sistema: se ignora
+    mov(1, '16/11/2026', 25030, 5, { sistcod: 3 }), // débito de otro sistema: se ignora
+    mov(100, '15/11/2026', 25031, 1000, { sistcod: 3, cuecod: 11000492 }), // contrapartida en la CC: no es excepción
+    mov(98, '16/11/2026', 25031, 40, { sistcod: 3, cuecod: 11000492 }), // crédito en la CC sin operación
   ];
   const pendFilas = [
     pend(104, 700, { fecorigen: '16/11/2026 0:00:00.000' }),
@@ -91,6 +93,9 @@ test('excepciones', () => {
   assert.deepStrictEqual(tiposDe(r, 99998), [TIPOS.CREDITO_RELEVANTE]);
   assert.match(r.excepciones.find((e) => e.comprobante === '99998').detalle, /sin operación en BankService/);
   assert.deepStrictEqual(tiposDe(r, 99997), []); // Activar Cuentas
+  assert.deepStrictEqual(tiposDe(r, 100), []); // crédito contrapartida de sistcod 3
+  assert.deepStrictEqual(tiposDe(r, 98), [TIPOS.CREDITO_RELEVANTE]);
+  assert.match(r.excepciones.find((e) => e.comprobante === '98').detalle, /sistcod 3/);
   assert.deepStrictEqual(tiposDe(r, 104), [TIPOS.PEND_IMPORTE]);
   assert.deepStrictEqual(tiposDe(r, 105), [TIPOS.CUENTA, TIPOS.IMPORTE].sort());
   assert.deepStrictEqual(tiposDe(r, 101), [TIPOS.PEND_DEBITADO]);
@@ -114,7 +119,7 @@ test('indicadores: control, Activar Cuentas y FAILED en IBS', () => {
   assert.strictEqual(ind.activar.creditos[0], 1);
   assert.strictEqual(ind.activar.debitos[0], 1); // el de 103 (con operación)
   assert.strictEqual(ind.activar.sinOperacion, 1);
-  assert.strictEqual(ind.ibs.creditos[0], 1); // 99998 (el de 1 centavo no cuenta)
+  assert.strictEqual(ind.ibs.creditos[0], 3); // 99998 y los dos de sistcod 3 (el de 1 centavo no cuenta)
   assert.strictEqual(ind.ibs.manuales[0], 1);
   assert.strictEqual(ind.ibs.importeManuales[0], 10000000);
   assert.strictEqual(ind.bs.importePendiente[0], 70000 + 80000);
