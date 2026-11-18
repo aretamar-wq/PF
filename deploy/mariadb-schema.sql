@@ -352,30 +352,66 @@ ALTER TABLE dbn_consulta ADD COLUMN IF NOT EXISTS realizado VARCHAR(1) NOT NULL 
 CREATE INDEX IF NOT EXISTS idx_dbn_consulta_ejecutado_en ON dbn_consulta (ejecutado_en);
 CREATE INDEX IF NOT EXISTS idx_dbn_consulta_comprobante ON dbn_consulta (id_comprobante);
 
--- Conciliación Loop: movimientos de BankService (transferencias QNET). Se cargan
--- los archivos Movimientos_BankService-mmaaaa.csv una vez (o se suben al conciliar)
--- y la conciliación los lee de acá. Una fila por comprobante + moneda; un archivo
--- más nuevo actualiza la fila, salvo que traiga PENDING_EXECUTION para algo que ya
--- está APPROVED o FAILED.
-CREATE TABLE IF NOT EXISTS qnet_bankservice (
-  comprobante VARCHAR(50) NOT NULL,
-  moneda VARCHAR(10) NOT NULL,
-  creada DATETIME NOT NULL,
-  ejecutada DATETIME NULL,
-  estado VARCHAR(30) NOT NULL,
-  titular VARCHAR(255) NOT NULL DEFAULT '',
-  cuit_titular VARCHAR(20) NOT NULL DEFAULT '',
-  cbu_origen VARCHAR(30) NOT NULL DEFAULT '',
-  cbu_destino VARCHAR(30) NOT NULL DEFAULT '',
-  destinatario VARCHAR(255) NOT NULL DEFAULT '',
-  cuit_destinatario VARCHAR(20) NOT NULL DEFAULT '',
-  monto DECIMAL(18,2) NOT NULL,
-  codigo_qnet VARCHAR(100) NOT NULL DEFAULT '',
-  error VARCHAR(500) NOT NULL DEFAULT '',
-  archivo VARCHAR(255) NOT NULL DEFAULT '',
+-- BankService (transferencias QNET), para la "Conciliación Transferencias CA -> CC"
+-- y la Conciliación Loop. Se carga desde el CSV (Movimientos_BankService-mmaaaa.csv
+-- o de cualquier rango) y la conciliación lo lee siempre de acá. Minimización de
+-- datos: solo lo que usa la conciliación, sin nombres, CUIT ni CBU.
+CREATE TABLE IF NOT EXISTS bankservice_cargas (
+  id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
+  nombre VARCHAR(255) NOT NULL,
+  hash CHAR(64) NOT NULL,
+  filas_leidas INT NOT NULL DEFAULT 0,
+  insertadas INT NOT NULL DEFAULT 0,
+  actualizadas INT NOT NULL DEFAULT 0,
+  sin_cambios INT NOT NULL DEFAULT 0,
+  rechazadas INT NOT NULL DEFAULT 0,
+  conflictos INT NOT NULL DEFAULT 0,
+  fecha_min DATE NULL,
+  fecha_max DATE NULL,
+  rechazos_json LONGTEXT NULL,
   cargado_por VARCHAR(255) NOT NULL DEFAULT '',
   cargado_en DATETIME NOT NULL,
-  PRIMARY KEY (comprobante, moneda),
-  KEY idx_qnet_bankservice_creada (creada),
-  KEY idx_qnet_bankservice_ejecutada (ejecutada)
+  PRIMARY KEY (id),
+  UNIQUE KEY uq_bankservice_cargas_hash (hash)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+CREATE TABLE IF NOT EXISTS bankservice_movimientos (
+  comprobante VARCHAR(30) NOT NULL,
+  moncod VARCHAR(2) NOT NULL,
+  cuecod VARCHAR(20) NOT NULL,
+  monto DECIMAL(18,2) NOT NULL,
+  estado VARCHAR(20) NOT NULL,
+  creada DATETIME NOT NULL,
+  ejecutada DATETIME NULL,
+  fecha_operacion DATE NOT NULL,
+  error VARCHAR(500) NOT NULL DEFAULT '',
+  carga_id BIGINT UNSIGNED NOT NULL,
+  cargado_en DATETIME NOT NULL,
+  PRIMARY KEY (comprobante),
+  KEY idx_bankservice_mov_fecha (fecha_operacion),
+  KEY idx_bankservice_mov_ejecutada (ejecutada),
+  CONSTRAINT fk_bankservice_mov_carga FOREIGN KEY (carga_id) REFERENCES bankservice_cargas (id)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- Cada cambio de estado (incluido el alta) de una operación de BankService.
+CREATE TABLE IF NOT EXISTS bankservice_auditoria (
+  id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
+  comprobante VARCHAR(30) NOT NULL,
+  estado_anterior VARCHAR(20) NULL,
+  estado_nuevo VARCHAR(20) NOT NULL,
+  carga_id BIGINT UNSIGNED NOT NULL,
+  fecha DATETIME NOT NULL,
+  PRIMARY KEY (id),
+  KEY idx_bankservice_aud_comprobante (comprobante),
+  CONSTRAINT fk_bankservice_aud_carga FOREIGN KEY (carga_id) REFERENCES bankservice_cargas (id)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- Foto diaria de los débitos pendientes de IBS (la consulta devuelve solo el estado
+-- del momento): una por día, la última del día pisa a la anterior.
+CREATE TABLE IF NOT EXISTS ibs_pendientes_fotos (
+  fecha DATE NOT NULL,
+  tomada_en DATETIME NOT NULL,
+  filas INT NOT NULL DEFAULT 0,
+  contenido LONGTEXT NOT NULL,
+  PRIMARY KEY (fecha)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;

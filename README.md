@@ -1422,6 +1422,51 @@ operaciones duplicadas"), pero no las filas que fallaron por otra cosa
 cortada antes de consultar su estado queda con `realizado` = `SI` y
 `errorConsulta` = `Consulta de estado pendiente`.
 
+### Conciliación Transferencias CA -> CC (QNET entre IBS/Loop, pendientes y BankService)
+
+Menú **Conciliación Transferencias CA -> CC**. Concilia las transferencias QNET de un
+período (varios días) entre los movimientos de IBS (25030/25031, solo `sistcod` 5), los
+débitos pendientes y BankService.
+
+**Arquitectura.** El dashboard no se conecta a IBS: `GET /api/transf-ca-cc/datos?desde=&hasta=`
+(hasta exclusiva) ejecuta las dos consultas (`node/lib/transfCaCc/ibs.js`), lee
+BankService **de la base** (nunca del archivo), aplica las reglas
+(`node/lib/transfCaCc/conciliar.js`) y devuelve todo clasificado; el navegador filtra y
+suma (`wwwroot/transf-ca-cc-calculo.js`) y dibuja (`wwwroot/transf-ca-cc.js`). Cada
+consulta guarda además la **foto diaria de pendientes** (`ibs_pendientes_fotos`), porque
+la consulta de pendientes solo devuelve el estado del momento.
+
+**Carga de BankService** (`POST /api/transf-ca-cc/bankservice`, historial en
+`GET /api/transf-ca-cc/cargas`): valida el encabezado; UTF-8, CRLF/LF, comillas y "—";
+rechaza fila por fila con motivo (estado, moneda, monto, fechas, CBU de 22 dígitos con
+los dígitos 9-10 de la moneda); SHA-256 del archivo ("archivo ya cargado"); una
+transacción por archivo; UPSERT por comprobante solo si cambió; un estado final nunca
+vuelve atrás (conflicto informado); auditoría de cada cambio de estado
+(`bankservice_auditoria`) y registro de cada carga (`bankservice_cargas`). Solo se guarda
+comprobante, moneda, cuenta, monto, estado, fechas y error (sin nombres, CUIT ni CBU).
+
+**Reglas** (configurables en `node/lib/transfCaCc/config.js`, incluidos los usuarios de
+proceso 123123123 y 36077255): APPROVED ejecutada en IBS (valida importe, moneda y
+cuenta), con débito pendiente (del último día o anterior; importe distinto es
+excepción), sin registro (excepción si su comprobante es menor al mayor comprobante de
+IBS o su fecha es anterior al último día de IBS) o pendiente de contabilizar; más las
+excepciones de más de un débito, débito sin operación, débito de FAILED/sin ejecutar,
+pendiente ya debitado, pendiente sin operación APPROVED, crédito 25031 relevante, débito
+manual y transfer sin ejecutar. Los movimientos de 1 centavo sin operación en
+BankService (Activar Cuentas) se informan aparte y no cuentan como transferencias.
+
+**Sin servidor** (ejemplo de cómo se alimenta el dashboard):
+
+```bash
+node scripts/transf-ca-cc.js --ibs movimientos.csv --pendientes pendientes.csv \
+  --bankservice Movimientos_BankService-102026.csv --bankservice Movimientos_BankService-112026.csv \
+  --salida datos.json
+```
+
+Los CSV de IBS llevan exactamente las columnas de cada consulta; imprime el control
+(APPROVED = ejecutadas + pendientes + sin registro + por contabilizar), las excepciones
+por tipo y el saldo de pendientes por día, y deja el JSON que consume el dashboard.
+
 ### Conciliación Loop (transferencias QNET contra Loop, débitos pendientes y BankService)
 
 Verifica cada día que cada transferencia QNET esté bien contabilizada en Loop
@@ -1457,13 +1502,9 @@ falta esté en los débitos pendientes y que todo cierre contra BankService.
 - Las reglas son configurables (`node/lib/qnet/config.js`, o un JSON con
   `--config`): códigos de movimiento, cuentas puente, umbral del centavo.
 
-**BankService en la base:** los movimientos se guardan en la tabla `qnet_bankservice`
-(MariaDB, ver `deploy/mariadb-schema.sql`; una fila por comprobante + moneda). Se cargan
-con **Cargar a la base** o subiendo los archivos al conciliar; un archivo más nuevo
-actualiza la fila, salvo que traiga `PENDING_EXECUTION` para algo ya `APPROVED`/`FAILED`.
-La conciliación de un día lee de la base los movimientos creados entre el mes anterior y
-el siguiente. Endpoints: `POST /api/qnet/bankservice` (cargar) y `GET /api/qnet/bankservice`
-(resumen).
+**BankService en la base:** se lee de `bankservice_movimientos` (la misma tabla de la
+Conciliación Transferencias CA -> CC, ver abajo). "Cargar a la base" o subir archivos al
+conciliar usa esa misma carga.
 
 **Desde la app:** menú **Conciliación Loop**. Se cargan los archivos de BankService (o ya
 están en la base), se elige la **fecha** (un día) y **Conciliar** corre en segundo plano (dos
