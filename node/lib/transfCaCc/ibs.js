@@ -22,7 +22,7 @@ function consultaMovimientos(desde, hasta, config) {
 from tgl_movimientos a, tgl_movimientos_aper b
 where a.fecmov >= '${aaaammdd(desde)}' and a.fecmov < '${aaaammdd(hasta)}' and a.concod = ' '
   and a.fecreal = b.fecreal and a.tercod = b.tercod and b.funcod = 1
-  and a.movcod in (${config.movDebito}, ${config.movCredito}) and a.sistcod = ${config.sistCliente}`;
+  and a.movcod in (${config.movDebito}, ${config.movCredito})`;
 }
 
 function consultaPendientes(config) {
@@ -47,8 +47,9 @@ const fecha = (v) => {
   return f ? f.fecha : '';
 };
 
-// Filas de la consulta de movimientos -> { movimientos, avisos }. Ignora (y avisa)
-// lo que no es de la cuenta del cliente (sistcod 5) o no es 25030/25031.
+// Filas de la consulta de movimientos -> { movimientos, avisos }. La consulta no
+// filtra por sistcod: los créditos 25031 se toman de cualquier sistema y los débitos
+// 25030 solo de la cuenta del cliente (sistcod 5); el resto se ignora y se avisa.
 function normalizarMovimientos(filas, config) {
   const movimientos = [];
   const avisos = [];
@@ -57,13 +58,14 @@ function normalizarMovimientos(filas, config) {
   for (const f of filas || []) {
     const sistcod = entero(f.sistcod);
     const movcod = entero(f.movcod);
-    if (sistcod !== config.sistCliente) { otroSistema++; continue; }
     const accimp = centavos(txt(f.accimp));
     const signo = Number(txt(f.signo)) < 0 ? -1 : 1;
     const fechaMov = fecha(f.Fecha_Mov);
     if ((movcod !== config.movDebito && movcod !== config.movCredito) || accimp == null || !fechaMov || !entero(f.comnro)) { invalidas++; continue; }
+    if (movcod === config.movDebito && sistcod !== config.sistCliente) { otroSistema++; continue; }
     movimientos.push({
       usuario: entero(f.usrident),
+      sistcod,
       moncod: entero(f.moncod),
       cuecod: entero(f.cuecod),
       fecha: fechaMov,
@@ -73,7 +75,7 @@ function normalizarMovimientos(filas, config) {
       importe: Math.abs(accimp),
     });
   }
-  if (otroSistema) avisos.push(`IBS: se ignoraron ${otroSistema} movimiento(s) con sistcod distinto de ${config.sistCliente}.`);
+  if (otroSistema) avisos.push(`IBS: se ignoraron ${otroSistema} débito(s) 25030 con sistcod distinto de ${config.sistCliente}.`);
   if (invalidas) avisos.push(`IBS: se ignoraron ${invalidas} movimiento(s) con datos inválidos.`);
   return { movimientos, avisos };
 }
