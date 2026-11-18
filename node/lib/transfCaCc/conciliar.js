@@ -124,8 +124,11 @@ function conciliar({ movimientos, pendientes, operaciones, config }) {
     if (m.activarCuentas) continue;
     const o = ops.get(m.comprobante);
     const base = { comprobante: m.comprobante, cuenta: m.cuecod, moneda: etiqueta(m.moncod), fecha: m.fecha, usuario: m.usuario, importe: m.importe, estadoBs: o ? o.estado : '' };
-    if (m.movcod === config.movCredito && !m.centavo) {
-      exc(TIPOS.CREDITO_RELEVANTE, { ...base, detalle: `Crédito 25031 de ${dinero(m.moncod, m.importe)}${o ? '' : ' sin operación en BankService'}: a revisar.` });
+    // Un crédito 25031 que es la contrapartida de una operación APPROVED (mismo
+    // comprobante, moneda e importe) es normal; cualquier otro mayor a 1 centavo se revisa.
+    const contrapartida = o && o.estado === 'APPROVED' && o.moncod === m.moncod && o.monto === m.importe;
+    if (m.movcod === config.movCredito && !m.centavo && !contrapartida) {
+      exc(TIPOS.CREDITO_RELEVANTE, { ...base, detalle: `Crédito 25031 de ${dinero(m.moncod, m.importe)} (sistcod ${m.sistcod || '?'})${o ? '' : ' sin operación en BankService'}: a revisar.` });
     }
     if (m.manual) {
       exc(TIPOS.DEBITO_MANUAL, { ...base, detalle: `Débito cargado por el usuario ${m.usuario} (no es de proceso). Informativo.` });
