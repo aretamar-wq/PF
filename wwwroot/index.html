@@ -239,15 +239,18 @@
         <p class="muted">
           Verifica que cada transferencia QNET esté en Loop con su débito al cliente y su crédito a la cuenta puente, que lo
           que falta esté en los débitos pendientes y que todo cierre contra BankService. Se concilia <strong>un día</strong>:
-          Loop y los débitos pendientes se consultan directo en Sybase; subí los archivos de BankService (uno por mes,
-          <code>Movimientos_BankService-mmaaaa.csv</code>; si son de dos meses seguidos se combinan y gana el más nuevo).
+          Loop y los débitos pendientes se consultan directo en Sybase; BankService se lee de la base: cargá los archivos
+          (<code>Movimientos_BankService-mmaaaa.csv</code>) con "Cargar a la base" o subilos al conciliar. Si un comprobante ya
+          estaba, se actualiza con lo más nuevo.
           Cada conciliación queda guardada: abrila de nuevo o mirá cómo se movió día a día.
         </p>
         <div class="actions conciliacion-actions">
           <label>Archivos de BankService <input type="file" id="qnetFiles" accept=".csv,text/csv" multiple /></label>
+          <button type="button" id="qnetCargarBtn">Cargar a la base</button>
           <label>Fecha a conciliar <input type="date" id="qnetFecha" /></label>
           <button type="button" id="qnetRunBtn">Conciliar</button>
         </div>
+        <div id="qnetBaseResumen" class="muted"></div>
         <div id="qnetProgreso" class="muted" style="margin: 8px 0;"></div>
         <div class="actions conciliacion-actions">
           <label>Histórico <select id="qnetCorridas"></select></label>
