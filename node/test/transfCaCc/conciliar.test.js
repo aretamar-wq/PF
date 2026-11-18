@@ -29,7 +29,7 @@ function armar() {
     mov(99997, '16/11/2026', 25031, 0.01), // Activar Cuentas
     mov(200, '16/11/2026', 25030, 300), // débito de una FAILED
     mov(105, '16/11/2026', 25030, 999, { cuecod: 9999 }), // cuenta distinta e importe distinto
-    mov(1, '16/11/2026', 25030, 5, { sistcod: 3 }), // débito de otro sistema: se ignora
+    mov(1, '16/11/2026', 25030, 5, { sistcod: 3 }), // débito de otro sistema: también entra
     mov(100, '15/11/2026', 25031, 1000, { sistcod: 3, cuecod: 11000492 }), // contrapartida en la CC: no es excepción
     mov(98, '16/11/2026', 25031, 40, { sistcod: 3, cuecod: 11000492 }), // crédito en la CC sin operación
   ];
@@ -56,9 +56,9 @@ function armar() {
 const tiposDe = (r, comprobante) => r.excepciones.filter((e) => e.comprobante === String(comprobante)).map((e) => e.tipo).sort();
 const clase = (r, c) => r.operaciones.find((o) => o.comprobante === String(c)).clase;
 
-test('normalización: ignora otro sistcod y avisa movcod de pendientes no aplicables', () => {
+test('normalización: toma todos los sistcod y avisa movcod de pendientes no aplicables', () => {
   const { m, p } = armar();
-  assert.ok(m.avisos.some((a) => /sistcod/.test(a)));
+  assert.ok(m.movimientos.some((x) => x.comprobante === '1' && x.sistcod === '3'));
   assert.ok(p.avisos.some((a) => /movcod 999/.test(a)));
   assert.strictEqual(p.pendientes.find((x) => x.comprobante === '106').fechaOrigen, '2026-10-09');
 });
