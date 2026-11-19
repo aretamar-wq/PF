@@ -202,12 +202,12 @@ test('operaciones de sábado, domingo o feriado se asignan al próximo día háb
   assert.match(e.detalle, /Operación del 14\/11\/2026 \(no hábil\)/);
 });
 
-test('Débitos 25030 incluye los de 1 centavo, también los sin operación (Activar Cuentas)', () => {
+test('Débitos 25030 no incluye los de 1 centavo (se ven en Activar Cuentas)', () => {
   const m = ibs.normalizarMovimientos([mov(10, '16/11/2026', 25030, 100), mov(11, '16/11/2026', 25030, 0.01), mov(12, '16/11/2026', 25031, 0.01)], config).movimientos;
   const r = conciliar({ movimientos: m, pendientes: [], operaciones: [op(10, '2026-11-16', 100)], config });
   const ind = calculo.indicadores({ ...r, config: { movDebito: '25030', movCredito: '25031' } }, '');
-  assert.strictEqual(ind.ibs.debitos[0], 2);
-  assert.strictEqual(ind.ibs.saldoDebitos[0], 10001);
+  assert.strictEqual(ind.ibs.debitos[0], 1);
+  assert.strictEqual(ind.ibs.saldoDebitos[0], 10000);
   assert.strictEqual(ind.ibs.creditos[0], 0); // los créditos siguen sin los de 1 centavo
   assert.strictEqual(ind.activar.debitos[0], 1);
 });
