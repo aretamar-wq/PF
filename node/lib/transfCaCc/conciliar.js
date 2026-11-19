@@ -23,6 +23,9 @@ const TIPOS = {
   CREDITO_RELEVANTE: 'Crédito 25031 de importe relevante',
   DEBITO_MANUAL: 'Débito manual',
   SIN_EJECUTAR: 'Transfer sin ejecutar',
+  DEBITO_PENDIENTE: 'Débito pendiente',
+  DEBITO_POR_CONTABILIZAR: 'Débito por contabilizar',
+  CREDITO_FALTANTE: 'Falta el crédito 25031',
 };
 
 const numero = (c) => Number(c) || 0;
@@ -68,6 +71,12 @@ function conciliar({ movimientos, pendientes, operaciones, config }) {
     if (!debitosPorComp.has(m.comprobante)) debitosPorComp.set(m.comprobante, []);
     debitosPorComp.get(m.comprobante).push(m);
   }
+  const creditosPorComp = new Map();
+  for (const m of movs) {
+    if (m.activarCuentas || m.movcod !== config.movCredito) continue;
+    if (!creditosPorComp.has(m.comprobante)) creditosPorComp.set(m.comprobante, []);
+    creditosPorComp.get(m.comprobante).push(m);
+  }
   const pendPorClave = new Map();
   for (const p of pendientes) {
     if (p.movcod !== config.movDebito) continue;
@@ -101,6 +110,10 @@ function conciliar({ movimientos, pendientes, operaciones, config }) {
         if (d.moncod !== o.moncod) exc(TIPOS.MONEDA, { ...base, fecha: d.fecha, usuario: d.usuario, detalle: `IBS debitó en ${etiqueta(d.moncod)} y BankService es ${etiqueta(o.moncod)}.` });
         if (d.importe !== o.monto) exc(TIPOS.IMPORTE, { ...base, fecha: d.fecha, usuario: d.usuario, detalle: `IBS debitó ${dinero(d.moncod, d.importe)} y BankService dice ${dinero(o.moncod, o.monto)}.` });
         if (d.cuecod !== o.cuecod) exc(TIPOS.CUENTA, { ...base, fecha: d.fecha, usuario: d.usuario, detalle: `IBS debitó la cuenta ${d.cuecod} y BankService es de la cuenta ${o.cuecod}.` });
+        // Debitada pero sin su crédito 25031 en IBS (ni en fechas posteriores).
+        if (!(creditosPorComp.get(o.comprobante) || []).some((c) => c.moncod === o.moncod)) {
+          exc(TIPOS.CREDITO_FALTANTE, { ...base, usuario: d.usuario, detalle: `IBS tiene el débito del ${d.fecha.split('-').reverse().join('/')} por ${dinero(d.moncod, d.importe)} y no tiene el crédito 25031 de la operación.` });
+        }
       } else {
         const pend = (pendPorClave.get(`${o.moncod}|${o.comprobante}`) || [])[0];
         if (pend) {
@@ -108,11 +121,13 @@ function conciliar({ movimientos, pendientes, operaciones, config }) {
           r.subclase = o.fecha === ultimoDiaIbs ? 'ultimoDia' : 'anterior';
           r.pendiente = pend.importe;
           if (pend.importe !== o.monto) exc(TIPOS.PEND_IMPORTE, { ...base, detalle: `El débito pendiente es de ${dinero(o.moncod, pend.importe)} y la operación de ${dinero(o.moncod, o.monto)}.` });
+          exc(TIPOS.DEBITO_PENDIENTE, { ...base, cuenta: pend.cuecod || o.cuecod, importe: pend.importe, detalle: `Falta el débito en IBS: está en débitos pendientes desde el ${(pend.fechaOrigen || '').split('-').reverse().join('/') || 'sin fecha'} por ${dinero(o.moncod, pend.importe)} (${pend.motivo || 'sin motivo'}).` });
         } else if (numero(o.comprobante) < mayorComprobante || (ultimoDiaIbs && o.fecha < ultimoDiaIbs)) {
           r.clase = 'sinRegistro';
-          exc(TIPOS.SIN_REGISTRO, { ...base, detalle: `Sin débito en IBS ni débito pendiente (mayor comprobante de IBS: ${mayorComprobante}; último día de IBS: ${ultimoDiaIbs}).` });
+          exc(TIPOS.SIN_REGISTRO, { ...base, detalle: `Falta el débito en IBS: sin débito ni débito pendiente (mayor comprobante de IBS: ${mayorComprobante}; último día de IBS: ${ultimoDiaIbs}).` });
         } else {
           r.clase = 'porContabilizar';
+          exc(TIPOS.DEBITO_POR_CONTABILIZAR, { ...base, detalle: `Falta el débito en IBS: el comprobante es posterior al mayor de IBS (${mayorComprobante}), todavía puede contabilizarse.` });
         }
       }
     } else {
