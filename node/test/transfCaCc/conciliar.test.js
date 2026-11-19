@@ -228,7 +228,7 @@ test('1 centavo con operación en BankService suma en Débitos / Créditos de Tr
   assert.strictEqual(r.operaciones[0].clase, 'ejecutada');
 });
 
-test('BankService manda: débitos/créditos del día de operaciones anteriores (ex pendientes) se informan aparte', () => {
+test('BankService manda: un débito del día de una operación anterior (ex pendiente) no suma en el día ni es excepción', () => {
   const m = ibs.normalizarMovimientos([
     mov(30, '16/11/2026', 25030, 100), mov(30, '16/11/2026', 25031, 100, { sistcod: 3 }), // operación del día
     mov(25, '16/11/2026', 25030, 70, { usr: '36077255' }), mov(25, '16/11/2026', 25031, 70, { sistcod: 3 }), // operación del 13/11 que estaba pendiente
@@ -237,6 +237,6 @@ test('BankService manda: débitos/créditos del día de operaciones anteriores (
   const r = conciliar({ movimientos: m, pendientes: [], operaciones: [op(30, '2026-11-16', 100), op(25, '2026-11-13', 70)], config });
   const ind = calculo.indicadores({ ...r, config: { movDebito: '25030', movCredito: '25031' } }, '2026-11-16');
   assert.deepStrictEqual([ind.ibs.debitos[0], ind.ibs.creditos[0]], [1, 1]); // solo la operación del día
-  assert.deepStrictEqual([ind.ibs.debitosAnteriores[0], ind.ibs.importeDebitosAnteriores[0], ind.ibs.creditosAnteriores[0]], [1, 7000, 1]);
   assert.ok(r.excepciones.some((e) => e.comprobante === '77' && e.tipo === 'Débito sin operación en BankService'));
+  assert.ok(!r.excepciones.some((e) => e.comprobante === '25' && e.tipo !== 'Débito manual'));
 });
