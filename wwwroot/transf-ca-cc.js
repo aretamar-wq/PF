@@ -145,9 +145,10 @@
     $('tccResumen').textContent = `${fmtNum(total(bs.pendientes))} operación(es) con débito pendiente (${fmtNum(total(bs.pendientesUltimoDia))} del último día y ${fmtNum(total(bs.pendientesAnteriores))} anteriores), ` +
       `${fmtNum(total(bs.sinRegistro))} sin registro en IBS y ${fmtNum(total(bs.porContabilizar))} pendientes de contabilizar. Importe pendiente: ${dinero('0', bs.importePendiente[0])} y ${dinero('2', bs.importePendiente[2])}.`;
 
+    const sinReg = total(bs.sinRegistro);
     $('tccIbs').innerHTML =
       `<div class="tcc-grilla">` +
-      tile('Comprobantes en BankService (sin los de 1 centavo)', fmtNum(total(ibs.comprobantes)), `${porMoneda(ibs.comprobantes)} · APPROVED ${fmtNum(ibs.comprobantesEstado.APPROVED)} · FAILED ${fmtNum(ibs.comprobantesEstado.FAILED)} · sin ejecutar ${fmtNum(ibs.comprobantesEstado.PENDING_EXECUTION)}`) +
+      tile('Operaciones en BankService (APPROVED)', fmtNum(total(bs.aprobadas)), porMoneda(bs.aprobadas)) +
       tile('Débitos 25030 (sin los de 1 centavo)', fmtNum(total(ibs.debitos)), porMoneda(ibs.debitos)) +
       tile('Créditos 25031 (sin los de 1 centavo)', fmtNum(total(ibs.creditos)), porMoneda(ibs.creditos)) +
       tile('Débitos pendientes', fmtNum(total(ibs.pendientes)), porMoneda(ibs.pendientes)) +
@@ -162,6 +163,9 @@
       `</div><div class="tcc-grilla" style="margin-top: 10px;">` +
       tile('Débitos manuales en pesos', fmtNum(ibs.manuales[0]), dinero('0', ibs.importeManuales[0])) +
       tile('Débitos manuales en USD', fmtNum(ibs.manuales[2]), dinero('2', ibs.importeManuales[2])) +
+      `</div><div class="tcc-grilla" style="margin-top: 10px;">` +
+      tile('APPROVED que no figuran en IBS ni en pendientes', fmtNum(sinReg), `${porMoneda(bs.sinRegistro)}${total(bs.porContabilizar) ? ` · ${fmtNum(total(bs.porContabilizar))} pendientes de contabilizar` : ''}`, sinReg === 0 ? 'ok' : 'err') +
+      tile('Operaciones FAILED en BS que figuran en IBS', fmtNum(bs.failedEnIbs), `de ${fmtNum(bs.failed)} operaciones FAILED en BankService`, bs.failedEnIbs === 0 ? 'ok' : 'err') +
       `</div>` +
       (total(ibs.posteriores) ? `<p class="tcc-suave">Incluye ${fmtNum(total(ibs.posteriores))} movimiento(s) imputados en fechas posteriores al período (${porMoneda(ibs.posteriores)}), sumados en el día de su operación.</p>` : '');
 
@@ -171,19 +175,9 @@
       tile('Débitos de 1 centavo', fmtNum(total(activar.debitos)), porMoneda(activar.debitos)) +
       `</div><p class="tcc-suave">${fmtNum(activar.sinOperacion)} movimiento(s) de 1 centavo sin operación en BankService: se informan acá y no cuentan en los indicadores de transferencias.</p>`;
 
-    const sinReg = total(bs.sinRegistro);
-    $('tccBs').innerHTML = `<div class="tcc-linea">` +
-      tile('Operaciones en BankService (APPROVED)', fmtNum(total(bs.aprobadas)), porMoneda(bs.aprobadas)) +
-      tile('Operaciones en IBS', fmtNum(total(bs.ejecutadas)), porMoneda(bs.ejecutadas)) +
-      tile('Operaciones con débito pendiente', fmtNum(total(bs.pendientes)), porMoneda(bs.pendientes)) +
-      tile('APPROVED que no figuran en IBS ni en pendientes', fmtNum(sinReg), `${porMoneda(bs.sinRegistro)}${total(bs.porContabilizar) ? ` · ${fmtNum(total(bs.porContabilizar))} pendientes de contabilizar` : ''}`, sinReg === 0 ? 'ok' : 'err') +
-      tile('Operaciones FAILED en BS que figuran en IBS', fmtNum(bs.failedEnIbs), `de ${fmtNum(bs.failed)} operaciones FAILED en BankService`, bs.failedEnIbs === 0 ? 'ok' : 'err') +
-      `</div>` +
-      `<div class="tcc-control ${bs.control.diferencia === 0 ? 'ok' : 'err'}" title="${esc(`Diferencia: ${fmtNum(bs.control.diferencia)}`)}">Control: ${fmtNum(bs.control.aprobadas)} operaciones en BankService ${bs.control.diferencia === 0 ? '=' : '≠'} ${fmtNum(total(bs.ejecutadas))} ejecutadas + ${fmtNum(total(bs.pendientes))} con débito pendiente + ${fmtNum(sinReg)} sin registro + ${fmtNum(total(bs.porContabilizar))} pendientes de contabilizar (${fmtNum(bs.control.suma)}).</div>`;
-
     const sem = C.semaforos(ind);
     const etiquetas = { verde: 'Verde: todo OK', amarillo: 'Amarillo: débitos pendientes o a revisar', rojo: 'Rojo: hay diferencias' };
-    for (const [id, s] of [['tccSemIbs', sem.ibs], ['tccSemActivar', sem.activar], ['tccSemBs', sem.bs]]) {
+    for (const [id, s] of [['tccSemIbs', sem.transferencias], ['tccSemActivar', sem.activar]]) {
       $(id).className = `tcc-semaforo ${s.color}`;
       $(id).title = `${etiquetas[s.color]}\n${s.motivos.join('\n')}`;
       $(id).setAttribute('aria-label', `${etiquetas[s.color]}. ${s.motivos.join('. ')}`);

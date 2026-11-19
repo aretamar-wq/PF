@@ -154,7 +154,13 @@
     if (total(b.pendientes)) amarillosBs.push(`${total(b.pendientes)} operación(es) con débito pendiente`);
     if (total(b.porContabilizar)) amarillosBs.push(`${total(b.porContabilizar)} pendiente(s) de contabilizar`);
     const bs = armar(rojosBs, amarillosBs);
-    return { ibs, activar, bs };
+    // Semáforo de "IBS - Transferencias Loop", que ahora incluye lo de BankService vs IBS:
+    // el peor de los dos, con los motivos de ambos (sin repetir).
+    const orden = { verde: 0, amarillo: 1, rojo: 2 };
+    const peor = orden[ibs.color] >= orden[bs.color] ? ibs.color : bs.color;
+    const motivos = [...new Set([...ibs.motivos, ...bs.motivos].filter((m) => m !== 'Todo OK'))];
+    const transferencias = { color: peor, motivos: motivos.length ? motivos : ['Todo OK'] };
+    return { ibs, activar, bs, transferencias };
   }
 
   const api = { indicadores, porDia, semaforos };
