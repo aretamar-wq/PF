@@ -105,6 +105,38 @@ async function obtenerDatos({ rootDir, querySybase, desde, hasta, ahora }) {
   }
   const operaciones = bankservice.operacionesDesdeFilas(bsFilas).filter((o) => (o.fecha >= desde && o.fecha < hasta) || conMovimiento.has(o.comprobante));
   if (operaciones.length === 0) avisos.push('No hay operaciones de BankService en la base para ese período: cargá el archivo.');
+
+  // Débitos imputados en fechas posteriores al período: para las operaciones sin
+  // débito ni pendiente en lo traído, se buscan sus movimientos desde la fecha de la
+  // operación hasta mañana (por moneda, en lotes de comprobantes).
+  const manana = sumarDias(ahora.slice(0, 10), 1);
+  if (hasta < manana) {
+    const conDebito = new Set(mov.movimientos.filter((m) => m.movcod === config.movDebito).map((m) => `${m.moncod}|${m.comprobante}`));
+    const conPendiente = new Set(pend.pendientes.map((p) => `${p.moncod}|${p.comprobante}`));
+    const sinDebito = operaciones.filter((o) => !conDebito.has(`${o.moncod}|${o.comprobante}`) && !conPendiente.has(`${o.moncod}|${o.comprobante}`) && /^\d+$/.test(o.comprobante));
+    const yaTraidos = new Set(mov.movimientos.map((m) => `${m.moncod}|${m.comprobante}|${m.movcod}|${m.fecha}|${m.importe}|${m.cuecod}`));
+    let encontrados = 0;
+    try {
+      for (const moncod of [...new Set(sinDebito.map((o) => o.moncod))]) {
+        const ops = sinDebito.filter((o) => o.moncod === moncod);
+        const desdeOp = ops.reduce((min, o) => (o.fecha && o.fecha < min ? o.fecha : min), hasta);
+        for (let i = 0; i < ops.length; i += 200) {
+          const lote = ops.slice(i, i + 200).map((o) => o.comprobante);
+          const filas = await querySybase(ibs.consultaPosteriores(desdeOp, manana, moncod, lote, config));
+          for (const m of ibs.normalizarMovimientos(filas, config).movimientos) {
+            const clave = `${m.moncod}|${m.comprobante}|${m.movcod}|${m.fecha}|${m.importe}|${m.cuecod}`;
+            if (yaTraidos.has(clave)) continue;
+            yaTraidos.add(clave);
+            mov.movimientos.push({ ...m, posterior: true });
+            encontrados++;
+          }
+        }
+      }
+      if (sinDebito.length > 0) avisos.push(`IBS: se buscaron movimientos posteriores al período para ${sinDebito.length} operación(es) sin débito ni pendiente; se encontraron ${encontrados}.`);
+    } catch (err) {
+      avisos.push(`No se pudieron buscar los débitos imputados en fechas posteriores: ${err.message}`);
+    }
+  }
   const r = conciliar({ movimientos: mov.movimientos, pendientes: pend.pendientes, operaciones, config });
   return {
     rango: { desde, hasta },
