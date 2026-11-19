@@ -117,7 +117,41 @@
     return { grafico: filas, saldo };
   }
 
-  const api = { indicadores, porDia };
+  // Semáforo de cada sección (sobre el filtro de día activo): rojo si hay diferencias,
+  // amarillo si hay débitos pendientes (o algo a revisar que no es diferencia), verde
+  // si está todo bien. Cada uno trae los motivos para el tooltip.
+  const EXC_IBS = ['Más de un débito', 'Débito sin operación en BankService', 'Débito de operación FAILED / sin ejecutar', 'Crédito 25031 de importe relevante', 'Pendiente sobre comprobante ya debitado', 'Pendiente sin operación APPROVED'];
+  const EXC_BS = ['Importe distinto', 'Moneda distinta', 'Cuenta distinta', 'Pendiente con importe distinto', 'APPROVED sin registro en IBS', 'Débito de operación FAILED / sin ejecutar'];
+
+  function semaforos(ind) {
+    const contar = (tipos) => {
+      const n = {};
+      for (const e of ind.excepciones) if (tipos.includes(e.tipo)) n[e.tipo] = (n[e.tipo] || 0) + 1;
+      return Object.entries(n).map(([tipo, c]) => `${c} ${tipo}`);
+    };
+    const armar = (rojos, amarillos) => ({
+      color: rojos.length ? 'rojo' : amarillos.length ? 'amarillo' : 'verde',
+      motivos: rojos.length || amarillos.length ? [...rojos, ...amarillos] : ['Todo OK'],
+    });
+
+    const pendIbs = total(ind.ibs.pendientes);
+    const ibs = armar(contar(EXC_IBS), pendIbs ? [`${pendIbs} débito(s) pendiente(s)`] : []);
+
+    const sinOp = ind.activar.sinOperacion;
+    const activar = armar([], sinOp ? [`${sinOp} movimiento(s) de 1 centavo sin operación en BankService (a revisar)`] : []);
+
+    const b = ind.bs;
+    const rojosBs = contar(EXC_BS);
+    if (b.failedEnIbs && !rojosBs.some((m) => m.includes('FAILED'))) rojosBs.push(`${b.failedEnIbs} FAILED con débito en IBS`);
+    if (b.control.diferencia !== 0) rojosBs.push(`El control no cierra (diferencia ${b.control.diferencia})`);
+    const amarillosBs = [];
+    if (total(b.pendientes)) amarillosBs.push(`${total(b.pendientes)} operación(es) con débito pendiente`);
+    if (total(b.porContabilizar)) amarillosBs.push(`${total(b.porContabilizar)} pendiente(s) de contabilizar`);
+    const bs = armar(rojosBs, amarillosBs);
+    return { ibs, activar, bs };
+  }
+
+  const api = { indicadores, porDia, semaforos };
   if (typeof module !== 'undefined' && module.exports) module.exports = api;
   else raiz.TransfCaCcCalculo = api;
 })(typeof window !== 'undefined' ? window : globalThis);
