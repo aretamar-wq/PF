@@ -433,7 +433,9 @@
   // --- Eventos ----------------------------------------------------------------------
   function abrir() {
     const hoy = formatDateOnlyLocal(new Date());
-    if (!$('tccFecha').value) $('tccFecha').value = hoy;
+    // Cada vez que se abre, la fecha a conciliar es el día hábil anterior a hoy
+    // (ajustarFechas la corre a un día hábil, también cuando llegan los feriados).
+    $('tccFecha').value = sumarDias(hoy, -1);
     if (!$('tccPerHasta').value) $('tccPerHasta').value = hoy;
     if (!$('tccPerDesde').value) $('tccPerDesde').value = sumarDias(hoy, -30);
     ajustarFechas();
