@@ -149,8 +149,8 @@
     $('tccIbs').innerHTML =
       `<div class="tcc-grilla">` +
       tile('Operaciones en BankService (APPROVED)', fmtNum(total(bs.aprobadas)), porMoneda(bs.aprobadas)) +
-      tile('Débitos 25030 (sin los de 1 centavo)', fmtNum(total(ibs.debitos)), porMoneda(ibs.debitos)) +
-      tile('Créditos 25031 (sin los de 1 centavo)', fmtNum(total(ibs.creditos)), porMoneda(ibs.creditos)) +
+      tile('Débitos 25030', fmtNum(total(ibs.debitos)), porMoneda(ibs.debitos)) +
+      tile('Créditos 25031', fmtNum(total(ibs.creditos)), porMoneda(ibs.creditos)) +
       tile('Débitos pendientes', fmtNum(total(ibs.pendientes)), porMoneda(ibs.pendientes)) +
       `</div><div class="tcc-grilla" style="margin-top: 10px;">` +
       tile('Débitos en pesos', dinero('0', ibs.saldoDebitos[0])) +
@@ -173,7 +173,7 @@
       tile('Transacciones de 1 centavo (comprobantes)', fmtNum(total(activar.comprobantes)), porMoneda(activar.comprobantes)) +
       tile('Créditos de 1 centavo', fmtNum(total(activar.creditos)), porMoneda(activar.creditos)) +
       tile('Débitos de 1 centavo', fmtNum(total(activar.debitos)), porMoneda(activar.debitos)) +
-      `</div><p class="tcc-suave">${fmtNum(activar.sinOperacion)} movimiento(s) de 1 centavo sin operación en BankService: se informan acá y no cuentan en los indicadores de transferencias.</p>`;
+      `</div><p class="tcc-suave">Movimientos de 1 centavo sin operación en BankService (no cuentan en Transferencias Loop). Los de 1 centavo que sí están en BankService se concilian con las transferencias.</p>`;
 
     const sem = C.semaforos(ind);
     const etiquetas = { verde: 'Verde: todo OK', amarillo: 'Amarillo: débitos pendientes o a revisar', rojo: 'Rojo: hay diferencias' };

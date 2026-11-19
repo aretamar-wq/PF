@@ -117,7 +117,7 @@ test('indicadores: control, Activar Cuentas y FAILED en IBS', () => {
   assert.strictEqual(ind.bs.failed, 2);
   assert.strictEqual(ind.bs.failedEnIbs, 1);
   assert.strictEqual(ind.activar.creditos[0], 1);
-  assert.strictEqual(ind.activar.debitos[0], 1); // el de 103 (con operación)
+  assert.strictEqual(ind.activar.debitos[0], 0); // el de 103 tiene operación: va con las transferencias
   assert.strictEqual(ind.activar.sinOperacion, 1);
   assert.strictEqual(ind.ibs.creditos[0], 3); // 99998 y los dos de sistcod 3 (el de 1 centavo no cuenta)
   assert.strictEqual(ind.ibs.manuales[0], 1);
@@ -202,7 +202,7 @@ test('operaciones de sábado, domingo o feriado se asignan al próximo día háb
   assert.match(e.detalle, /Operación del 14\/11\/2026 \(no hábil\)/);
 });
 
-test('Débitos 25030 no incluye los de 1 centavo (se ven en Activar Cuentas)', () => {
+test('1 centavo: con operación en BankService va con las transferencias; sin operación, a Activar Cuentas', () => {
   const m = ibs.normalizarMovimientos([mov(10, '16/11/2026', 25030, 100), mov(11, '16/11/2026', 25030, 0.01), mov(12, '16/11/2026', 25031, 0.01)], config).movimientos;
   const r = conciliar({ movimientos: m, pendientes: [], operaciones: [op(10, '2026-11-16', 100)], config });
   const ind = calculo.indicadores({ ...r, config: { movDebito: '25030', movCredito: '25031' } }, '');
@@ -217,4 +217,13 @@ test('Comprobantes: las operaciones de BankService del día sin las de 1 centavo
   const ind = calculo.indicadores({ ...r, config: { movDebito: '25030', movCredito: '25031' } }, '2026-11-16');
   assert.deepStrictEqual([ind.ibs.comprobantes[0], ind.ibs.comprobantes[2]], [2, 1]);
   assert.deepStrictEqual(ind.ibs.comprobantesEstado, { APPROVED: 2, FAILED: 1, PENDING_EXECUTION: 0 });
+});
+
+test('1 centavo con operación en BankService suma en Débitos / Créditos de Transferencias Loop', () => {
+  const m = ibs.normalizarMovimientos([mov(20, '16/11/2026', 25030, 0.01), mov(20, '16/11/2026', 25031, 0.01, { sistcod: 3 }), mov(21, '16/11/2026', 25031, 0.01)], config).movimientos;
+  const r = conciliar({ movimientos: m, pendientes: [], operaciones: [op(20, '2026-11-16', 0.01)], config });
+  const ind = calculo.indicadores({ ...r, config: { movDebito: '25030', movCredito: '25031' } }, '');
+  assert.deepStrictEqual([ind.ibs.debitos[0], ind.ibs.creditos[0], ind.ibs.saldoDebitos[0]], [1, 1, 1]);
+  assert.deepStrictEqual([ind.activar.debitos[0], ind.activar.creditos[0], ind.activar.comprobantes[0]], [0, 1, 1]);
+  assert.strictEqual(r.operaciones[0].clase, 'ejecutada');
 });
