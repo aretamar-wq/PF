@@ -96,7 +96,7 @@
     bs.control = { aprobadas: total(bs.aprobadas), suma, diferencia: total(bs.aprobadas) - suma };
 
     const excepciones = datos.excepciones.filter((e) => ok(e.fecha));
-    return { ibs, activar, bs, excepciones, total };
+    return { ibs, activar, bs, excepciones, total, config: datos.config };
   }
 
   // Gráfico y saldo de pendientes por día, en el período Desde - Hasta (fecha de
@@ -137,7 +137,9 @@
   function semaforos(ind) {
     const contar = (tipos) => {
       const n = {};
-      for (const e of ind.excepciones) if (tipos.includes(e.tipo)) n[e.tipo] = (n[e.tipo] || 0) + 1;
+      // Los tipos de otro par (25032/25033) se comparan como si fueran del par 25030/25031.
+      const generico = (tipo) => tipo.replace(/25032/g, '25030').replace(/25033/g, '25031');
+      for (const e of ind.excepciones) if (tipos.includes(generico(e.tipo))) n[e.tipo] = (n[e.tipo] || 0) + 1;
       return Object.entries(n).map(([tipo, c]) => `${c} ${tipo}`);
     };
     const armar = (rojos, amarillos) => ({
@@ -166,9 +168,9 @@
     // Además, el color de los indicadores de Débitos y Créditos (el más crítico gana).
     const col = coloresTransferencias(ind);
     const indicadores = [
-      ['Débitos 25030 (cantidad)', col.debitos], ['Créditos 25031 (cantidad)', col.creditos],
-      ['Débitos en pesos', col.saldoDebitos[0]], ['Créditos 25031 en pesos', col.saldoCreditos[0]],
-      ['Débitos en USD', col.saldoDebitos[2]], ['Créditos 25031 en USD', col.saldoCreditos[2]],
+      [`Débitos ${ind.config.movDebito} (cantidad)`, col.debitos], [`Créditos ${ind.config.movCredito} (cantidad)`, col.creditos],
+      ['Débitos en pesos', col.saldoDebitos[0]], [`Créditos ${ind.config.movCredito} en pesos`, col.saldoCreditos[0]],
+      ['Débitos en USD', col.saldoDebitos[2]], [`Créditos ${ind.config.movCredito} en USD`, col.saldoCreditos[2]],
     ];
     const rojosInd = indicadores.filter(([, c]) => c === 'err').map(([n]) => `${n} no coincide con BankService`);
     const amarillosInd = indicadores.filter(([, c]) => c === 'warn').map(([n]) => `${n}: la diferencia son débitos pendientes`);
