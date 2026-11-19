@@ -1283,6 +1283,13 @@ librerías externas (`node/lib/transfCaCc/pdf.js`).
 (calendario de Parametría) se asigna al próximo día hábil, que es cuando la imputa IBS;
 la excepción indica el día real. Los campos de fecha no aceptan días no hábiles.
 
+**Pares de movimientos:** además de 25030/25031 (Transferencias Loop) se concilian las
+transacciones 25032 (débito) / 25033 (crédito) en su propia sección, con los mismos
+indicadores, colores, semáforo y excepciones (con el par entre paréntesis). Cada operación
+de BankService va con el par que tiene su comprobante en IBS o en débitos pendientes; si no
+tiene ninguno, con 25030/25031. Los pares se configuran en `node/lib/transfCaCc/config.js`
+(`grupos`). La historia del gráfico guarda solo el par 25030/25031.
+
 **Carga de BankService** (`POST /api/transf-ca-cc/bankservice`, historial en
 `GET /api/transf-ca-cc/cargas`): valida el encabezado; UTF-8, CRLF/LF, comillas y "—";
 rechaza fila por fila con motivo (estado, moneda, monto, fechas, CBU de 22 dígitos con

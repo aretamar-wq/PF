@@ -156,32 +156,46 @@ function generarReporte({ datos, dia, usuario, ahora = new Date() }) {
     }
   }
 
-  const sinReg = total(bs.sinRegistro);
-  const col = calculo.coloresTransferencias(ind);
-  titulo('IBS - Transferencias Loop (25030 - 25031)', sem.transferencias);
-  grilla([
-    ['Operaciones en BankService (APPROVED)', fmtNum(total(bs.aprobadas)), porMoneda(bs.aprobadas)],
-    ['Débitos 25030', fmtNum(total(ibs.debitos)), porMoneda(ibs.debitos), col.debitos],
-    ['Créditos 25031', fmtNum(total(ibs.creditos)), porMoneda(ibs.creditos), col.creditos],
-    ['Débitos pendientes', fmtNum(total(ibs.pendientes)), porMoneda(ibs.pendientes), col.pendientes],
-  ]);
-  grilla([
-    ['Transferencias BankService en pesos', dinero('0', bs.importeAprobadas[0]), `${fmtNum(bs.aprobadas[0])} APPROVED`],
-    ['Débitos en pesos', dinero('0', ibs.saldoDebitos[0]), '', col.saldoDebitos[0]], ['Créditos 25031 en pesos', dinero('0', ibs.saldoCreditos[0]), '', col.saldoCreditos[0]], ['Débitos pendientes en pesos', dinero('0', ibs.saldoPendientes[0]), '', col.saldoPendientes[0]],
-  ], 4);
-  grilla([
-    ['Transferencias BankService en USD', dinero('2', bs.importeAprobadas[2]), `${fmtNum(bs.aprobadas[2])} APPROVED`],
-    ['Débitos en USD', dinero('2', ibs.saldoDebitos[2]), '', col.saldoDebitos[2]], ['Créditos 25031 en USD', dinero('2', ibs.saldoCreditos[2]), '', col.saldoCreditos[2]], ['Débitos pendientes en USD', dinero('2', ibs.saldoPendientes[2]), '', col.saldoPendientes[2]],
-  ], 4);
-  grilla([
-    ['Débitos manuales en pesos', fmtNum(ibs.manuales[0]), dinero('0', ibs.importeManuales[0])], ['Débitos manuales en USD', fmtNum(ibs.manuales[2]), dinero('2', ibs.importeManuales[2])],
-  ], 2);
-  grilla([
-    ['APPROVED que no figuran en IBS ni en pendientes', fmtNum(sinReg), `${porMoneda(bs.sinRegistro)}${total(bs.porContabilizar) ? ` · ${fmtNum(total(bs.porContabilizar))} pendientes de contabilizar` : ''}`, sinReg === 0 ? 'ok' : 'err'],
-    ['Operaciones FAILED en BS que figuran en IBS', fmtNum(bs.failedEnIbs), `de ${fmtNum(bs.failed)} operaciones FAILED en BankService`, bs.failedEnIbs === 0 ? 'ok' : 'err'],
-  ], 2);
+  // Una sección por par de movimientos (25030/25031 y 25032/25033).
+  const seccionGrupo = (tituloGrupo, ig, movDeb, movCre) => {
+    const b = ig.bs;
+    const m = ig.ibs;
+    const sr = total(b.sinRegistro);
+    const col = calculo.coloresTransferencias(ig);
+    titulo(tituloGrupo, calculo.semaforos(ig).transferencias);
+    grilla([
+      ['Operaciones en BankService (APPROVED)', fmtNum(total(b.aprobadas)), porMoneda(b.aprobadas)],
+      [`Débitos ${movDeb}`, fmtNum(total(m.debitos)), porMoneda(m.debitos), col.debitos],
+      [`Créditos ${movCre}`, fmtNum(total(m.creditos)), porMoneda(m.creditos), col.creditos],
+      ['Débitos pendientes', fmtNum(total(m.pendientes)), porMoneda(m.pendientes), col.pendientes],
+    ]);
+    grilla([
+      ['Transferencias BankService en pesos', dinero('0', b.importeAprobadas[0]), `${fmtNum(b.aprobadas[0])} APPROVED`],
+      ['Débitos en pesos', dinero('0', m.saldoDebitos[0]), '', col.saldoDebitos[0]], [`Créditos ${movCre} en pesos`, dinero('0', m.saldoCreditos[0]), '', col.saldoCreditos[0]], ['Débitos pendientes en pesos', dinero('0', m.saldoPendientes[0]), '', col.saldoPendientes[0]],
+    ], 4);
+    grilla([
+      ['Transferencias BankService en USD', dinero('2', b.importeAprobadas[2]), `${fmtNum(b.aprobadas[2])} APPROVED`],
+      ['Débitos en USD', dinero('2', m.saldoDebitos[2]), '', col.saldoDebitos[2]], [`Créditos ${movCre} en USD`, dinero('2', m.saldoCreditos[2]), '', col.saldoCreditos[2]], ['Débitos pendientes en USD', dinero('2', m.saldoPendientes[2]), '', col.saldoPendientes[2]],
+    ], 4);
+    grilla([
+      ['Débitos manuales en pesos', fmtNum(m.manuales[0]), dinero('0', m.importeManuales[0])], ['Débitos manuales en USD', fmtNum(m.manuales[2]), dinero('2', m.importeManuales[2])],
+    ], 2);
+    grilla([
+      ['APPROVED que no figuran en IBS ni en pendientes', fmtNum(sr), `${porMoneda(b.sinRegistro)}${total(b.porContabilizar) ? ` · ${fmtNum(total(b.porContabilizar))} pendientes de contabilizar` : ''}`, sr === 0 ? 'ok' : 'err'],
+      ['Operaciones FAILED en BS que figuran en IBS', fmtNum(b.failedEnIbs), `de ${fmtNum(b.failed)} operaciones FAILED en BankService`, b.failedEnIbs === 0 ? 'ok' : 'err'],
+    ], 2);
+  };
+  seccionGrupo('IBS - Transferencias Loop (25030 - 25031)', ind, '25030', '25031');
+  const otros = Object.values(datos.grupos || {}).map((r) => ({ r, ig: calculo.indicadores({ ...r, rango: datos.rango }, dia || '') }));
+  for (const { r, ig } of otros) {
+    seccionGrupo(r.grupo.titulo, ig, r.config.movDebito, r.config.movCredito);
+    for (const c of ['comprobantes', 'creditos', 'debitos']) for (const k of ['0', '2']) activar[c][k] += ig.activar[c][k];
+    activar.sinOperacion += ig.activar.sinOperacion;
+  }
+  const excepcionesTodas = [...ind.excepciones, ...otros.flatMap(({ r, ig }) => ig.excepciones.map((e) => ({ ...e, tipo: `${e.tipo} (${r.grupo.etiqueta})` })))];
+  const semActivar = activar.sinOperacion ? { color: 'amarillo', motivos: [`${activar.sinOperacion} movimiento(s) de 1 centavo sin operación en BankService (a revisar)`] } : { color: 'verde', motivos: ['Todo OK'] };
 
-  titulo('IBS - Activar Cuentas', sem.activar);
+  titulo('IBS - Activar Cuentas', semActivar);
   grilla([
     ['Transacciones de 1 centavo (comprobantes)', fmtNum(total(activar.comprobantes)), porMoneda(activar.comprobantes)],
     ['Créditos de 1 centavo', fmtNum(total(activar.creditos)), porMoneda(activar.creditos)],
@@ -200,12 +214,12 @@ function generarReporte({ datos, dia, usuario, ahora = new Date() }) {
       saldo.map((s) => [dmy(s.fecha), fmtNum(s.nPend[0]), dinero('0', s.importePend[0]), dinero('0', s.acumulado[0]), fmtNum(s.nPend[2]), dinero('2', s.importePend[2]), dinero('2', s.acumulado[2])]));
   }
 
-  titulo(`Excepciones a revisar (${fmtNum(ind.excepciones.length)})`);
-  if (ind.excepciones.length === 0) {
+  titulo(`Excepciones a revisar (${fmtNum(excepcionesTodas.length)})`);
+  if (excepcionesTodas.length === 0) {
     pdf.texto(M, y, 'Sin excepciones.', { tam: 8.5, colorHex: '#5b6576' });
     y += 14;
   } else {
-    const filas = ind.excepciones.slice().sort((a, b) => a.tipo.localeCompare(b.tipo, 'es') || String(a.fecha).localeCompare(String(b.fecha)) || (Number(a.comprobante) || 0) - (Number(b.comprobante) || 0));
+    const filas = excepcionesTodas.slice().sort((a, b) => a.tipo.localeCompare(b.tipo, 'es') || String(a.fecha).localeCompare(String(b.fecha)) || (Number(a.comprobante) || 0) - (Number(b.comprobante) || 0));
     tabla([{ t: 'Tipo', w: 16 }, { t: 'Comprobante', w: 9, der: true }, { t: 'Cuenta', w: 8, der: true }, { t: 'Moneda', w: 6 }, { t: 'Fecha', w: 9 }, { t: 'Importe', w: 12, der: true }, { t: 'Usuario', w: 8 }, { t: 'Estado BS', w: 12 }, { t: 'Detalle', w: 28 }],
       filas.map((e) => [e.tipo, e.comprobante, e.cuenta || '—', e.moneda, dmy(e.fecha), e.importe == null ? '—' : dinero(e.moneda === 'USD' ? '2' : '0', e.importe), e.usuario || '—', (e.estadoBs || '—').replace('_', '_ '), e.detalle]), 7);
   }

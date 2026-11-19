@@ -130,11 +130,55 @@
   }
 
   function prepararFiltros() {
-    const tipos = [...new Set(estado.datos.excepciones.map((e) => e.tipo))].sort((a, b) => a.localeCompare(b, 'es'));
+    const todas = [...estado.datos.excepciones, ...gruposExtra().flatMap((g) => g.datos.excepciones.map((e) => ({ ...e, tipo: `${e.tipo} (${g.etiqueta})` })))];
+    const tipos = [...new Set(todas.map((e) => e.tipo))].sort((a, b) => a.localeCompare(b, 'es'));
     $('tccExcTipo').innerHTML = '<option value="">Todos</option>' + tipos.map((t) => `<option value="${esc(t)}">${esc(t)}</option>`).join('');
   }
 
   // --- Pintado ----------------------------------------------------------------------
+  // Los otros pares de movimientos de la conciliación (25032 / 25033), con la forma de
+  // datos que espera TransfCaCcCalculo.
+  function gruposExtra() {
+    const d = estado.datos;
+    return Object.values((d && d.grupos) || {}).map((r) => ({ clave: r.grupo.clave, titulo: r.grupo.titulo, etiqueta: r.grupo.etiqueta, datos: { ...r, rango: d.rango } }));
+  }
+
+  // Excepciones del día de todos los pares; las de 25032 / 25033 llevan el par en el tipo.
+  function excepcionesDelDia() {
+    const propias = C.indicadores(estado.datos, estado.dia).excepciones;
+    const otras = gruposExtra().flatMap((g) => C.indicadores(g.datos, estado.dia).excepciones.map((e) => ({ ...e, tipo: `${e.tipo} (${g.etiqueta})` })));
+    return [...propias, ...otras];
+  }
+
+  // Indicadores de un par de movimientos (débito / crédito) contra BankService.
+  function htmlGrupo(ind, movDeb, movCre) {
+    const { ibs, bs, total } = ind;
+    const sinReg = total(bs.sinRegistro);
+    const col = C.coloresTransferencias(ind);
+    return `<div class="tcc-grilla">` +
+      tile('Operaciones en BankService (APPROVED)', fmtNum(total(bs.aprobadas)), porMoneda(bs.aprobadas)) +
+      tile(`Débitos ${movDeb}`, fmtNum(total(ibs.debitos)), porMoneda(ibs.debitos), col.debitos) +
+      tile(`Créditos ${movCre}`, fmtNum(total(ibs.creditos)), porMoneda(ibs.creditos), col.creditos) +
+      tile('Débitos pendientes', fmtNum(total(ibs.pendientes)), porMoneda(ibs.pendientes), col.pendientes) +
+      `</div><div class="tcc-grilla" style="margin-top: 10px;">` +
+      tile('Transferencias BankService en pesos', dinero('0', bs.importeAprobadas[0]), `${fmtNum(bs.aprobadas[0])} APPROVED`) +
+      tile('Débitos en pesos', dinero('0', ibs.saldoDebitos[0]), '', col.saldoDebitos[0]) +
+      tile(`Créditos ${movCre} en pesos`, dinero('0', ibs.saldoCreditos[0]), '', col.saldoCreditos[0]) +
+      tile('Débitos pendientes en pesos', dinero('0', ibs.saldoPendientes[0]), '', col.saldoPendientes[0]) +
+      `</div><div class="tcc-grilla" style="margin-top: 10px;">` +
+      tile('Transferencias BankService en USD', dinero('2', bs.importeAprobadas[2]), `${fmtNum(bs.aprobadas[2])} APPROVED`) +
+      tile('Débitos en USD', dinero('2', ibs.saldoDebitos[2]), '', col.saldoDebitos[2]) +
+      tile(`Créditos ${movCre} en USD`, dinero('2', ibs.saldoCreditos[2]), '', col.saldoCreditos[2]) +
+      tile('Débitos pendientes en USD', dinero('2', ibs.saldoPendientes[2]), '', col.saldoPendientes[2]) +
+      `</div><div class="tcc-grilla" style="margin-top: 10px;">` +
+      tile('Débitos manuales en pesos', fmtNum(ibs.manuales[0]), dinero('0', ibs.importeManuales[0])) +
+      tile('Débitos manuales en USD', fmtNum(ibs.manuales[2]), dinero('2', ibs.importeManuales[2])) +
+      `</div><div class="tcc-grilla" style="margin-top: 10px;">` +
+      tile('APPROVED que no figuran en IBS ni en pendientes', fmtNum(sinReg), `${porMoneda(bs.sinRegistro)}${total(bs.porContabilizar) ? ` · ${fmtNum(total(bs.porContabilizar))} pendientes de contabilizar` : ''}`, sinReg === 0 ? 'ok' : 'err') +
+      tile('Operaciones FAILED en BS que figuran en IBS', fmtNum(bs.failedEnIbs), `de ${fmtNum(bs.failed)} operaciones FAILED en BankService`, bs.failedEnIbs === 0 ? 'ok' : 'err') +
+      `</div>` +
+      (total(ibs.posteriores) ? `<p class="tcc-suave">Incluye ${fmtNum(total(ibs.posteriores))} movimiento(s) imputados en fechas posteriores al período (${porMoneda(ibs.posteriores)}), sumados en el día de su operación.</p>` : '');
+  }
   function pintar() {
     const d = estado.datos;
     if (!d) return;
@@ -145,48 +189,35 @@
     $('tccResumen').textContent = `${fmtNum(total(bs.pendientes))} operación(es) con débito pendiente (${fmtNum(total(bs.pendientesUltimoDia))} del último día y ${fmtNum(total(bs.pendientesAnteriores))} anteriores), ` +
       `${fmtNum(total(bs.sinRegistro))} sin registro en IBS y ${fmtNum(total(bs.porContabilizar))} pendientes de contabilizar. Importe pendiente: ${dinero('0', bs.importePendiente[0])} y ${dinero('2', bs.importePendiente[2])}.`;
 
-    const sinReg = total(bs.sinRegistro);
-    const col = C.coloresTransferencias(ind);
-    $('tccIbs').innerHTML =
-      `<div class="tcc-grilla">` +
-      tile('Operaciones en BankService (APPROVED)', fmtNum(total(bs.aprobadas)), porMoneda(bs.aprobadas)) +
-      tile('Débitos 25030', fmtNum(total(ibs.debitos)), porMoneda(ibs.debitos), col.debitos) +
-      tile('Créditos 25031', fmtNum(total(ibs.creditos)), porMoneda(ibs.creditos), col.creditos) +
-      tile('Débitos pendientes', fmtNum(total(ibs.pendientes)), porMoneda(ibs.pendientes), col.pendientes) +
-      `</div><div class="tcc-grilla" style="margin-top: 10px;">` +
-      tile('Transferencias BankService en pesos', dinero('0', bs.importeAprobadas[0]), `${fmtNum(bs.aprobadas[0])} APPROVED`) +
-      tile('Débitos en pesos', dinero('0', ibs.saldoDebitos[0]), '', col.saldoDebitos[0]) +
-      tile('Créditos 25031 en pesos', dinero('0', ibs.saldoCreditos[0]), '', col.saldoCreditos[0]) +
-      tile('Débitos pendientes en pesos', dinero('0', ibs.saldoPendientes[0]), '', col.saldoPendientes[0]) +
-      `</div><div class="tcc-grilla" style="margin-top: 10px;">` +
-      tile('Transferencias BankService en USD', dinero('2', bs.importeAprobadas[2]), `${fmtNum(bs.aprobadas[2])} APPROVED`) +
-      tile('Débitos en USD', dinero('2', ibs.saldoDebitos[2]), '', col.saldoDebitos[2]) +
-      tile('Créditos 25031 en USD', dinero('2', ibs.saldoCreditos[2]), '', col.saldoCreditos[2]) +
-      tile('Débitos pendientes en USD', dinero('2', ibs.saldoPendientes[2]), '', col.saldoPendientes[2]) +
-      `</div><div class="tcc-grilla" style="margin-top: 10px;">` +
-      tile('Débitos manuales en pesos', fmtNum(ibs.manuales[0]), dinero('0', ibs.importeManuales[0])) +
-      tile('Débitos manuales en USD', fmtNum(ibs.manuales[2]), dinero('2', ibs.importeManuales[2])) +
-      `</div><div class="tcc-grilla" style="margin-top: 10px;">` +
-      tile('APPROVED que no figuran en IBS ni en pendientes', fmtNum(sinReg), `${porMoneda(bs.sinRegistro)}${total(bs.porContabilizar) ? ` · ${fmtNum(total(bs.porContabilizar))} pendientes de contabilizar` : ''}`, sinReg === 0 ? 'ok' : 'err') +
-      tile('Operaciones FAILED en BS que figuran en IBS', fmtNum(bs.failedEnIbs), `de ${fmtNum(bs.failed)} operaciones FAILED en BankService`, bs.failedEnIbs === 0 ? 'ok' : 'err') +
-      `</div>` +
-      (total(ibs.posteriores) ? `<p class="tcc-suave">Incluye ${fmtNum(total(ibs.posteriores))} movimiento(s) imputados en fechas posteriores al período (${porMoneda(ibs.posteriores)}), sumados en el día de su operación.</p>` : '');
+    $('tccIbs').innerHTML = htmlGrupo(ind, '25030', '25031');
+    // Otros pares de movimientos (25032 / 25033): misma sección, sus propias operaciones.
+    const otros = gruposExtra().map((g) => ({ g, ind: C.indicadores(g.datos, estado.dia) }));
+    $('tccGrupos').innerHTML = otros.map(({ g, ind: i2 }) => `<h3><span class="tcc-semaforo" data-sem-grupo="${esc(g.clave)}" role="img"></span>${esc(g.titulo)}</h3>` + htmlGrupo(i2, g.datos.config.movDebito, g.datos.config.movCredito)).join('');
+    // Activar Cuentas suma los movimientos de 1 centavo sin operación de todos los pares.
+    for (const { ind: i2 } of otros) {
+      for (const campo of ['comprobantes', 'creditos', 'debitos']) for (const k of ['0', '2']) activar[campo][k] += i2.activar[campo][k];
+      activar.sinOperacion += i2.activar.sinOperacion;
+    }
 
     $('tccActivar').innerHTML = `<div class="tcc-grilla">` +
       tile('Transacciones de 1 centavo (comprobantes)', fmtNum(total(activar.comprobantes)), porMoneda(activar.comprobantes)) +
       tile('Créditos de 1 centavo', fmtNum(total(activar.creditos)), porMoneda(activar.creditos)) +
       tile('Débitos de 1 centavo', fmtNum(total(activar.debitos)), porMoneda(activar.debitos)) +
-      `</div><p class="tcc-suave">Movimientos de 1 centavo sin operación en BankService (no cuentan en Transferencias Loop). Los de 1 centavo que sí están en BankService se concilian con las transferencias.</p>`;
+      `</div><p class="tcc-suave">Movimientos de 1 centavo sin operación en BankService (no cuentan en las transferencias). Los de 1 centavo que sí están en BankService se concilian con su par de movimientos.</p>`;
 
     const sem = C.semaforos(ind);
     const etiquetas = { verde: 'Verde: todo OK', amarillo: 'Amarillo: débitos pendientes o a revisar', rojo: 'Rojo: hay diferencias' };
-    for (const [id, s] of [['tccSemIbs', sem.transferencias], ['tccSemActivar', sem.activar]]) {
-      $(id).className = `tcc-semaforo ${s.color}`;
-      $(id).title = `${etiquetas[s.color]}\n${s.motivos.join('\n')}`;
-      $(id).setAttribute('aria-label', `${etiquetas[s.color]}. ${s.motivos.join('. ')}`);
-    }
+    const ponerSemaforo = (el, s) => {
+      el.className = `tcc-semaforo ${s.color}`;
+      el.title = `${etiquetas[s.color]}\n${s.motivos.join('\n')}`;
+      el.setAttribute('aria-label', `${etiquetas[s.color]}. ${s.motivos.join('. ')}`);
+    };
+    ponerSemaforo($('tccSemIbs'), sem.transferencias);
+    // Activar Cuentas: amarillo si hay movimientos de 1 centavo sin operación en cualquier par.
+    ponerSemaforo($('tccSemActivar'), activar.sinOperacion ? { color: 'amarillo', motivos: [`${activar.sinOperacion} movimiento(s) de 1 centavo sin operación en BankService (a revisar)`] } : { color: 'verde', motivos: ['Todo OK'] });
+    for (const { g, ind: i2 } of otros) ponerSemaforo(document.querySelector(`[data-sem-grupo="${g.clave}"]`), C.semaforos(i2).transferencias);
     pintarPeriodo();
-    pintarExcepciones(ind.excepciones);
+    pintarExcepciones(excepcionesDelDia());
   }
 
   // Gráfico y saldo de pendientes: historial de conciliaciones guardado (un registro
@@ -352,7 +383,7 @@
   // CSV para Excel (UTF-8 con BOM, ";" y coma decimal) de lo que muestra la tabla.
   function exportarExcepciones() {
     if (!estado.datos) return;
-    const filas = excepcionesVisibles(C.indicadores(estado.datos, estado.dia).excepciones);
+    const filas = excepcionesVisibles(excepcionesDelDia());
     if (filas.length === 0) {
       alert('No hay excepciones para exportar con los filtros actuales.');
       return;
@@ -461,10 +492,10 @@
   $('tccExcCsvBtn').addEventListener('click', exportarExcepciones);
   $('tccSoloPendientes').addEventListener('change', pintarPeriodo);
   $('tccPdfBtn').addEventListener('click', descargarPdf);
-  $('tccExcBuscar').addEventListener('input', () => estado.datos && pintarExcepciones(C.indicadores(estado.datos, estado.dia).excepciones));
+  $('tccExcBuscar').addEventListener('input', () => estado.datos && pintarExcepciones(excepcionesDelDia()));
   document.querySelectorAll('#tccExc th.ordenable').forEach((th) => th.addEventListener('click', () => {
     const campo = th.dataset.orden;
     estado.orden = { campo, asc: estado.orden.campo === campo ? !estado.orden.asc : true };
-    if (estado.datos) pintarExcepciones(C.indicadores(estado.datos, estado.dia).excepciones);
+    if (estado.datos) pintarExcepciones(excepcionesDelDia());
   }));
 })();
