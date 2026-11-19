@@ -31,15 +31,15 @@
     for (const m of movs) {
       const k = m.moncod;
       if (!(k in compsCentavo)) continue;
-      if (m.centavo) {
+      // 1 centavo sin operación en BankService: "IBS - Activar Cuentas" (y no cuenta en
+      // transferencias). Si la operación está en BankService, va con las transferencias.
+      if (m.activarCuentas) {
         compsCentavo[k].add(m.comprobante);
         if (m.movcod === deb) activar.debitos[k]++;
         else activar.creditos[k]++;
-        if (m.activarCuentas) activar.sinOperacion++;
+        activar.sinOperacion++;
+        continue;
       }
-      // Los movimientos de 1 centavo (débitos y créditos) no cuentan en los indicadores
-      // de transferencias: se ven en "IBS - Activar Cuentas".
-      if (m.centavo) continue;
       if (m.movcod === deb) {
         ibs.debitos[k]++;
         ibs.saldoDebitos[k] += m.importe;
