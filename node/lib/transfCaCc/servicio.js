@@ -180,9 +180,16 @@ function resumenPorDia(datos) {
   });
 }
 
-// Guarda (pisa) el resultado de los días del período.
+// Guarda el resultado de los días del período: si el día ya estaba conciliado se
+// actualiza con lo nuevo, y un día del período que ya no tiene operaciones se borra.
 async function guardarDias(rootDir, datos, usuario) {
   const dias = resumenPorDia(datos);
+  const fechas = dias.map((d) => d.fecha);
+  await db().query(
+    rootDir,
+    `DELETE FROM transf_ca_cc_dias WHERE fecha >= ? AND fecha < ?${fechas.length ? ` AND fecha NOT IN (${fechas.map(() => '?').join(', ')})` : ''}`,
+    [datos.rango.desde, datos.rango.hasta, ...fechas]
+  );
   for (const d of dias) {
     await db().query(
       rootDir,
