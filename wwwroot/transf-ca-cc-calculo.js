@@ -25,7 +25,17 @@
       comprobantes: nuevo(), debitos: nuevo(), creditos: nuevo(), pendientes: nuevo(),
       saldoDebitos: nuevo(), saldoCreditos: nuevo(), saldoPendientes: nuevo(),
       manuales: nuevo(), importeManuales: nuevo(), posteriores: nuevo(),
+      // Movimientos imputados en el día de operaciones APPROVED de días anteriores
+      // (típicamente débitos que estaban pendientes y salieron ese día).
+      debitosAnteriores: nuevo(), importeDebitosAnteriores: nuevo(), creditosAnteriores: nuevo(), importeCreditosAnteriores: nuevo(),
     };
+    if (dia) {
+      for (const m of datos.movimientos) {
+        if (m.fecha !== dia || !m.aprobada || !m.fechaOperacion || m.fechaOperacion >= dia || !(m.moncod in ibs.debitos)) continue;
+        if (m.movcod === deb) { ibs.debitosAnteriores[m.moncod]++; ibs.importeDebitosAnteriores[m.moncod] += m.importe; }
+        else if (m.movcod === cre) { ibs.creditosAnteriores[m.moncod]++; ibs.importeCreditosAnteriores[m.moncod] += m.importe; }
+      }
+    }
     const activar = { comprobantes: nuevo(), creditos: nuevo(), debitos: nuevo(), sinOperacion: 0 };
     const compsCentavo = { 0: new Set(), 2: new Set() };
     for (const m of movs) {
@@ -40,6 +50,9 @@
         activar.sinOperacion++;
         continue;
       }
+      // BankService manda: Débitos y Créditos cuentan solo los movimientos de operaciones
+      // APPROVED de BankService (lo demás se ve en Excepciones).
+      if (!m.aprobada) continue;
       if (m.movcod === deb) {
         ibs.debitos[k]++;
         ibs.saldoDebitos[k] += m.importe;

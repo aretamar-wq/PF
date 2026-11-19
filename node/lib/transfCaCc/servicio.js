@@ -131,9 +131,15 @@ async function obtenerDatos({ rootDir, querySybase, desde, hasta, ahora, feriado
   // operación hasta mañana (por moneda, en lotes de comprobantes).
   const manana = sumarDias(ahora.slice(0, 10), 1);
   if (hasta < manana) {
+    // Desde BankService: a las operaciones APPROVED que no tienen su débito o su crédito
+    // en lo traído (ni un débito pendiente) se les buscan los movimientos posteriores.
     const conDebito = new Set(mov.movimientos.filter((m) => m.movcod === config.movDebito).map((m) => `${m.moncod}|${m.comprobante}`));
+    const conCredito = new Set(mov.movimientos.filter((m) => m.movcod === config.movCredito).map((m) => `${m.moncod}|${m.comprobante}`));
     const conPendiente = new Set(pend.pendientes.map((p) => `${p.moncod}|${p.comprobante}`));
-    const sinDebito = operaciones.filter((o) => !conDebito.has(`${o.moncod}|${o.comprobante}`) && !conPendiente.has(`${o.moncod}|${o.comprobante}`) && /^\d+$/.test(o.comprobante));
+    const sinDebito = operaciones.filter((o) => {
+      const clave = `${o.moncod}|${o.comprobante}`;
+      return o.estado === 'APPROVED' && /^\d+$/.test(o.comprobante) && !conPendiente.has(clave) && (!conDebito.has(clave) || !conCredito.has(clave));
+    });
     const yaTraidos = new Set(mov.movimientos.map((m) => `${m.moncod}|${m.comprobante}|${m.movcod}|${m.fecha}|${m.importe}|${m.cuecod}`));
     let encontrados = 0;
     try {
@@ -152,7 +158,7 @@ async function obtenerDatos({ rootDir, querySybase, desde, hasta, ahora, feriado
           }
         }
       }
-      if (sinDebito.length > 0) avisos.push(`IBS: se buscaron movimientos posteriores al período para ${sinDebito.length} operación(es) sin débito ni pendiente; se encontraron ${encontrados}.`);
+      if (sinDebito.length > 0) avisos.push(`IBS: se buscaron movimientos posteriores para ${sinDebito.length} operación(es) APPROVED sin su débito o su crédito; se encontraron ${encontrados}.`);
     } catch (err) {
       avisos.push(`No se pudieron buscar los débitos imputados en fechas posteriores: ${err.message}`);
     }

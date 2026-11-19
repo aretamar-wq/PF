@@ -119,9 +119,9 @@ test('indicadores: control, Activar Cuentas y FAILED en IBS', () => {
   assert.strictEqual(ind.activar.creditos[0], 1);
   assert.strictEqual(ind.activar.debitos[0], 0); // el de 103 tiene operación: va con las transferencias
   assert.strictEqual(ind.activar.sinOperacion, 1);
-  assert.strictEqual(ind.ibs.creditos[0], 3); // 99998 y los dos de sistcod 3 (el de 1 centavo no cuenta)
-  assert.strictEqual(ind.ibs.manuales[0], 1);
-  assert.strictEqual(ind.ibs.importeManuales[0], 10000000);
+  assert.strictEqual(ind.ibs.creditos[0], 1); // solo el de la operación 100 de BankService (99998 y 98 no están)
+  assert.strictEqual(ind.ibs.manuales[0], 0); // el manual del 99999 no es de una operación de BankService
+  assert.strictEqual(ind.ibs.debitos[0], 4); // operaciones APPROVED 100, 101, 103 y 105 (99999, 200 y 1 no cuentan)
   assert.strictEqual(ind.bs.importePendiente[0], 70000 + 80000);
 });
 
@@ -226,4 +226,17 @@ test('1 centavo con operación en BankService suma en Débitos / Créditos de Tr
   assert.deepStrictEqual([ind.ibs.debitos[0], ind.ibs.creditos[0], ind.ibs.saldoDebitos[0]], [1, 1, 1]);
   assert.deepStrictEqual([ind.activar.debitos[0], ind.activar.creditos[0], ind.activar.comprobantes[0]], [0, 1, 1]);
   assert.strictEqual(r.operaciones[0].clase, 'ejecutada');
+});
+
+test('BankService manda: débitos/créditos del día de operaciones anteriores (ex pendientes) se informan aparte', () => {
+  const m = ibs.normalizarMovimientos([
+    mov(30, '16/11/2026', 25030, 100), mov(30, '16/11/2026', 25031, 100, { sistcod: 3 }), // operación del día
+    mov(25, '16/11/2026', 25030, 70, { usr: '36077255' }), mov(25, '16/11/2026', 25031, 70, { sistcod: 3 }), // operación del 13/11 que estaba pendiente
+    mov(77, '16/11/2026', 25030, 5), // sin operación en BankService
+  ], config).movimientos;
+  const r = conciliar({ movimientos: m, pendientes: [], operaciones: [op(30, '2026-11-16', 100), op(25, '2026-11-13', 70)], config });
+  const ind = calculo.indicadores({ ...r, config: { movDebito: '25030', movCredito: '25031' } }, '2026-11-16');
+  assert.deepStrictEqual([ind.ibs.debitos[0], ind.ibs.creditos[0]], [1, 1]); // solo la operación del día
+  assert.deepStrictEqual([ind.ibs.debitosAnteriores[0], ind.ibs.importeDebitosAnteriores[0], ind.ibs.creditosAnteriores[0]], [1, 7000, 1]);
+  assert.ok(r.excepciones.some((e) => e.comprobante === '77' && e.tipo === 'Débito sin operación en BankService'));
 });
