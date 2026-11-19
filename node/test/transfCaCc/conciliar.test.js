@@ -241,3 +241,37 @@ test('BankService manda: un débito del día de una operación anterior (ex pend
   assert.ok(r.excepciones.some((e) => e.comprobante === '77' && e.tipo === 'Débito sin operación en BankService'));
   assert.ok(!r.excepciones.some((e) => e.comprobante === '25' && e.tipo !== 'Débito manual'));
 });
+
+test('colores de Débitos y Créditos contra BankService: verde, amarillo por pendientes, rojo por diferencias', () => {
+  const colores = (movFilas, pendFilas, ops) => {
+    const r = conciliar({ movimientos: ibs.normalizarMovimientos(movFilas, config).movimientos, pendientes: ibs.normalizarPendientes(pendFilas, config).pendientes, operaciones: ops, config });
+    return calculo.coloresTransferencias(calculo.indicadores({ ...r, config: { movDebito: '25030', movCredito: '25031' } }, '2026-11-16'));
+  };
+  const par = (c, imp) => [mov(c, '16/11/2026', 25030, imp), mov(c, '16/11/2026', 25031, imp, { sistcod: 3 })];
+  // Todo coincide
+  let c = colores([...par(1, 10), ...par(2, 20)], [], [op(1, '2026-11-16', 10), op(2, '2026-11-16', 20)]);
+  assert.deepStrictEqual([c.debitos, c.creditos, c.saldoDebitos[0], c.saldoCreditos[0], c.pendientes], ['ok', 'ok', 'ok', 'ok', 'ok']);
+  // La 2 tiene débito pendiente: amarillo
+  c = colores(par(1, 10), [pend(2, 20)], [op(1, '2026-11-16', 10), op(2, '2026-11-16', 20)]);
+  assert.deepStrictEqual([c.debitos, c.creditos, c.saldoDebitos[0], c.saldoCreditos[0], c.pendientes, c.saldoPendientes[0]], ['warn', 'warn', 'warn', 'warn', 'warn', 'warn']);
+  // La 2 no tiene débito ni pendiente (sin registro): rojo
+  c = colores(par(5, 10), [], [op(5, '2026-11-16', 10), op(2, '2026-11-16', 20)]); // 2 < 5: sin registro
+  assert.deepStrictEqual([c.debitos, c.saldoDebitos[0]], ['err', 'err']);
+  // Importe distinto: la cantidad coincide, el importe no
+  c = colores(par(1, 15), [], [op(1, '2026-11-16', 10)]);
+  assert.deepStrictEqual([c.debitos, c.saldoDebitos[0]], ['ok', 'err']);
+});
+
+test('semáforo de Transferencias Loop: el más crítico entre excepciones e indicadores', () => {
+  const sem = (movFilas, pendFilas, ops) => {
+    const r = conciliar({ movimientos: ibs.normalizarMovimientos(movFilas, config).movimientos, pendientes: ibs.normalizarPendientes(pendFilas, config).pendientes, operaciones: ops, config });
+    return calculo.semaforos(calculo.indicadores({ ...r, config: { movDebito: '25030', movCredito: '25031' } }, '2026-11-16')).transferencias;
+  };
+  const par = (c, imp) => [mov(c, '16/11/2026', 25030, imp), mov(c, '16/11/2026', 25031, imp, { sistcod: 3 })];
+  assert.strictEqual(sem(par(1, 10), [], [op(1, '2026-11-16', 10)]).color, 'verde');
+  assert.strictEqual(sem(par(1, 10), [pend(2, 20)], [op(1, '2026-11-16', 10), op(2, '2026-11-16', 20)]).color, 'amarillo');
+  // Solo falta el crédito (sin excepción): el indicador de créditos queda en rojo y el semáforo también.
+  const s = sem([mov(1, '16/11/2026', 25030, 10)], [], [op(1, '2026-11-16', 10)]);
+  assert.strictEqual(s.color, 'rojo');
+  assert.ok(s.motivos.some((m) => /Créditos 25031/.test(m)));
+});
