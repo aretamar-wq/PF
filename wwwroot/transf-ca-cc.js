@@ -201,6 +201,13 @@
       `</div>` +
       `<div class="tcc-control ${bs.control.diferencia === 0 ? 'ok' : 'err'}" title="${esc(`Diferencia: ${fmtNum(bs.control.diferencia)}`)}">Control: ${fmtNum(bs.control.aprobadas)} operaciones en BankService ${bs.control.diferencia === 0 ? '=' : '≠'} ${fmtNum(total(bs.ejecutadas))} ejecutadas + ${fmtNum(total(bs.pendientes))} con débito pendiente + ${fmtNum(sinReg)} sin registro + ${fmtNum(total(bs.porContabilizar))} pendientes de contabilizar (${fmtNum(bs.control.suma)}).</div>`;
 
+    const sem = C.semaforos(ind);
+    const etiquetas = { verde: 'Verde: todo OK', amarillo: 'Amarillo: débitos pendientes o a revisar', rojo: 'Rojo: hay diferencias' };
+    for (const [id, s] of [['tccSemIbs', sem.ibs], ['tccSemActivar', sem.activar], ['tccSemBs', sem.bs]]) {
+      $(id).className = `tcc-semaforo ${s.color}`;
+      $(id).title = `${etiquetas[s.color]}\n${s.motivos.join('\n')}`;
+      $(id).setAttribute('aria-label', `${etiquetas[s.color]}. ${s.motivos.join('. ')}`);
+    }
     pintarPeriodo();
     pintarExcepciones(ind.excepciones);
   }

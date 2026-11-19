@@ -80,3 +80,7 @@
 .tcc .tcc-tooltip { position: absolute; pointer-events: none; background: var(--tcc-texto); color: var(--tcc-bg); font-size: 0.78rem; padding: 6px 8px; border-radius: 4px; white-space: nowrap; display: none; z-index: 2; }
 .tcc details { margin: 8px 0; }
 .tcc summary { cursor: pointer; color: var(--tcc-acento); }
+.tcc .tcc-semaforo { display: inline-block; width: 12px; height: 12px; border-radius: 50%; margin-right: 8px; vertical-align: -1px; background: var(--tcc-borde); cursor: help; }
+.tcc .tcc-semaforo.verde { background: #2e9d6b; box-shadow: 0 0 0 3px rgba(46, 157, 107, 0.2); }
+.tcc .tcc-semaforo.amarillo { background: #f0b429; box-shadow: 0 0 0 3px rgba(240, 180, 41, 0.25); }
+.tcc .tcc-semaforo.rojo { background: #d92d20; box-shadow: 0 0 0 3px rgba(217, 45, 32, 0.2); }

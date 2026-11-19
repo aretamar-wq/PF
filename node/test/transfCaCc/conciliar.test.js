@@ -159,3 +159,18 @@ test('consulta de posteriores: misma consulta, por moneda y comprobantes', () =>
   assert.match(q, /a\.comnro in \(572,573\)/);
   assert.throws(() => ibs.consultaPosteriores('2026-10-06', '2026-11-19', '0', ['1; drop'], config));
 });
+
+test('semáforos: rojo con diferencias, amarillo con pendientes, verde si está todo bien', () => {
+  const { datos } = armar();
+  const s = calculo.semaforos(calculo.indicadores(datos, ''));
+  assert.strictEqual(s.ibs.color, 'rojo');
+  assert.strictEqual(s.bs.color, 'rojo');
+  assert.ok(s.bs.motivos.some((m) => /APPROVED sin registro/.test(m)));
+  assert.strictEqual(s.activar.color, 'amarillo');
+  const soloPend = conciliar({ movimientos: [], pendientes: ibs.normalizarPendientes([pend(5, 10)], config).pendientes, operaciones: [op(5, '2026-11-16', 10)], config });
+  const s2 = calculo.semaforos(calculo.indicadores({ ...soloPend, config: { movDebito: '25030', movCredito: '25031' } }, ''));
+  assert.deepStrictEqual([s2.ibs.color, s2.bs.color, s2.activar.color], ['amarillo', 'amarillo', 'verde']);
+  const ok = conciliar({ movimientos: ibs.normalizarMovimientos([mov(5, '16/11/2026', 25030, 10)], config).movimientos, pendientes: [], operaciones: [op(5, '2026-11-16', 10)], config });
+  const s3 = calculo.semaforos(calculo.indicadores({ ...ok, config: { movDebito: '25030', movCredito: '25031' } }, ''));
+  assert.deepStrictEqual([s3.ibs.color, s3.bs.color, s3.activar.color], ['verde', 'verde', 'verde']);
+});
