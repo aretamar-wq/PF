@@ -224,7 +224,10 @@
       return;
     }
     // "Sin registro" incluye los pendientes de contabilizar.
-    pintarGrafico(dias.map((d) => ({ ...d, sinRegistro: d.sinRegistro + d.porContabilizar })));
+    const soloProblemas = $('tccSoloPendientes').checked;
+    const diasGrafico = soloProblemas ? dias.filter((d) => d.pendientes > 0 || d.sinRegistro + d.porContabilizar > 0) : dias;
+    if (diasGrafico.length === 0) $('tccGrafico').innerHTML = '<p class="tcc-suave">No hay días con débitos pendientes ni sin registro en el período.</p>';
+    else pintarGrafico(diasGrafico.map((d) => ({ ...d, sinRegistro: d.sinRegistro + d.porContabilizar })));
     const conPend = dias.filter((d) => d.pendArs || d.pendUsd);
     if (conPend.length === 0) {
       $('tccSaldo').innerHTML = '<p class="tcc-suave">No hay débitos pendientes en el período.</p>';
@@ -456,6 +459,7 @@
   });
   $('tccExcTipo').addEventListener('change', () => estado.datos && pintar());
   $('tccExcCsvBtn').addEventListener('click', exportarExcepciones);
+  $('tccSoloPendientes').addEventListener('change', pintarPeriodo);
   $('tccPdfBtn').addEventListener('click', descargarPdf);
   $('tccExcBuscar').addEventListener('input', () => estado.datos && pintarExcepciones(C.indicadores(estado.datos, estado.dia).excepciones));
   document.querySelectorAll('#tccExc th.ordenable').forEach((th) => th.addEventListener('click', () => {
