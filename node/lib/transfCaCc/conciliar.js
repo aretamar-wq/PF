@@ -52,7 +52,11 @@ function conciliar({ movimientos, pendientes, operaciones, config }) {
       ...m,
       // Un movimiento imputado después del período se cuenta en el día de su operación
       // (así entra en los indicadores de IBS del período y en el filtro por día).
-      fechaFiltro: m.posterior && o && o.fecha ? o.fecha : m.fecha,
+      // BankService manda: un movimiento de una operación de BankService se cuenta en el
+      // día de esa operación (aunque IBS lo haya imputado otro día).
+      fechaFiltro: o && o.fecha ? o.fecha : m.fecha,
+      aprobada: !!(o && o.estado === 'APPROVED'),
+      fechaOperacion: o && o.fecha ? o.fecha : '',
       centavo,
       activarCuentas: centavo && !ops.has(m.comprobante),
       manual: m.movcod === config.movDebito && !proceso.has(String(m.usuario)),
