@@ -7,7 +7,7 @@
 (function () {
   const C = window.TransfCaCcCalculo;
   const $ = (id) => document.getElementById(id);
-  const estado = { datos: null, dia: '', orden: { campo: 'fecha', asc: true } };
+  const estado = { datos: null, dia: '', orden: { campo: 'fecha', asc: true }, historia: null, historiaClave: '' };
 
   // --- Formato (es-AR) ----------------------------------------------------------
   const fmtNum = (n) => Number(n || 0).toLocaleString('es-AR');
@@ -50,7 +50,6 @@
         return;
       }
       $('tccArchivos').value = '';
-      $('tccCargasBox').open = true;
       $('tccCargaResultado').innerHTML = data.resultados.map((r) => {
         if (r.error) return `<p class="tcc-aviso">${esc(r.nombre)}: ${esc(r.error)}</p>`;
         if (r.yaCargado) return `<p class="tcc-aviso">${esc(r.nombre)}: archivo ya cargado (${esc(r.cargaPrevia.nombre)}, ${esc(r.cargaPrevia.cargado_en)}). No se procesó de nuevo.</p>`;
@@ -59,7 +58,7 @@
           (problemas.length ? `<details><summary>Ver ${problemas.length} fila(s) con problemas</summary><div class="tcc-suave">${problemas.slice(0, 500).join('<br>')}</div></details>` : '');
       }).join('');
       $('tccEstado').textContent = 'Carga terminada.';
-      await cargarHistorial();
+      await cargarUltimaCarga();
     } catch (err) {
       $('tccEstado').textContent = 'Error: ' + err.message;
     } finally {
@@ -67,31 +66,19 @@
     }
   }
 
-  async function cargarHistorial() {
+  // "Última carga de BankService" (el historial de cargas no se muestra).
+  async function cargarUltimaCarga() {
     try {
       const res = await apiFetch('/api/transf-ca-cc/cargas');
       const data = await res.json();
       if (!res.ok) {
-        $('tccUltimaCarga').textContent = data.error || 'No se pudo leer el historial de cargas.';
+        $('tccUltimaCarga').textContent = data.error || 'No se pudo leer la última carga de BankService.';
         return;
       }
       pintarUltimaCarga(data.ultimaCarga);
-      $('tccCargas').querySelector('tbody').innerHTML = data.cargas.map((c) => `<tr>
-        <td class="num">${esc(c.id)}</td><td>${esc(c.nombre)}</td><td>${esc(dmy(c.cargado_en))} ${esc(String(c.cargado_en).slice(11, 19))}</td><td>${esc(c.cargado_por)}</td>
-        <td class="num">${fmtNum(c.filas_leidas)}</td><td class="num">${fmtNum(c.insertadas)}</td><td class="num">${fmtNum(c.actualizadas)}</td><td class="num">${fmtNum(c.sin_cambios)}</td>
-        <td class="num">${fmtNum(c.rechazadas)}</td><td class="num">${fmtNum(c.conflictos)}</td><td>${esc(dmy(c.fecha_min))}</td><td>${esc(dmy(c.fecha_max))}</td>
-        <td>${c.rechazadas || c.conflictos ? `<button type="button" data-tcc-carga="${esc(c.id)}">Detalle</button>` : ''}</td></tr>`).join('');
     } catch (err) {
-      $('tccUltimaCarga').textContent = 'Error leyendo el historial de cargas: ' + err.message;
+      $('tccUltimaCarga').textContent = 'Error leyendo la última carga de BankService: ' + err.message;
     }
-  }
-
-  async function detalleCarga(id) {
-    const res = await apiFetch(`/api/transf-ca-cc/cargas?id=${encodeURIComponent(id)}`);
-    const data = await res.json();
-    if (!res.ok) return alert(data.error || 'No se pudo leer el detalle.');
-    const lineas = [...(data.rechazos || []).map((x) => `Fila ${x.fila}${x.comprobante ? ` (comprobante ${esc(x.comprobante)})` : ''}: rechazada, ${esc(x.motivo)}`), ...(data.conflictos || []).map((x) => `Fila ${x.fila} (comprobante ${esc(x.comprobante)}): conflicto, ${esc(x.motivo)}`)];
-    $('tccCargaResultado').innerHTML = `<p>Carga #${esc(id)}:</p><div class="tcc-suave">${lineas.join('<br>') || 'Sin problemas.'}</div>`;
   }
 
   function pintarUltimaCarga(u) {
@@ -124,6 +111,10 @@
       pintarUltimaCarga(data.ultimaCarga);
       $('tccAvisos').innerHTML = (data.avisos || []).map((a) => `<div class="tcc-aviso">${esc(a)}</div>`).join('');
       $('tccContenido').style.display = '';
+      $('tccContenidoExc').style.display = '';
+      $('tccPerDesde').value = data.rango.desde;
+      $('tccPerHasta').value = sumarDias(data.rango.hasta, -1);
+      estado.historiaClave = ''; // la conciliación acaba de guardar días nuevos
       $('tccEstado').textContent = `Datos al ${dmy(data.generado)} ${String(data.generado).slice(11, 19)}.`;
       pintar();
     } catch (err) {
@@ -141,13 +132,9 @@
 
   function prepararFiltros() {
     const { min, max } = rangoFechas();
-    for (const id of ['tccDia', 'tccPerDesde', 'tccPerHasta']) {
-      $(id).min = min;
-      $(id).max = max;
-    }
+    $('tccDia').min = min;
+    $('tccDia').max = max;
     $('tccDia').value = estado.dia;
-    $('tccPerDesde').value = min;
-    $('tccPerHasta').value = max;
     const tipos = [...new Set(estado.datos.excepciones.map((e) => e.tipo))].sort((a, b) => a.localeCompare(b, 'es'));
     $('tccExcTipo').innerHTML = '<option value="">Todos</option>' + tipos.map((t) => `<option value="${esc(t)}">${esc(t)}</option>`).join('');
   }
@@ -212,27 +199,57 @@
     pintarExcepciones(ind.excepciones);
   }
 
-  function pintarPeriodo() {
+  // Gráfico y saldo de pendientes: historial de conciliaciones guardado (un registro
+  // por día, lo último conciliado), para el período Desde - Hasta. No vuelve a IBS.
+  async function pintarPeriodo() {
     const desde = $('tccPerDesde').value;
     const hasta = $('tccPerHasta').value;
-    if (desde && hasta && desde > hasta) {
-      $('tccPerAviso').textContent = 'Desde es posterior a Hasta.';
+    if (!desde || !hasta || desde > hasta) {
+      $('tccPerAviso').textContent = desde && hasta ? 'Desde es posterior a Hasta.' : 'Elegí Desde y Hasta.';
       $('tccGrafico').innerHTML = '<p class="tcc-suave">Revisá el período.</p>';
       $('tccSaldo').innerHTML = '';
       return;
     }
     $('tccPerAviso').textContent = '';
-    const { grafico, saldo } = C.porDia(estado.datos, desde, hasta);
-    pintarGrafico(grafico);
-    if (saldo.length === 0) {
+    const clave = `${desde}|${hasta}`;
+    if (estado.historiaClave !== clave) {
+      try {
+        const res = await apiFetch(`/api/transf-ca-cc/historia?desde=${encodeURIComponent(desde)}&hasta=${encodeURIComponent(hasta)}`);
+        const data = await res.json();
+        if (!res.ok) {
+          $('tccPerAviso').textContent = data.error || 'No se pudo leer el historial de conciliaciones.';
+          return;
+        }
+        estado.historia = data.dias;
+        estado.historiaClave = clave;
+      } catch (err) {
+        $('tccPerAviso').textContent = 'Error leyendo el historial: ' + err.message;
+        return;
+      }
+    }
+    const dias = estado.historia || [];
+    if (dias.length === 0) {
+      $('tccGrafico').innerHTML = '<p class="tcc-suave">No hay días conciliados en el período.</p>';
+      $('tccSaldo').innerHTML = '<p class="tcc-suave">No hay días conciliados en el período.</p>';
+      return;
+    }
+    // "Sin registro" incluye los pendientes de contabilizar.
+    pintarGrafico(dias.map((d) => ({ ...d, sinRegistro: d.sinRegistro + d.porContabilizar })));
+    const conPend = dias.filter((d) => d.pendArs || d.pendUsd);
+    if (conPend.length === 0) {
       $('tccSaldo').innerHTML = '<p class="tcc-suave">No hay débitos pendientes en el período.</p>';
       return;
     }
-    $('tccSaldo').innerHTML = `<table><thead><tr><th>Fecha</th><th class="num">Operaciones en pesos</th><th class="num">Pesos</th><th class="num">Acumulado en pesos</th><th class="num">Operaciones en USD</th><th class="num">USD</th><th class="num">Acumulado en USD</th></tr></thead><tbody>` +
-      saldo.map((s) => `<tr class="${s.fecha === estado.dia ? 'resaltado' : ''}"><td>${dmy(s.fecha)}</td>
-        <td class="num">${fmtNum(s.nPend[0])}</td><td class="num">${dinero('0', s.importePend[0])}</td><td class="num">${dinero('0', s.acumulado[0])}</td>
-        <td class="num">${fmtNum(s.nPend[2])}</td><td class="num">${dinero('2', s.importePend[2])}</td><td class="num">${dinero('2', s.acumulado[2])}</td></tr>`).join('') +
-      '</tbody></table>';
+    const acum = { 0: 0, 2: 0 };
+    $('tccSaldo').innerHTML = `<table><thead><tr><th>Fecha</th><th class="num">Operaciones en pesos</th><th class="num">Pesos</th><th class="num">Acumulado en pesos</th><th class="num">Operaciones en USD</th><th class="num">USD</th><th class="num">Acumulado en USD</th><th>Conciliado</th></tr></thead><tbody>` +
+      conPend.map((d) => {
+        acum[0] += d.importePendArs;
+        acum[2] += d.importePendUsd;
+        return `<tr class="${d.fecha === estado.dia ? 'resaltado' : ''}"><td>${dmy(d.fecha)}</td>
+        <td class="num">${fmtNum(d.pendArs)}</td><td class="num">${dinero('0', d.importePendArs)}</td><td class="num">${dinero('0', acum[0])}</td>
+        <td class="num">${fmtNum(d.pendUsd)}</td><td class="num">${dinero('2', d.importePendUsd)}</td><td class="num">${dinero('2', acum[2])}</td>
+        <td class="tcc-suave">${esc(dmy(d.generadoEn))} ${esc(String(d.generadoEn).slice(11, 16))}</td></tr>`;
+      }).join('') + '</tbody></table>';
   }
 
   const SERIES = [
@@ -241,7 +258,7 @@
     { campo: 'sinRegistro', nombre: 'Sin registro', color: 'var(--tcc-s3)' },
   ];
 
-  function pintarGrafico(filas, box = $('tccGrafico'), alClic = setDia) {
+  function pintarGrafico(filas, box = $('tccGrafico'), alClic = clicEnDia) {
     if (filas.length === 0) {
       box.innerHTML = '<p class="tcc-suave">No hay operaciones en el período.</p>';
       return;
@@ -278,7 +295,7 @@
     box.querySelectorAll('rect.barra').forEach((r) => {
       r.addEventListener('mousemove', (ev) => {
         const f = porFecha.get(r.dataset.fecha);
-        tip.innerHTML = `<b>${dmy(f.fecha)}</b><br>` + SERIES.map((s) => `${s.nombre}: ${fmtNum(f[s.campo])}`).join('<br>');
+        tip.innerHTML = `<b>${dmy(f.fecha)}</b><br>` + SERIES.map((s) => `${s.nombre}: ${fmtNum(f[s.campo])}`).join('<br>') + (f.generadoEn ? `<br>Conciliado: ${dmy(f.generadoEn)} ${String(f.generadoEn).slice(11, 16)}` : '');
         const rect = box.getBoundingClientRect();
         tip.style.left = `${Math.min(ev.clientX - rect.left + 12, rect.width - 180)}px`;
         tip.style.top = `${ev.clientY - rect.top + 12}px`;
@@ -322,52 +339,19 @@
     });
   }
 
-  // --- Historia de días conciliados -------------------------------------------------
-  const punto = (color) => `<span class="tcc-semaforo ${esc(color)}" title="${esc(color)}"></span>`;
-
-  async function verHistoria() {
-    const desde = $('tccHistDesde').value;
-    const hasta = $('tccHistHasta').value;
-    if (!desde || !hasta || desde > hasta) {
-      $('tccHistEstado').textContent = 'Elegí Desde y Hasta (Desde no puede ser posterior a Hasta).';
+  // Clic en una barra: filtra por ese día si está en la conciliación cargada.
+  function clicEnDia(dia) {
+    const d = estado.datos;
+    if (!d) {
+      $('tccPerAviso').textContent = 'Para filtrar por día, primero consultá IBS y conciliá.';
       return;
     }
-    $('tccHistEstado').textContent = 'Leyendo la historia...';
-    try {
-      const res = await apiFetch(`/api/transf-ca-cc/historia?desde=${encodeURIComponent(desde)}&hasta=${encodeURIComponent(hasta)}`);
-      const data = await res.json();
-      if (!res.ok) {
-        $('tccHistEstado').textContent = data.error || 'No se pudo leer la historia.';
-        return;
-      }
-      const dias = data.dias;
-      if (dias.length === 0) {
-        $('tccHistEstado').textContent = 'No hay días conciliados guardados en ese período.';
-        $('tccHistGrafico').style.display = 'none';
-        $('tccHistTabla').innerHTML = '';
-        return;
-      }
-      $('tccHistEstado').textContent = `${fmtNum(dias.length)} día(s) conciliados.`;
-      $('tccHistGrafico').style.display = '';
-      // Mismo gráfico que el del período; "Sin registro" incluye los pendientes de contabilizar.
-      pintarGrafico(dias.map((d) => ({ fecha: d.fecha, ejecutadas: d.ejecutadas, pendientes: d.pendientes, sinRegistro: d.sinRegistro + d.porContabilizar })), $('tccHistGrafico'), null);
-      const acum = { 0: 0, 2: 0 };
-      $('tccHistTabla').innerHTML = `<table><thead><tr><th>Fecha</th><th>IBS</th><th>BS vs IBS</th><th class="num">APPROVED</th><th class="num">En IBS</th><th class="num">Con débito pendiente</th>
-        <th class="num">Sin registro</th><th class="num">Por contabilizar</th><th class="num">Pendiente pesos</th><th class="num">Acumulado pesos</th><th class="num">Pendiente USD</th><th class="num">Acumulado USD</th>
-        <th class="num">Excepciones</th><th>Conciliado</th></tr></thead><tbody>` +
-        dias.map((d) => {
-          acum[0] += d.importePendArs;
-          acum[2] += d.importePendUsd;
-          const tipos = Object.entries(d.porTipo || {}).map(([k, v]) => `${v} ${k}`).join('\n');
-          return `<tr><td>${esc(dmy(d.fecha))}</td><td>${punto(d.semaforoIbs)}</td><td>${punto(d.semaforoBs)}</td>
-            <td class="num">${fmtNum(d.aprobadas)}</td><td class="num">${fmtNum(d.ejecutadas)}</td><td class="num">${fmtNum(d.pendientes)}</td>
-            <td class="num">${fmtNum(d.sinRegistro)}</td><td class="num">${fmtNum(d.porContabilizar)}</td>
-            <td class="num">${dinero('0', d.importePendArs)}</td><td class="num">${dinero('0', acum[0])}</td><td class="num">${dinero('2', d.importePendUsd)}</td><td class="num">${dinero('2', acum[2])}</td>
-            <td class="num" title="${esc(tipos)}">${fmtNum(d.excepciones)}</td><td>${esc(dmy(d.generadoEn))} ${esc(String(d.generadoEn).slice(11, 16))} · ${esc(d.generadoPor)}</td></tr>`;
-        }).join('') + '</tbody></table>';
-    } catch (err) {
-      $('tccHistEstado').textContent = 'Error: ' + err.message;
+    if (dia < d.rango.desde || dia >= d.rango.hasta) {
+      $('tccPerAviso').textContent = `El ${dmy(dia)} no está en la conciliación cargada (${dmy(d.rango.desde)} al ${dmy(sumarDias(d.rango.hasta, -1))}).`;
+      return;
     }
+    $('tccPerAviso').textContent = '';
+    setDia(dia);
   }
 
   function setDia(dia) {
@@ -381,22 +365,22 @@
     const hoy = formatDateOnlyLocal(new Date());
     if (!$('tccIbsHasta').value) $('tccIbsHasta').value = hoy;
     if (!$('tccIbsDesde').value) $('tccIbsDesde').value = `${sumarDias(hoy.slice(0, 8) + '01', -1).slice(0, 8)}01`;
-    if (!$('tccHistHasta').value) $('tccHistHasta').value = hoy;
-    if (!$('tccHistDesde').value) $('tccHistDesde').value = sumarDias(hoy, -30);
+    if (!$('tccPerHasta').value) $('tccPerHasta').value = hoy;
+    if (!$('tccPerDesde').value) $('tccPerDesde').value = sumarDias(hoy, -30);
     showMainSection('transfCaCcSection');
-    cargarHistorial();
+    cargarUltimaCarga();
+    pintarPeriodo();
   }
 
   $('tccBtn').addEventListener('click', abrir);
   $('tccCerrarBtn').addEventListener('click', () => showMainSection('flowDetail'));
   $('tccCargarBtn').addEventListener('click', cargarCsv);
-  $('tccHistBtn').addEventListener('click', verHistoria);
   $('tccActualizarBtn').addEventListener('click', actualizar);
   $('tccDia').addEventListener('change', () => setDia($('tccDia').value));
   $('tccUltimoDiaBtn').addEventListener('click', () => estado.datos && setDia(estado.datos.corte.ultimoDiaIbs));
   $('tccTodosBtn').addEventListener('click', () => setDia(''));
-  $('tccPerDesde').addEventListener('change', () => estado.datos && pintarPeriodo());
-  $('tccPerHasta').addEventListener('change', () => estado.datos && pintarPeriodo());
+  $('tccPerDesde').addEventListener('change', pintarPeriodo);
+  $('tccPerHasta').addEventListener('change', pintarPeriodo);
   $('tccExcTipo').addEventListener('change', () => estado.datos && pintar());
   $('tccExcBuscar').addEventListener('input', () => estado.datos && pintarExcepciones(C.indicadores(estado.datos, estado.dia).excepciones));
   document.querySelectorAll('#tccExc th.ordenable').forEach((th) => th.addEventListener('click', () => {
@@ -404,8 +388,4 @@
     estado.orden = { campo, asc: estado.orden.campo === campo ? !estado.orden.asc : true };
     if (estado.datos) pintarExcepciones(C.indicadores(estado.datos, estado.dia).excepciones);
   }));
-  $('tccCargas').addEventListener('click', (ev) => {
-    const id = ev.target && ev.target.dataset && ev.target.dataset.tccCarga;
-    if (id) detalleCarga(id);
-  });
 })();
