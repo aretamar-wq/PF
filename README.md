@@ -1245,8 +1245,8 @@ cortada antes de consultar su estado queda con `realizado` = `SI` y
 
 ### Conciliación Transferencias CA -> CC (QNET entre IBS/Loop, pendientes y BankService)
 
-Menú **Conciliación Transferencias CA -> CC**. Concilia las transferencias QNET de un
-período (varios días) entre los movimientos de IBS (débitos 25030 y créditos 25031 de cualquier `sistcod`), los
+Menú **Conciliación Transferencias CA -> CC**. Concilia las transferencias QNET de **un
+día** (campo "Fecha a conciliar"; no acepta sábados, domingos ni feriados) entre los movimientos de IBS (débitos 25030 y créditos 25031 de cualquier `sistcod`), los
 débitos pendientes y BankService.
 
 **Arquitectura.** El dashboard no se conecta a IBS: `GET /api/transf-ca-cc/datos?desde=&hasta=`

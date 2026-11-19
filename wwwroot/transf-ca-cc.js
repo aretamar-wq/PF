@@ -91,31 +91,34 @@
 
   // --- Datos ----------------------------------------------------------------------
   async function actualizar() {
-    const desde = $('tccIbsDesde').value;
-    const hastaIncl = $('tccIbsHasta').value;
-    if (!desde || !hastaIncl || desde > hastaIncl) {
-      alert('Elegí el período de IBS (desde y hasta, con desde anterior o igual a hasta).');
+    // Se concilia un solo día: los movimientos de IBS de esa fecha y las operaciones de
+    // BankService de ese día hábil (más la búsqueda de débitos imputados después).
+    corregirFecha('tccFecha', true);
+    const fecha = $('tccFecha').value;
+    if (!fecha) {
+      alert('Elegí la fecha a conciliar.');
       return;
     }
     const btn = $('tccActualizarBtn');
     btn.disabled = true;
-    $('tccEstado').textContent = 'Consultando IBS y conciliando...';
+    $('tccEstado').textContent = `Consultando IBS y conciliando el ${dmy(fecha)}...`;
     try {
-      const res = await apiFetch(`/api/transf-ca-cc/datos?desde=${encodeURIComponent(desde)}&hasta=${encodeURIComponent(sumarDias(hastaIncl, 1))}`);
+      const res = await apiFetch(`/api/transf-ca-cc/datos?desde=${encodeURIComponent(fecha)}&hasta=${encodeURIComponent(sumarDias(fecha, 1))}`);
       const data = await res.json();
       if (!res.ok) {
         $('tccEstado').textContent = data.error || 'No se pudieron obtener los datos.';
         return;
       }
       estado.datos = data;
-      estado.dia = data.corte.ultimoDiaIbs || '';
+      estado.dia = fecha;
       prepararFiltros();
       pintarUltimaCarga(data.ultimaCarga);
       $('tccAvisos').innerHTML = (data.avisos || []).map((a) => `<div class="tcc-aviso">${esc(a)}</div>`).join('');
       $('tccContenido').style.display = '';
       $('tccContenidoExc').style.display = '';
-      $('tccPerDesde').value = data.rango.desde;
-      $('tccPerHasta').value = sumarDias(data.rango.hasta, -1);
+      // El período del gráfico tiene que incluir el día conciliado.
+      if (!$('tccPerDesde').value || $('tccPerDesde').value > fecha) $('tccPerDesde').value = fecha;
+      if (!$('tccPerHasta').value || $('tccPerHasta').value < fecha) $('tccPerHasta').value = fecha;
       estado.historiaClave = ''; // la conciliación acaba de guardar días nuevos
       $('tccEstado').textContent = `Datos al ${dmy(data.generado)} ${String(data.generado).slice(11, 19)}.`;
       pintar();
@@ -126,17 +129,7 @@
     }
   }
 
-  function rangoFechas() {
-    const d = estado.datos;
-    const fechas = [...d.movimientos.map((m) => m.fecha), ...d.operaciones.map((o) => o.fecha)].filter(Boolean).sort();
-    return { min: fechas[0] || '', max: fechas[fechas.length - 1] || '' };
-  }
-
   function prepararFiltros() {
-    const { min, max } = rangoFechas();
-    $('tccDia').min = min;
-    $('tccDia').max = max;
-    $('tccDia').value = estado.dia;
     const tipos = [...new Set(estado.datos.excepciones.map((e) => e.tipo))].sort((a, b) => a.localeCompare(b, 'es'));
     $('tccExcTipo').innerHTML = '<option value="">Todos</option>' + tipos.map((t) => `<option value="${esc(t)}">${esc(t)}</option>`).join('');
   }
@@ -147,9 +140,7 @@
     if (!d) return;
     const ind = C.indicadores(d, estado.dia);
     const { ibs, activar, bs, total } = ind;
-    $('tccDiaTexto').textContent = estado.dia
-      ? `Mostrando el ${dmy(estado.dia)}${estado.dia === d.corte.ultimoDiaIbs ? ' (último día de IBS)' : ''}. IBS por fecha del movimiento; BankService por fecha de la operación. Corte: último día de IBS ${dmy(d.corte.ultimoDiaIbs)}, mayor comprobante ${fmtNum(d.corte.mayorComprobante)}.`
-      : `Mostrando todos los días (${dmy(d.rango.desde)} al ${dmy(sumarDias(d.rango.hasta, -1))}). Corte: último día de IBS ${dmy(d.corte.ultimoDiaIbs)}, mayor comprobante ${fmtNum(d.corte.mayorComprobante)}.`;
+    $('tccDiaTexto').textContent = `Conciliación del ${dmy(estado.dia)}: IBS por fecha del movimiento; BankService por fecha de la operación (día hábil). Mayor comprobante de IBS: ${fmtNum(d.corte.mayorComprobante)}.`;
 
     $('tccResumen').textContent = `${fmtNum(total(bs.pendientes))} operación(es) con débito pendiente (${fmtNum(total(bs.pendientesUltimoDia))} del último día y ${fmtNum(total(bs.pendientesAnteriores))} anteriores), ` +
       `${fmtNum(total(bs.sinRegistro))} sin registro en IBS y ${fmtNum(total(bs.porContabilizar))} pendientes de contabilizar. Importe pendiente: ${dinero('0', bs.importePendiente[0])} y ${dinero('2', bs.importePendiente[2])}.`;
@@ -348,23 +339,14 @@
     });
   }
 
-  // Clic en una barra: filtra por ese día si está en la conciliación cargada.
+  // Clic en una barra: la toma como fecha a conciliar (hay que apretar Conciliar).
   function clicEnDia(dia) {
-    const d = estado.datos;
-    if (!d) {
-      $('tccPerAviso').textContent = 'Para filtrar por día, primero consultá IBS y conciliá.';
-      return;
-    }
-    if (dia < d.rango.desde || dia >= d.rango.hasta) {
-      $('tccPerAviso').textContent = `El ${dmy(dia)} no está en la conciliación cargada (${dmy(d.rango.desde)} al ${dmy(sumarDias(d.rango.hasta, -1))}).`;
-      return;
-    }
     if (!esHabil(dia)) {
       $('tccPerAviso').textContent = `El ${dmy(dia)} ${motivoNoHabil(dia)}: no se puede elegir.`;
       return;
     }
-    $('tccPerAviso').textContent = '';
-    setDia(dia);
+    $('tccFecha').value = dia;
+    $('tccPerAviso').textContent = `Fecha a conciliar: ${dmy(dia)}. Apretá Conciliar para ver su detalle.`;
   }
 
   // CSV para Excel (UTF-8 con BOM, ";" y coma decimal) de lo que muestra la tabla.
@@ -412,11 +394,7 @@
     }
   }
 
-  function setDia(dia) {
-    estado.dia = dia || '';
-    $('tccDia').value = estado.dia;
-    pintar();
-  }
+
 
   // --- Días hábiles -------------------------------------------------------------------
   // Los campos de fecha no dejan elegir sábados, domingos ni feriados (calendario de
@@ -431,7 +409,7 @@
     for (let i = 0; i < 30 && !esHabil(f); i++) f = sumarDias(f, paso);
     return f;
   }
-  const CAMPOS_FECHA = { tccIbsDesde: 1, tccIbsHasta: -1, tccPerDesde: 1, tccPerHasta: -1, tccDia: -1 };
+  const CAMPOS_FECHA = { tccFecha: -1, tccPerDesde: 1, tccPerHasta: -1 };
   function motivoNoHabil(iso) {
     if (estado.feriados.has(iso)) return 'es feriado';
     return new Date(`${iso}T00:00:00Z`).getUTCDay() === 6 ? 'es sábado' : 'es domingo';
@@ -455,8 +433,7 @@
   // --- Eventos ----------------------------------------------------------------------
   function abrir() {
     const hoy = formatDateOnlyLocal(new Date());
-    if (!$('tccIbsHasta').value) $('tccIbsHasta').value = hoy;
-    if (!$('tccIbsDesde').value) $('tccIbsDesde').value = `${sumarDias(hoy.slice(0, 8) + '01', -1).slice(0, 8)}01`;
+    if (!$('tccFecha').value) $('tccFecha').value = hoy;
     if (!$('tccPerHasta').value) $('tccPerHasta').value = hoy;
     if (!$('tccPerDesde').value) $('tccPerDesde').value = sumarDias(hoy, -30);
     ajustarFechas();
@@ -469,13 +446,7 @@
   $('tccCerrarBtn').addEventListener('click', () => showMainSection('flowDetail'));
   $('tccCargarBtn').addEventListener('click', cargarCsv);
   $('tccActualizarBtn').addEventListener('click', actualizar);
-  $('tccDia').addEventListener('change', () => {
-    corregirFecha('tccDia', true);
-    setDia($('tccDia').value);
-  });
-  for (const id of ['tccIbsDesde', 'tccIbsHasta']) $(id).addEventListener('change', () => corregirFecha(id, true));
-  $('tccUltimoDiaBtn').addEventListener('click', () => estado.datos && setDia(estado.datos.corte.ultimoDiaIbs));
-  $('tccTodosBtn').addEventListener('click', () => setDia(''));
+  $('tccFecha').addEventListener('change', () => corregirFecha('tccFecha', true));
   $('tccPerDesde').addEventListener('change', () => {
     corregirFecha('tccPerDesde', true);
     pintarPeriodo();
