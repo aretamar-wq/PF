@@ -8,6 +8,7 @@ const config = require('./config');
 const ibs = require('./ibs');
 const bankservice = require('./bankservice');
 const { conciliar } = require('./conciliar');
+const calculo = require('../../../wwwroot/transf-ca-cc-calculo');
 
 const db = () => require('../mariadbClient');
 
@@ -148,4 +149,71 @@ async function obtenerDatos({ rootDir, querySybase, desde, hasta, ahora }) {
   };
 }
 
-module.exports = { obtenerDatos, cargarBankService, historialCargas, detalleCarga, ultimaCarga, sumarDias, config };
+// Resumen de cada día del período (fecha de la operación en BankService) para la
+// historia: lo mismo que muestran el gráfico, el saldo de pendientes y los semáforos.
+function resumenPorDia(datos) {
+  const dias = [...new Set(datos.operaciones.map((o) => o.fecha))]
+    .filter((f) => f && f >= datos.rango.desde && f < datos.rango.hasta)
+    .sort();
+  return dias.map((fecha) => {
+    const ind = calculo.indicadores(datos, fecha);
+    const sem = calculo.semaforos(ind);
+    const t = ind.total;
+    const porTipo = {};
+    for (const e of ind.excepciones) porTipo[e.tipo] = (porTipo[e.tipo] || 0) + 1;
+    return {
+      fecha,
+      aprobadas: t(ind.bs.aprobadas),
+      ejecutadas: t(ind.bs.ejecutadas),
+      pendientes: t(ind.bs.pendientes),
+      sinRegistro: t(ind.bs.sinRegistro),
+      porContabilizar: t(ind.bs.porContabilizar),
+      pendArs: ind.bs.pendientes[0],
+      pendUsd: ind.bs.pendientes[2],
+      importePendArs: ind.bs.importePendiente[0],
+      importePendUsd: ind.bs.importePendiente[2],
+      excepciones: ind.excepciones.length,
+      semaforoIbs: sem.ibs.color,
+      semaforoBs: sem.bs.color,
+      porTipo,
+    };
+  });
+}
+
+// Guarda (pisa) el resultado de los días del período.
+async function guardarDias(rootDir, datos, usuario) {
+  const dias = resumenPorDia(datos);
+  for (const d of dias) {
+    await db().query(
+      rootDir,
+      `REPLACE INTO transf_ca_cc_dias (fecha, aprobadas, ejecutadas, pendientes, sin_registro, por_contabilizar, pend_ars, pend_usd,
+         importe_pend_ars, importe_pend_usd, excepciones, semaforo_ibs, semaforo_bs, excepciones_json, generado_en, generado_por)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      [d.fecha, d.aprobadas, d.ejecutadas, d.pendientes, d.sinRegistro, d.porContabilizar, d.pendArs, d.pendUsd,
+        (d.importePendArs / 100).toFixed(2), (d.importePendUsd / 100).toFixed(2), d.excepciones, d.semaforoIbs, d.semaforoBs,
+        JSON.stringify(d.porTipo), datos.generado, usuario]
+    );
+  }
+  return dias.length;
+}
+
+async function historia(rootDir, desde, hasta) {
+  const filas = await db().query(
+    rootDir,
+    `SELECT fecha, aprobadas, ejecutadas, pendientes, sin_registro, por_contabilizar, pend_ars, pend_usd, importe_pend_ars, importe_pend_usd,
+            excepciones, semaforo_ibs, semaforo_bs, excepciones_json, generado_en, generado_por
+     FROM transf_ca_cc_dias WHERE fecha >= ? AND fecha <= ? ORDER BY fecha`,
+    [desde, hasta]
+  );
+  return filas.map((f) => ({
+    fecha: String(f.fecha).slice(0, 10),
+    aprobadas: f.aprobadas, ejecutadas: f.ejecutadas, pendientes: f.pendientes, sinRegistro: f.sin_registro, porContabilizar: f.por_contabilizar,
+    pendArs: f.pend_ars, pendUsd: f.pend_usd,
+    importePendArs: Math.round(Number(f.importe_pend_ars) * 100), importePendUsd: Math.round(Number(f.importe_pend_usd) * 100),
+    excepciones: f.excepciones, semaforoIbs: f.semaforo_ibs, semaforoBs: f.semaforo_bs,
+    porTipo: (() => { try { return JSON.parse(f.excepciones_json || '{}'); } catch (err) { return {}; } })(),
+    generadoEn: f.generado_en, generadoPor: f.generado_por,
+  }));
+}
+
+module.exports = { resumenPorDia, guardarDias, historia, obtenerDatos, cargarBankService, historialCargas, detalleCarga, ultimaCarga, sumarDias, config };
