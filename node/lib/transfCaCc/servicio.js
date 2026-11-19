@@ -126,19 +126,33 @@ async function obtenerDatos({ rootDir, querySybase, desde, hasta, ahora, feriado
   const operaciones = aDiaHabil(bankservice.operacionesDesdeFilas(bsFilas), feriados).filter((o) => (o.fecha >= desde && o.fecha < hasta) || conMovimiento.has(o.comprobante));
   if (operaciones.length === 0) avisos.push('No hay operaciones de BankService en la base para ese período: cargá el archivo.');
 
-  // Débitos imputados en fechas posteriores al período: para las operaciones sin
-  // débito ni pendiente en lo traído, se buscan sus movimientos desde la fecha de la
-  // operación hasta mañana (por moneda, en lotes de comprobantes).
+  // Cada comprobante va con el par de movimientos (25030/25031, 25032/25033) que tiene
+  // en IBS o en débitos pendientes; si no tiene ninguno, con el primero.
+  const grupoDeMovcod = new Map();
+  for (const g of config.grupos) {
+    grupoDeMovcod.set(g.movDebito, g);
+    grupoDeMovcod.set(g.movCredito, g);
+  }
+  const grupoDeComprobante = () => {
+    const mapa = new Map();
+    for (const x of [...mov.movimientos, ...pend.pendientes]) {
+      if (!mapa.has(x.comprobante) && grupoDeMovcod.has(x.movcod)) mapa.set(x.comprobante, grupoDeMovcod.get(x.movcod));
+    }
+    return (comprobante) => mapa.get(comprobante) || config.grupos[0];
+  };
+
+  // Débitos y créditos imputados en fechas posteriores: a las operaciones APPROVED que
+  // no tienen su débito o su crédito en lo traído (ni un débito pendiente) se les buscan
+  // los movimientos desde la fecha de la operación hasta mañana (por moneda, en lotes).
   const manana = sumarDias(ahora.slice(0, 10), 1);
   if (hasta < manana) {
-    // Desde BankService: a las operaciones APPROVED que no tienen su débito o su crédito
-    // en lo traído (ni un débito pendiente) se les buscan los movimientos posteriores.
-    const conDebito = new Set(mov.movimientos.filter((m) => m.movcod === config.movDebito).map((m) => `${m.moncod}|${m.comprobante}`));
-    const conCredito = new Set(mov.movimientos.filter((m) => m.movcod === config.movCredito).map((m) => `${m.moncod}|${m.comprobante}`));
+    const grupoDe = grupoDeComprobante();
+    const hay = new Set(mov.movimientos.map((m) => `${m.moncod}|${m.comprobante}|${m.movcod}`));
     const conPendiente = new Set(pend.pendientes.map((p) => `${p.moncod}|${p.comprobante}`));
     const sinDebito = operaciones.filter((o) => {
       const clave = `${o.moncod}|${o.comprobante}`;
-      return o.estado === 'APPROVED' && /^\d+$/.test(o.comprobante) && !conPendiente.has(clave) && (!conDebito.has(clave) || !conCredito.has(clave));
+      const g = grupoDe(o.comprobante);
+      return o.estado === 'APPROVED' && /^\d+$/.test(o.comprobante) && !conPendiente.has(clave) && (!hay.has(`${clave}|${g.movDebito}`) || !hay.has(`${clave}|${g.movCredito}`));
     });
     const yaTraidos = new Set(mov.movimientos.map((m) => `${m.moncod}|${m.comprobante}|${m.movcod}|${m.fecha}|${m.importe}|${m.cuecod}`));
     let encontrados = 0;
@@ -163,14 +177,28 @@ async function obtenerDatos({ rootDir, querySybase, desde, hasta, ahora, feriado
       avisos.push(`No se pudieron buscar los débitos imputados en fechas posteriores: ${err.message}`);
     }
   }
-  const r = conciliar({ movimientos: mov.movimientos, pendientes: pend.pendientes, operaciones, config });
+
+  // Una conciliación por par de movimientos, cada una con sus operaciones.
+  const grupoDe = grupoDeComprobante();
+  const resultados = config.grupos.map((g) => {
+    const cfg = { ...config, movDebito: g.movDebito, movCredito: g.movCredito };
+    const r = conciliar({
+      movimientos: mov.movimientos.filter((m) => m.movcod === g.movDebito || m.movcod === g.movCredito),
+      pendientes: pend.pendientes.filter((p) => p.movcod === g.movDebito || p.movcod === g.movCredito),
+      operaciones: operaciones.filter((o) => grupoDe(o.comprobante).clave === g.clave),
+      config: cfg,
+    });
+    return { ...r, grupo: { clave: g.clave, titulo: g.titulo, etiqueta: g.etiqueta }, config: { movDebito: g.movDebito, movCredito: g.movCredito, usuariosProceso: config.usuariosProceso } };
+  });
+  const [principal, ...otros] = resultados;
   return {
     rango: { desde, hasta },
     generado: ahora,
-    config: { movDebito: config.movDebito, movCredito: config.movCredito, usuariosProceso: config.usuariosProceso },
     ultimaCarga: await ultimaCarga(rootDir),
     avisos,
-    ...r,
+    ...principal,
+    // Los otros pares (25032/25033): misma forma que la conciliación principal.
+    grupos: Object.fromEntries(otros.map((r) => [r.grupo.clave, r])),
   };
 }
 

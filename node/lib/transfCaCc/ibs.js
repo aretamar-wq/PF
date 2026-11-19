@@ -22,7 +22,7 @@ function consultaMovimientos(desde, hasta, config) {
 from tgl_movimientos a, tgl_movimientos_aper b
 where a.fecmov >= '${aaaammdd(desde)}' and a.fecmov < '${aaaammdd(hasta)}' and a.concod = ' '
   and a.fecreal = b.fecreal and a.tercod = b.tercod and b.funcod = 1
-  and a.movcod in (${config.movDebito}, ${config.movCredito})`;
+  and a.movcod in (${config.movimientos.join(', ')})`;
 }
 
 // Débitos imputados en fechas posteriores al período: los mismos movimientos, pero
@@ -40,7 +40,7 @@ where a.fecmov >= '${aaaammdd(desde)}' and a.fecmov < '${aaaammdd(hasta)}'
   and a.comnro in (${comprobantes.join(',')})
   and a.concod = ' '
   and a.fecreal = b.fecreal and a.tercod = b.tercod and b.funcod = 1
-  and a.movcod in (${config.movDebito}, ${config.movCredito})
+  and a.movcod in (${config.movimientos.join(', ')})
 order by a.comnro`;
 }
 
@@ -52,7 +52,7 @@ inner join Banksys..tgt_transaccion a on b.paiscod = a.paiscod and b.bcocod = a.
      and b.sistcod = a.sistcod and b.trancod = a.trancod
 left outer join Banksys..tdoc_mensages m on b.nromen = m.nromen
 where b.paiscod = 54 and b.bcocod = 312 and b.succod = 1 and a.tipofunc in (0,1)
-  and a.movcod in (${config.movDebito}, ${config.movCredito})
+  and a.movcod in (${config.movimientos.join(', ')})
 order by b.fecorigen, b.fecreal, b.fecenlace, b.cuecod`;
 }
 
@@ -78,7 +78,7 @@ function normalizarMovimientos(filas, config) {
     const accimp = centavos(txt(f.accimp));
     const signo = Number(txt(f.signo)) < 0 ? -1 : 1;
     const fechaMov = fecha(f.Fecha_Mov);
-    if ((movcod !== config.movDebito && movcod !== config.movCredito) || accimp == null || !fechaMov || !entero(f.comnro)) { invalidas++; continue; }
+    if (!config.movimientos.includes(movcod) || accimp == null || !fechaMov || !entero(f.comnro)) { invalidas++; continue; }
     movimientos.push({
       usuario: entero(f.usrident),
       sistcod,
@@ -103,7 +103,7 @@ function normalizarPendientes(filas, config) {
   const otros = new Map();
   for (const f of filas || []) {
     const movcod = entero(f.movcod);
-    if (movcod !== config.movDebito && movcod !== config.movCredito) {
+    if (!config.movimientos.includes(movcod)) {
       otros.set(movcod, (otros.get(movcod) || 0) + 1);
       continue;
     }
