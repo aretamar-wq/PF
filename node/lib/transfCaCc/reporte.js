@@ -3,7 +3,7 @@
 // Reporte PDF de un día (o de todo el período) de la "Conciliación Transferencias
 // CA -> CC", como evidencia de auditoría: encabezado con quién, cuándo y con qué
 // datos se concilió (incluido el SHA-256 de los datos), semáforos con sus motivos,
-// los indicadores de las tres secciones, el control, el saldo de pendientes y todas
+// los indicadores de las secciones, el saldo de pendientes y todas
 // las excepciones del día. Se arma con los mismos cálculos que el dashboard.
 
 const crypto = require('crypto');
@@ -155,9 +155,10 @@ function generarReporte({ datos, dia, usuario, ahora = new Date() }) {
     }
   }
 
-  titulo('IBS - Transferencias Loop (25030 - 25031)', sem.ibs);
+  const sinReg = total(bs.sinRegistro);
+  titulo('IBS - Transferencias Loop (25030 - 25031)', sem.transferencias);
   grilla([
-    ['Comprobantes en BankService (sin los de 1 centavo)', fmtNum(total(ibs.comprobantes)), `${porMoneda(ibs.comprobantes)} · APPROVED ${fmtNum(ibs.comprobantesEstado.APPROVED)} · FAILED ${fmtNum(ibs.comprobantesEstado.FAILED)} · sin ejecutar ${fmtNum(ibs.comprobantesEstado.PENDING_EXECUTION)}`],
+    ['Operaciones en BankService (APPROVED)', fmtNum(total(bs.aprobadas)), porMoneda(bs.aprobadas)],
     ['Débitos 25030 (sin los de 1 centavo)', fmtNum(total(ibs.debitos)), porMoneda(ibs.debitos)],
     ['Créditos 25031 (sin los de 1 centavo)', fmtNum(total(ibs.creditos)), porMoneda(ibs.creditos)],
     ['Débitos pendientes', fmtNum(total(ibs.pendientes)), porMoneda(ibs.pendientes)],
@@ -171,6 +172,10 @@ function generarReporte({ datos, dia, usuario, ahora = new Date() }) {
   grilla([
     ['Débitos manuales en pesos', fmtNum(ibs.manuales[0]), dinero('0', ibs.importeManuales[0])], ['Débitos manuales en USD', fmtNum(ibs.manuales[2]), dinero('2', ibs.importeManuales[2])],
   ], 2);
+  grilla([
+    ['APPROVED que no figuran en IBS ni en pendientes', fmtNum(sinReg), `${porMoneda(bs.sinRegistro)}${total(bs.porContabilizar) ? ` · ${fmtNum(total(bs.porContabilizar))} pendientes de contabilizar` : ''}`, sinReg === 0 ? 'ok' : 'err'],
+    ['Operaciones FAILED en BS que figuran en IBS', fmtNum(bs.failedEnIbs), `de ${fmtNum(bs.failed)} operaciones FAILED en BankService`, bs.failedEnIbs === 0 ? 'ok' : 'err'],
+  ], 2);
 
   titulo('IBS - Activar Cuentas', sem.activar);
   grilla([
@@ -179,20 +184,6 @@ function generarReporte({ datos, dia, usuario, ahora = new Date() }) {
     ['Débitos de 1 centavo', fmtNum(total(activar.debitos)), porMoneda(activar.debitos)],
   ], 3);
 
-  titulo('BankService vs IBS', sem.bs);
-  const sinReg = total(bs.sinRegistro);
-  grilla([
-    ['Operaciones en BankService (APPROVED)', fmtNum(total(bs.aprobadas)), porMoneda(bs.aprobadas)],
-    ['Operaciones en IBS', fmtNum(total(bs.ejecutadas)), porMoneda(bs.ejecutadas)],
-    ['Operaciones con débito pendiente', fmtNum(total(bs.pendientes)), porMoneda(bs.pendientes)],
-    ['APPROVED que no figuran en IBS ni en pendientes', fmtNum(sinReg), porMoneda(bs.sinRegistro), sinReg === 0 ? 'ok' : 'err'],
-    ['Operaciones FAILED en BS que figuran en IBS', fmtNum(bs.failedEnIbs), `de ${fmtNum(bs.failed)} operaciones FAILED en BankService`, bs.failedEnIbs === 0 ? 'ok' : 'err'],
-  ], 5);
-  espacio(20);
-  const cierra = bs.control.diferencia === 0;
-  pdf.rect(M, y, W, 16, { relleno: cierra ? '#e6f4ec' : '#fdecea' });
-  pdf.texto(M + 6, y + 11, `Control: ${fmtNum(bs.control.aprobadas)} operaciones en BankService ${cierra ? '=' : '<>'} ${fmtNum(total(bs.ejecutadas))} ejecutadas + ${fmtNum(total(bs.pendientes))} con débito pendiente + ${fmtNum(sinReg)} sin registro + ${fmtNum(total(bs.porContabilizar))} pendientes de contabilizar (${fmtNum(bs.control.suma)})${cierra ? '' : `; diferencia ${fmtNum(bs.control.diferencia)}`}.`, { tam: 8, colorHex: cierra ? '#1e7b4f' : '#b42318' });
-  y += 24;
 
   // Saldo de pendientes (de la fecha de la operación) dentro del alcance del reporte.
   titulo('Saldo de débitos pendientes por día');
