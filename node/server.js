@@ -1238,6 +1238,22 @@ async function handleTransfCaCcCargasGet(parsedUrl, res) {
   writeJsonResponse(res, 200, { cargas: await transfCaCc.historialCargas(rootDir), ultimaCarga: await transfCaCc.ultimaCarga(rootDir) });
 }
 
+// GET /api/transf-ca-cc/historia?desde=aaaa-mm-dd&hasta=aaaa-mm-dd (inclusive): días ya
+// conciliados, sin volver a consultar IBS.
+async function handleTransfCaCcHistoriaGet(parsedUrl, res) {
+  const desde = parsedUrl.searchParams.get('desde') || '';
+  const hasta = parsedUrl.searchParams.get('hasta') || '';
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(desde) || !/^\d{4}-\d{2}-\d{2}$/.test(hasta)) {
+    writeJsonResponse(res, 400, { error: 'Indicá desde y hasta (aaaa-mm-dd).' });
+    return;
+  }
+  try {
+    writeJsonResponse(res, 200, { dias: await transfCaCc.historia(rootDir, desde, hasta) });
+  } catch (err) {
+    writeJsonResponse(res, 500, { error: `No se pudo leer la historia (¿se creó la tabla transf_ca_cc_dias?): ${err.message}` });
+  }
+}
+
 // GET /api/transf-ca-cc/datos?desde=aaaa-mm-dd&hasta=aaaa-mm-dd (hasta exclusiva):
 // ejecuta las dos consultas de IBS, lee BankService de la base y devuelve todo
 // clasificado para el dashboard.
@@ -1258,6 +1274,12 @@ async function handleTransfCaCcDatosGet(parsedUrl, res, session) {
       hasta,
       ahora: formatLocal(new Date()),
     });
+    try {
+      const dias = await transfCaCc.guardarDias(rootDir, datos, session.username);
+      datos.avisos.push(`Historia: se guardó el resultado de ${dias} día(s).`);
+    } catch (err) {
+      datos.avisos.push(`No se pudo guardar la historia de los días conciliados (¿se creó la tabla transf_ca_cc_dias?): ${err.message}`);
+    }
     securityStore.writeSecurityLog(logsDir, `CONCILIACION CA->CC ${desde}..${hasta} consultada por '${session.username}': ${datos.movimientos.length} movimientos IBS, ${datos.pendientes.length} pendientes, ${datos.operaciones.length} operaciones BankService, ${datos.excepciones.length} excepciones`);
     writeJsonResponse(res, 200, datos);
   } catch (err) {
@@ -2017,6 +2039,7 @@ async function handleRequest(req, res) {
     if (method === 'POST' && pathname === '/api/conciliacion/ibs') return void (await handleConciliacionIbsPost(req, res, session));
     if (method === 'POST' && pathname === '/api/transf-ca-cc/bankservice') return void (await handleTransfCaCcCargaPost(req, res, session));
     if (method === 'GET' && pathname === '/api/transf-ca-cc/cargas') return void (await handleTransfCaCcCargasGet(parsedUrl, res));
+    if (method === 'GET' && pathname === '/api/transf-ca-cc/historia') return void (await handleTransfCaCcHistoriaGet(parsedUrl, res));
     if (method === 'GET' && pathname === '/api/transf-ca-cc/datos') return void (await handleTransfCaCcDatosGet(parsedUrl, res, session));
     if (method === 'POST' && pathname === '/api/qnet/bankservice') return void (await handleQnetBankservicePost(req, res, session));
     if (method === 'GET' && pathname === '/api/qnet/bankservice') return void (await handleQnetBankserviceResumenGet(res));

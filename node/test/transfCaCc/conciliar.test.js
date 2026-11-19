@@ -179,3 +179,15 @@ test('semáforos: rojo con diferencias, amarillo con pendientes, verde si está 
   const s3 = calculo.semaforos(calculo.indicadores({ ...ok, config: { movDebito: '25030', movCredito: '25031' } }, ''));
   assert.deepStrictEqual([s3.ibs.color, s3.bs.color, s3.activar.color], ['verde', 'verde', 'verde']);
 });
+
+test('historia: resumen por día del período (lo que se guarda en transf_ca_cc_dias)', () => {
+  const { resumenPorDia } = require('../../lib/transfCaCc/servicio');
+  const { datos } = armar();
+  const dias = resumenPorDia({ ...datos, rango: { desde: '2026-11-01', hasta: '2026-11-17' } });
+  assert.deepStrictEqual(dias.map((d) => d.fecha), ['2026-11-14', '2026-11-15', '2026-11-16']);
+  const d16 = dias.find((d) => d.fecha === '2026-11-16');
+  assert.strictEqual(d16.aprobadas, d16.ejecutadas + d16.pendientes + d16.sinRegistro + d16.porContabilizar);
+  assert.strictEqual(d16.importePendArs, 70000);
+  assert.strictEqual(d16.semaforoBs, 'rojo');
+  assert.ok(d16.porTipo['Transfer sin ejecutar'] >= 1);
+});

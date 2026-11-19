@@ -241,8 +241,7 @@
     { campo: 'sinRegistro', nombre: 'Sin registro', color: 'var(--tcc-s3)' },
   ];
 
-  function pintarGrafico(filas) {
-    const box = $('tccGrafico');
+  function pintarGrafico(filas, box = $('tccGrafico'), alClic = setDia) {
     if (filas.length === 0) {
       box.innerHTML = '<p class="tcc-suave">No hay operaciones en el período.</p>';
       return;
@@ -286,7 +285,7 @@
         tip.style.display = 'block';
       });
       r.addEventListener('mouseleave', () => { tip.style.display = 'none'; });
-      r.addEventListener('click', () => setDia(r.dataset.fecha));
+      if (alClic) r.addEventListener('click', () => alClic(r.dataset.fecha));
     });
   }
 
@@ -323,6 +322,54 @@
     });
   }
 
+  // --- Historia de días conciliados -------------------------------------------------
+  const punto = (color) => `<span class="tcc-semaforo ${esc(color)}" title="${esc(color)}"></span>`;
+
+  async function verHistoria() {
+    const desde = $('tccHistDesde').value;
+    const hasta = $('tccHistHasta').value;
+    if (!desde || !hasta || desde > hasta) {
+      $('tccHistEstado').textContent = 'Elegí Desde y Hasta (Desde no puede ser posterior a Hasta).';
+      return;
+    }
+    $('tccHistEstado').textContent = 'Leyendo la historia...';
+    try {
+      const res = await apiFetch(`/api/transf-ca-cc/historia?desde=${encodeURIComponent(desde)}&hasta=${encodeURIComponent(hasta)}`);
+      const data = await res.json();
+      if (!res.ok) {
+        $('tccHistEstado').textContent = data.error || 'No se pudo leer la historia.';
+        return;
+      }
+      const dias = data.dias;
+      if (dias.length === 0) {
+        $('tccHistEstado').textContent = 'No hay días conciliados guardados en ese período.';
+        $('tccHistGrafico').style.display = 'none';
+        $('tccHistTabla').innerHTML = '';
+        return;
+      }
+      $('tccHistEstado').textContent = `${fmtNum(dias.length)} día(s) conciliados.`;
+      $('tccHistGrafico').style.display = '';
+      // Mismo gráfico que el del período; "Sin registro" incluye los pendientes de contabilizar.
+      pintarGrafico(dias.map((d) => ({ fecha: d.fecha, ejecutadas: d.ejecutadas, pendientes: d.pendientes, sinRegistro: d.sinRegistro + d.porContabilizar })), $('tccHistGrafico'), null);
+      const acum = { 0: 0, 2: 0 };
+      $('tccHistTabla').innerHTML = `<table><thead><tr><th>Fecha</th><th>IBS</th><th>BS vs IBS</th><th class="num">APPROVED</th><th class="num">En IBS</th><th class="num">Con débito pendiente</th>
+        <th class="num">Sin registro</th><th class="num">Por contabilizar</th><th class="num">Pendiente pesos</th><th class="num">Acumulado pesos</th><th class="num">Pendiente USD</th><th class="num">Acumulado USD</th>
+        <th class="num">Excepciones</th><th>Conciliado</th></tr></thead><tbody>` +
+        dias.map((d) => {
+          acum[0] += d.importePendArs;
+          acum[2] += d.importePendUsd;
+          const tipos = Object.entries(d.porTipo || {}).map(([k, v]) => `${v} ${k}`).join('\n');
+          return `<tr><td>${esc(dmy(d.fecha))}</td><td>${punto(d.semaforoIbs)}</td><td>${punto(d.semaforoBs)}</td>
+            <td class="num">${fmtNum(d.aprobadas)}</td><td class="num">${fmtNum(d.ejecutadas)}</td><td class="num">${fmtNum(d.pendientes)}</td>
+            <td class="num">${fmtNum(d.sinRegistro)}</td><td class="num">${fmtNum(d.porContabilizar)}</td>
+            <td class="num">${dinero('0', d.importePendArs)}</td><td class="num">${dinero('0', acum[0])}</td><td class="num">${dinero('2', d.importePendUsd)}</td><td class="num">${dinero('2', acum[2])}</td>
+            <td class="num" title="${esc(tipos)}">${fmtNum(d.excepciones)}</td><td>${esc(dmy(d.generadoEn))} ${esc(String(d.generadoEn).slice(11, 16))} · ${esc(d.generadoPor)}</td></tr>`;
+        }).join('') + '</tbody></table>';
+    } catch (err) {
+      $('tccHistEstado').textContent = 'Error: ' + err.message;
+    }
+  }
+
   function setDia(dia) {
     estado.dia = dia || '';
     $('tccDia').value = estado.dia;
@@ -334,6 +381,8 @@
     const hoy = formatDateOnlyLocal(new Date());
     if (!$('tccIbsHasta').value) $('tccIbsHasta').value = hoy;
     if (!$('tccIbsDesde').value) $('tccIbsDesde').value = `${sumarDias(hoy.slice(0, 8) + '01', -1).slice(0, 8)}01`;
+    if (!$('tccHistHasta').value) $('tccHistHasta').value = hoy;
+    if (!$('tccHistDesde').value) $('tccHistDesde').value = sumarDias(hoy, -30);
     showMainSection('transfCaCcSection');
     cargarHistorial();
   }
@@ -341,6 +390,7 @@
   $('tccBtn').addEventListener('click', abrir);
   $('tccCerrarBtn').addEventListener('click', () => showMainSection('flowDetail'));
   $('tccCargarBtn').addEventListener('click', cargarCsv);
+  $('tccHistBtn').addEventListener('click', verHistoria);
   $('tccActualizarBtn').addEventListener('click', actualizar);
   $('tccDia').addEventListener('change', () => setDia($('tccDia').value));
   $('tccUltimoDiaBtn').addEventListener('click', () => estado.datos && setDia(estado.datos.corte.ultimoDiaIbs));
