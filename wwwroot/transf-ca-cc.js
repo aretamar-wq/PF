@@ -161,9 +161,6 @@
       tile('Créditos 25031 en USD', dinero('2', ibs.saldoCreditos[2])) +
       tile('Débitos pendientes en USD', dinero('2', ibs.saldoPendientes[2])) +
       `</div><div class="tcc-grilla" style="margin-top: 10px;">` +
-      tile('Débitos de operaciones anteriores (salieron de pendientes)', fmtNum(total(ibs.debitosAnteriores)), `${dinero('0', ibs.importeDebitosAnteriores[0])} · ${dinero('2', ibs.importeDebitosAnteriores[2])}`) +
-      tile('Créditos de operaciones anteriores', fmtNum(total(ibs.creditosAnteriores)), `${dinero('0', ibs.importeCreditosAnteriores[0])} · ${dinero('2', ibs.importeCreditosAnteriores[2])}`) +
-      `</div><div class="tcc-grilla" style="margin-top: 10px;">` +
       tile('Débitos manuales en pesos', fmtNum(ibs.manuales[0]), dinero('0', ibs.importeManuales[0])) +
       tile('Débitos manuales en USD', fmtNum(ibs.manuales[2]), dinero('2', ibs.importeManuales[2])) +
       `</div><div class="tcc-grilla" style="margin-top: 10px;">` +
