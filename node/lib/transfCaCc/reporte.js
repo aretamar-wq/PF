@@ -170,6 +170,10 @@ function generarReporte({ datos, dia, usuario, ahora = new Date() }) {
     ['Débitos en USD', dinero('2', ibs.saldoDebitos[2])], ['Créditos 25031 en USD', dinero('2', ibs.saldoCreditos[2])], ['Débitos pendientes en USD', dinero('2', ibs.saldoPendientes[2])],
   ], 3);
   grilla([
+    ['Débitos de operaciones anteriores (salieron de pendientes)', fmtNum(total(ibs.debitosAnteriores)), `${dinero('0', ibs.importeDebitosAnteriores[0])} · ${dinero('2', ibs.importeDebitosAnteriores[2])}`],
+    ['Créditos de operaciones anteriores', fmtNum(total(ibs.creditosAnteriores)), `${dinero('0', ibs.importeCreditosAnteriores[0])} · ${dinero('2', ibs.importeCreditosAnteriores[2])}`],
+  ], 2);
+  grilla([
     ['Débitos manuales en pesos', fmtNum(ibs.manuales[0]), dinero('0', ibs.importeManuales[0])], ['Débitos manuales en USD', fmtNum(ibs.manuales[2]), dinero('2', ibs.importeManuales[2])],
   ], 2);
   grilla([
