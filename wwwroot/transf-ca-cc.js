@@ -148,7 +148,7 @@
     $('tccIbs').innerHTML =
       `<div class="tcc-grilla">` +
       tile('Comprobantes en IBS (sin los de 1 centavo)', fmtNum(total(ibs.comprobantes)), porMoneda(ibs.comprobantes)) +
-      tile('Débitos 25030', fmtNum(total(ibs.debitos)), porMoneda(ibs.debitos)) +
+      tile('Débitos 25030 (sin los de 1 centavo)', fmtNum(total(ibs.debitos)), porMoneda(ibs.debitos)) +
       tile('Créditos 25031 (sin los de 1 centavo)', fmtNum(total(ibs.creditos)), porMoneda(ibs.creditos)) +
       tile('Débitos pendientes', fmtNum(total(ibs.pendientes)), porMoneda(ibs.pendientes)) +
       `</div><div class="tcc-grilla" style="margin-top: 10px;">` +

@@ -40,16 +40,15 @@
       } else {
         comps[k].add(m.comprobante);
       }
-      // Débitos 25030: todos, incluidos los de 1 centavo (también los de Activar Cuentas).
+      // Los movimientos de 1 centavo (débitos y créditos) no cuentan en los indicadores
+      // de transferencias: se ven en "IBS - Activar Cuentas".
+      if (m.centavo) continue;
       if (m.movcod === deb) {
         ibs.debitos[k]++;
         ibs.saldoDebitos[k] += m.importe;
         if (m.posterior) ibs.posteriores[k]++;
-      }
-      if (m.activarCuentas) continue; // el resto de los indicadores de transferencias no los cuenta
-      if (m.movcod === deb) {
         if (m.manual) { ibs.manuales[k]++; ibs.importeManuales[k] += m.importe; }
-      } else if (m.movcod === cre && !m.centavo) {
+      } else if (m.movcod === cre) {
         if (m.posterior) ibs.posteriores[k]++;
         ibs.creditos[k]++;
         ibs.saldoCreditos[k] += m.importe;

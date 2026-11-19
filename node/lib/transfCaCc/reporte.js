@@ -158,7 +158,7 @@ function generarReporte({ datos, dia, usuario, ahora = new Date() }) {
   titulo('IBS - Transferencias Loop (25030 - 25031)', sem.ibs);
   grilla([
     ['Comprobantes en IBS (sin los de 1 centavo)', fmtNum(total(ibs.comprobantes)), porMoneda(ibs.comprobantes)],
-    ['Débitos 25030', fmtNum(total(ibs.debitos)), porMoneda(ibs.debitos)],
+    ['Débitos 25030 (sin los de 1 centavo)', fmtNum(total(ibs.debitos)), porMoneda(ibs.debitos)],
     ['Créditos 25031 (sin los de 1 centavo)', fmtNum(total(ibs.creditos)), porMoneda(ibs.creditos)],
     ['Débitos pendientes', fmtNum(total(ibs.pendientes)), porMoneda(ibs.pendientes)],
   ]);
