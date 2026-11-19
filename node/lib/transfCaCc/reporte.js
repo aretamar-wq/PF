@@ -73,10 +73,11 @@ function generarReporte({ datos, dia, usuario, ahora = new Date() }) {
       espacio(alto + 6);
       fila.forEach(([, v, , estado], j) => {
         const x = M + j * (ancho + 6);
-        const borde = estado === 'ok' ? '#2e9d6b' : estado === 'err' ? '#d92d20' : '#d9dde3';
-        pdf.rect(x, y, ancho, alto, { relleno: '#f7f8fa', borde });
+        const borde = estado === 'ok' ? '#2e9d6b' : estado === 'err' ? '#d92d20' : estado === 'warn' ? '#f0b429' : '#d9dde3';
+        const fondo = estado === 'ok' ? '#e6f4ec' : estado === 'err' ? '#fdecea' : estado === 'warn' ? '#fff4e5' : '#f7f8fa';
+        pdf.rect(x, y, ancho, alto, { relleno: fondo, borde });
         titulos[j].forEach((l, k) => pdf.texto(x + 6, y + 10 + k * 9, l, { tam: 7, colorHex: '#5b6576' }));
-        pdf.texto(x + 6, y + 14 + lt * 9 + 3, v, { tam: 12, negrita: true, colorHex: estado === 'err' ? '#b42318' : estado === 'ok' ? '#1e7b4f' : '#1d2433' });
+        pdf.texto(x + 6, y + 14 + lt * 9 + 3, v, { tam: 12, negrita: true, colorHex: estado === 'err' ? '#b42318' : estado === 'ok' ? '#1e7b4f' : estado === 'warn' ? '#b54708' : '#1d2433' });
         detalles[j].forEach((l, k) => pdf.texto(x + 6, y + 22 + lt * 9 + 6 + k * 9, l, { tam: 7, colorHex: '#5b6576' }));
       });
       y += alto + 6;
@@ -156,20 +157,21 @@ function generarReporte({ datos, dia, usuario, ahora = new Date() }) {
   }
 
   const sinReg = total(bs.sinRegistro);
+  const col = calculo.coloresTransferencias(ind);
   titulo('IBS - Transferencias Loop (25030 - 25031)', sem.transferencias);
   grilla([
     ['Operaciones en BankService (APPROVED)', fmtNum(total(bs.aprobadas)), porMoneda(bs.aprobadas)],
-    ['Débitos 25030', fmtNum(total(ibs.debitos)), porMoneda(ibs.debitos)],
-    ['Créditos 25031', fmtNum(total(ibs.creditos)), porMoneda(ibs.creditos)],
-    ['Débitos pendientes', fmtNum(total(ibs.pendientes)), porMoneda(ibs.pendientes)],
+    ['Débitos 25030', fmtNum(total(ibs.debitos)), porMoneda(ibs.debitos), col.debitos],
+    ['Créditos 25031', fmtNum(total(ibs.creditos)), porMoneda(ibs.creditos), col.creditos],
+    ['Débitos pendientes', fmtNum(total(ibs.pendientes)), porMoneda(ibs.pendientes), col.pendientes],
   ]);
   grilla([
     ['Transferencias BankService en pesos', dinero('0', bs.importeAprobadas[0]), `${fmtNum(bs.aprobadas[0])} APPROVED`],
-    ['Débitos en pesos', dinero('0', ibs.saldoDebitos[0])], ['Créditos 25031 en pesos', dinero('0', ibs.saldoCreditos[0])], ['Débitos pendientes en pesos', dinero('0', ibs.saldoPendientes[0])],
+    ['Débitos en pesos', dinero('0', ibs.saldoDebitos[0]), '', col.saldoDebitos[0]], ['Créditos 25031 en pesos', dinero('0', ibs.saldoCreditos[0]), '', col.saldoCreditos[0]], ['Débitos pendientes en pesos', dinero('0', ibs.saldoPendientes[0]), '', col.saldoPendientes[0]],
   ], 4);
   grilla([
     ['Transferencias BankService en USD', dinero('2', bs.importeAprobadas[2]), `${fmtNum(bs.aprobadas[2])} APPROVED`],
-    ['Débitos en USD', dinero('2', ibs.saldoDebitos[2])], ['Créditos 25031 en USD', dinero('2', ibs.saldoCreditos[2])], ['Débitos pendientes en USD', dinero('2', ibs.saldoPendientes[2])],
+    ['Débitos en USD', dinero('2', ibs.saldoDebitos[2]), '', col.saldoDebitos[2]], ['Créditos 25031 en USD', dinero('2', ibs.saldoCreditos[2]), '', col.saldoCreditos[2]], ['Débitos pendientes en USD', dinero('2', ibs.saldoPendientes[2]), '', col.saldoPendientes[2]],
   ], 4);
   grilla([
     ['Débitos manuales en pesos', fmtNum(ibs.manuales[0]), dinero('0', ibs.importeManuales[0])], ['Débitos manuales en USD', fmtNum(ibs.manuales[2]), dinero('2', ibs.importeManuales[2])],

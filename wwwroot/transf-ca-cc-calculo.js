@@ -71,7 +71,7 @@
 
     const bs = {
       aprobadas: nuevo(), ejecutadas: nuevo(), pendientes: nuevo(), pendientesUltimoDia: nuevo(), pendientesAnteriores: nuevo(),
-      sinRegistro: nuevo(), porContabilizar: nuevo(), importePendiente: nuevo(), importeAprobadas: nuevo(), failed: 0, failedEnIbs: 0,
+      sinRegistro: nuevo(), porContabilizar: nuevo(), importePendiente: nuevo(), importeAprobadas: nuevo(), montoSinDebito: nuevo(), failed: 0, failedEnIbs: 0,
     };
     for (const o of ops) {
       const k = o.moncod;
@@ -82,6 +82,7 @@
       if (o.estado !== 'APPROVED' || !(k in bs.aprobadas)) continue;
       bs.aprobadas[k]++;
       bs.importeAprobadas[k] += o.monto;
+      if (o.clase === 'pendiente' || o.clase === 'porContabilizar') bs.montoSinDebito[k] += o.monto;
       if (o.clase === 'ejecutada') bs.ejecutadas[k]++;
       else if (o.clase === 'pendiente') {
         bs.pendientes[k]++;
@@ -162,12 +163,47 @@
     // el peor de los dos, con los motivos de ambos (sin repetir).
     const orden = { verde: 0, amarillo: 1, rojo: 2 };
     const peor = orden[ibs.color] >= orden[bs.color] ? ibs.color : bs.color;
-    const motivos = [...new Set([...ibs.motivos, ...bs.motivos].filter((m) => m !== 'Todo OK'))];
-    const transferencias = { color: peor, motivos: motivos.length ? motivos : ['Todo OK'] };
+    // Además, el color de los indicadores de Débitos y Créditos (el más crítico gana).
+    const col = coloresTransferencias(ind);
+    const indicadores = [
+      ['Débitos 25030 (cantidad)', col.debitos], ['Créditos 25031 (cantidad)', col.creditos],
+      ['Débitos en pesos', col.saldoDebitos[0]], ['Créditos 25031 en pesos', col.saldoCreditos[0]],
+      ['Débitos en USD', col.saldoDebitos[2]], ['Créditos 25031 en USD', col.saldoCreditos[2]],
+    ];
+    const rojosInd = indicadores.filter(([, c]) => c === 'err').map(([n]) => `${n} no coincide con BankService`);
+    const amarillosInd = indicadores.filter(([, c]) => c === 'warn').map(([n]) => `${n}: la diferencia son débitos pendientes`);
+    let color = peor;
+    if (rojosInd.length) color = 'rojo';
+    else if (amarillosInd.length && color === 'verde') color = 'amarillo';
+    const motivos = [...new Set([...rojosInd, ...ibs.motivos, ...bs.motivos, ...amarillosInd].filter((m) => m !== 'Todo OK'))];
+    const transferencias = { color, motivos: motivos.length ? motivos : ['Todo OK'] };
     return { ibs, activar, bs, transferencias };
   }
 
-  const api = { indicadores, porDia, semaforos };
+  // Color de los indicadores de Débitos y Créditos de "IBS - Transferencias Loop" contra
+  // BankService: 'ok' (verde) si coinciden con las APPROVED; 'warn' (amarillo) si la
+  // diferencia son exactamente las operaciones con débito pendiente (o pendientes de
+  // contabilizar); 'err' (rojo) si hay otra diferencia. Cantidades por moneda (el peor
+  // de los dos) e importes por moneda.
+  function coloresTransferencias(ind) {
+    const { ibs, bs } = ind;
+    const esperar = (k) => bs.pendientes[k] + bs.porContabilizar[k];
+    const comparar = (valor, aprobado, faltante) => (valor === aprobado ? 'ok' : faltante > 0 && valor + faltante === aprobado ? 'warn' : 'err');
+    const peor = (a, b) => (a === 'err' || b === 'err' ? 'err' : a === 'warn' || b === 'warn' ? 'warn' : 'ok');
+    const cant = (campo) => peor(...MONEDAS.map((k) => comparar(ibs[campo][k], bs.aprobadas[k], esperar(k))));
+    const imp = (campo, k) => comparar(ibs[campo][k], bs.importeAprobadas[k], bs.montoSinDebito[k]);
+    const pend = (n) => (n > 0 ? 'warn' : 'ok');
+    return {
+      debitos: cant('debitos'),
+      creditos: cant('creditos'),
+      pendientes: pend(total(ibs.pendientes)),
+      saldoDebitos: { 0: imp('saldoDebitos', '0'), 2: imp('saldoDebitos', '2') },
+      saldoCreditos: { 0: imp('saldoCreditos', '0'), 2: imp('saldoCreditos', '2') },
+      saldoPendientes: { 0: pend(ibs.saldoPendientes[0]), 2: pend(ibs.saldoPendientes[2]) },
+    };
+  }
+
+  const api = { indicadores, porDia, semaforos, coloresTransferencias };
   if (typeof module !== 'undefined' && module.exports) module.exports = api;
   else raiz.TransfCaCcCalculo = api;
 })(typeof window !== 'undefined' ? window : globalThis);

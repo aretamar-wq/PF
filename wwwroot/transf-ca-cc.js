@@ -146,22 +146,23 @@
       `${fmtNum(total(bs.sinRegistro))} sin registro en IBS y ${fmtNum(total(bs.porContabilizar))} pendientes de contabilizar. Importe pendiente: ${dinero('0', bs.importePendiente[0])} y ${dinero('2', bs.importePendiente[2])}.`;
 
     const sinReg = total(bs.sinRegistro);
+    const col = C.coloresTransferencias(ind);
     $('tccIbs').innerHTML =
       `<div class="tcc-grilla">` +
       tile('Operaciones en BankService (APPROVED)', fmtNum(total(bs.aprobadas)), porMoneda(bs.aprobadas)) +
-      tile('Débitos 25030', fmtNum(total(ibs.debitos)), porMoneda(ibs.debitos)) +
-      tile('Créditos 25031', fmtNum(total(ibs.creditos)), porMoneda(ibs.creditos)) +
-      tile('Débitos pendientes', fmtNum(total(ibs.pendientes)), porMoneda(ibs.pendientes)) +
+      tile('Débitos 25030', fmtNum(total(ibs.debitos)), porMoneda(ibs.debitos), col.debitos) +
+      tile('Créditos 25031', fmtNum(total(ibs.creditos)), porMoneda(ibs.creditos), col.creditos) +
+      tile('Débitos pendientes', fmtNum(total(ibs.pendientes)), porMoneda(ibs.pendientes), col.pendientes) +
       `</div><div class="tcc-grilla" style="margin-top: 10px;">` +
       tile('Transferencias BankService en pesos', dinero('0', bs.importeAprobadas[0]), `${fmtNum(bs.aprobadas[0])} APPROVED`) +
-      tile('Débitos en pesos', dinero('0', ibs.saldoDebitos[0])) +
-      tile('Créditos 25031 en pesos', dinero('0', ibs.saldoCreditos[0])) +
-      tile('Débitos pendientes en pesos', dinero('0', ibs.saldoPendientes[0])) +
+      tile('Débitos en pesos', dinero('0', ibs.saldoDebitos[0]), '', col.saldoDebitos[0]) +
+      tile('Créditos 25031 en pesos', dinero('0', ibs.saldoCreditos[0]), '', col.saldoCreditos[0]) +
+      tile('Débitos pendientes en pesos', dinero('0', ibs.saldoPendientes[0]), '', col.saldoPendientes[0]) +
       `</div><div class="tcc-grilla" style="margin-top: 10px;">` +
       tile('Transferencias BankService en USD', dinero('2', bs.importeAprobadas[2]), `${fmtNum(bs.aprobadas[2])} APPROVED`) +
-      tile('Débitos en USD', dinero('2', ibs.saldoDebitos[2])) +
-      tile('Créditos 25031 en USD', dinero('2', ibs.saldoCreditos[2])) +
-      tile('Débitos pendientes en USD', dinero('2', ibs.saldoPendientes[2])) +
+      tile('Débitos en USD', dinero('2', ibs.saldoDebitos[2]), '', col.saldoDebitos[2]) +
+      tile('Créditos 25031 en USD', dinero('2', ibs.saldoCreditos[2]), '', col.saldoCreditos[2]) +
+      tile('Débitos pendientes en USD', dinero('2', ibs.saldoPendientes[2]), '', col.saldoPendientes[2]) +
       `</div><div class="tcc-grilla" style="margin-top: 10px;">` +
       tile('Débitos manuales en pesos', fmtNum(ibs.manuales[0]), dinero('0', ibs.importeManuales[0])) +
       tile('Débitos manuales en USD', fmtNum(ibs.manuales[2]), dinero('2', ibs.importeManuales[2])) +

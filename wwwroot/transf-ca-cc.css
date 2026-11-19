@@ -58,6 +58,8 @@
 .tcc .tcc-tile.ok .v { color: var(--tcc-ok); }
 .tcc .tcc-tile.err { border-color: var(--tcc-err); background: var(--tcc-err-bg); }
 .tcc .tcc-tile.err .v { color: var(--tcc-err); }
+.tcc .tcc-tile.warn { border-color: var(--tcc-warn); background: var(--tcc-warn-bg); }
+.tcc .tcc-tile.warn .v { color: var(--tcc-warn); }
 .tcc .tcc-control { margin-top: 8px; padding: 6px 10px; border-radius: 4px; font-size: 0.9rem; }
 .tcc .tcc-control.ok { background: var(--tcc-ok-bg); color: var(--tcc-ok); }
 .tcc .tcc-control.err { background: var(--tcc-err-bg); color: var(--tcc-err); }
