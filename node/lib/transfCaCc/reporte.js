@@ -164,11 +164,13 @@ function generarReporte({ datos, dia, usuario, ahora = new Date() }) {
     ['Débitos pendientes', fmtNum(total(ibs.pendientes)), porMoneda(ibs.pendientes)],
   ]);
   grilla([
+    ['Transferencias BankService en pesos', dinero('0', bs.importeAprobadas[0]), `${fmtNum(bs.aprobadas[0])} APPROVED`],
     ['Débitos en pesos', dinero('0', ibs.saldoDebitos[0])], ['Créditos 25031 en pesos', dinero('0', ibs.saldoCreditos[0])], ['Débitos pendientes en pesos', dinero('0', ibs.saldoPendientes[0])],
-  ], 3);
+  ], 4);
   grilla([
+    ['Transferencias BankService en USD', dinero('2', bs.importeAprobadas[2]), `${fmtNum(bs.aprobadas[2])} APPROVED`],
     ['Débitos en USD', dinero('2', ibs.saldoDebitos[2])], ['Créditos 25031 en USD', dinero('2', ibs.saldoCreditos[2])], ['Débitos pendientes en USD', dinero('2', ibs.saldoPendientes[2])],
-  ], 3);
+  ], 4);
   grilla([
     ['Débitos manuales en pesos', fmtNum(ibs.manuales[0]), dinero('0', ibs.importeManuales[0])], ['Débitos manuales en USD', fmtNum(ibs.manuales[2]), dinero('2', ibs.importeManuales[2])],
   ], 2);

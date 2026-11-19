@@ -71,7 +71,7 @@
 
     const bs = {
       aprobadas: nuevo(), ejecutadas: nuevo(), pendientes: nuevo(), pendientesUltimoDia: nuevo(), pendientesAnteriores: nuevo(),
-      sinRegistro: nuevo(), porContabilizar: nuevo(), importePendiente: nuevo(), failed: 0, failedEnIbs: 0,
+      sinRegistro: nuevo(), porContabilizar: nuevo(), importePendiente: nuevo(), importeAprobadas: nuevo(), failed: 0, failedEnIbs: 0,
     };
     for (const o of ops) {
       const k = o.moncod;
@@ -81,6 +81,7 @@
       }
       if (o.estado !== 'APPROVED' || !(k in bs.aprobadas)) continue;
       bs.aprobadas[k]++;
+      bs.importeAprobadas[k] += o.monto;
       if (o.clase === 'ejecutada') bs.ejecutadas[k]++;
       else if (o.clase === 'pendiente') {
         bs.pendientes[k]++;
