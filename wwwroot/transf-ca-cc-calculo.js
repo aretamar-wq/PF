@@ -26,19 +26,16 @@
       saldoDebitos: nuevo(), saldoCreditos: nuevo(), saldoPendientes: nuevo(),
       manuales: nuevo(), importeManuales: nuevo(), posteriores: nuevo(),
     };
-    const comps = { 0: new Set(), 2: new Set() };
     const activar = { comprobantes: nuevo(), creditos: nuevo(), debitos: nuevo(), sinOperacion: 0 };
     const compsCentavo = { 0: new Set(), 2: new Set() };
     for (const m of movs) {
       const k = m.moncod;
-      if (!(k in comps)) continue;
+      if (!(k in compsCentavo)) continue;
       if (m.centavo) {
         compsCentavo[k].add(m.comprobante);
         if (m.movcod === deb) activar.debitos[k]++;
         else activar.creditos[k]++;
         if (m.activarCuentas) activar.sinOperacion++;
-      } else {
-        comps[k].add(m.comprobante);
       }
       // Los movimientos de 1 centavo (débitos y créditos) no cuentan en los indicadores
       // de transferencias: se ven en "IBS - Activar Cuentas".
@@ -54,7 +51,15 @@
         ibs.saldoCreditos[k] += m.importe;
       }
     }
-    for (const k of MONEDAS) { ibs.comprobantes[k] = comps[k].size; activar.comprobantes[k] = compsCentavo[k].size; }
+    for (const k of MONEDAS) activar.comprobantes[k] = compsCentavo[k].size;
+    // "Comprobantes": las operaciones de BankService del día (sin las de 1 centavo), por
+    // moneda, con el detalle por estado.
+    ibs.comprobantesEstado = { APPROVED: 0, FAILED: 0, PENDING_EXECUTION: 0 };
+    for (const o of ops) {
+      if (!(o.moncod in ibs.comprobantes) || o.monto <= 1) continue;
+      ibs.comprobantes[o.moncod]++;
+      if (o.estado in ibs.comprobantesEstado) ibs.comprobantesEstado[o.estado]++;
+    }
     for (const p of pends) {
       if (!(p.moncod in ibs.pendientes)) continue;
       ibs.pendientes[p.moncod]++;
