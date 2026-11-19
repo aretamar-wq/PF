@@ -136,3 +136,26 @@ test('filtro por día y saldo de pendientes con acumulado dentro del período', 
   assert.strictEqual(solo16[0].acumulado[0], 70000);
   assert.ok(grafico.find((g) => g.fecha === '2026-11-16').ejecutadas >= 3);
 });
+
+test('débito imputado en fecha posterior: cruza como ejecutada, no mueve el corte ni los indicadores de IBS', () => {
+  const m = ibs.normalizarMovimientos([mov(10, '16/11/2026', 25030, 100)], config).movimientos;
+  const post = ibs.normalizarMovimientos([mov(9, '18/11/2026', 25030, 50)], config).movimientos.map((x) => ({ ...x, posterior: true }));
+  const r = conciliar({ movimientos: [...m, ...post], pendientes: [], operaciones: [op(10, '2026-11-16', 100), op(9, '2026-11-13', 50)], config });
+  assert.strictEqual(r.corte.ultimoDiaIbs, '2026-11-16');
+  const o9 = r.operaciones.find((o) => o.comprobante === '9');
+  assert.strictEqual(o9.clase, 'ejecutada');
+  assert.strictEqual(o9.posterior, true);
+  assert.deepStrictEqual(r.excepciones, []);
+  const ind = calculo.indicadores({ ...r, config: { movDebito: '25030', movCredito: '25031' } }, '');
+  assert.strictEqual(ind.total(ind.ibs.debitos), 1);
+  assert.strictEqual(ind.total(ind.bs.posteriores), 1);
+  assert.strictEqual(ind.bs.control.diferencia, 0);
+});
+
+test('consulta de posteriores: misma consulta, por moneda y comprobantes', () => {
+  const q = ibs.consultaPosteriores('2026-10-06', '2026-11-19', '0', ['572', '573'], config);
+  assert.match(q, /a\.fecmov >= '20261006' and a\.fecmov < '20261119'/);
+  assert.match(q, /a\.moncod = 0/);
+  assert.match(q, /a\.comnro in \(572,573\)/);
+  assert.throws(() => ibs.consultaPosteriores('2026-10-06', '2026-11-19', '0', ['1; drop'], config));
+});

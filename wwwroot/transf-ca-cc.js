@@ -194,6 +194,7 @@
     $('tccBs').innerHTML = `<div class="tcc-linea">` +
       tile('Operaciones en BankService (APPROVED)', fmtNum(total(bs.aprobadas)), porMoneda(bs.aprobadas)) +
       tile('Operaciones en IBS', fmtNum(total(bs.ejecutadas)), porMoneda(bs.ejecutadas)) +
+      tile('Débito imputado en fecha posterior', fmtNum(total(bs.posteriores)), `${porMoneda(bs.posteriores)} · incluidas en Operaciones en IBS`, 'ok') +
       tile('Operaciones con débito pendiente', fmtNum(total(bs.pendientes)), porMoneda(bs.pendientes)) +
       tile('APPROVED que no figuran en IBS ni en pendientes', fmtNum(sinReg), `${porMoneda(bs.sinRegistro)}${total(bs.porContabilizar) ? ` · ${fmtNum(total(bs.porContabilizar))} pendientes de contabilizar` : ''}`, sinReg === 0 ? 'ok' : 'err') +
       tile('Operaciones FAILED en BS que figuran en IBS', fmtNum(bs.failedEnIbs), `de ${fmtNum(bs.failed)} operaciones FAILED en BankService`, bs.failedEnIbs === 0 ? 'ok' : 'err') +

@@ -25,6 +25,25 @@ where a.fecmov >= '${aaaammdd(desde)}' and a.fecmov < '${aaaammdd(hasta)}' and a
   and a.movcod in (${config.movDebito}, ${config.movCredito})`;
 }
 
+// Débitos imputados en fechas posteriores al período: los mismos movimientos, pero
+// solo de los comprobantes indicados (una moneda por consulta), desde la fecha de la
+// operación hasta mañana. comprobantes: solo dígitos.
+function consultaPosteriores(desde, hasta, moncod, comprobantes, config) {
+  if (!/^\d$/.test(String(moncod))) throw new Error(`Moneda inválida: '${moncod}'.`);
+  if (comprobantes.length === 0 || comprobantes.some((c) => !/^\d{1,15}$/.test(String(c)))) throw new Error('Comprobantes inválidos.');
+  return `select a.usrident, a.sistcod, a.moncod, a.cuecod,
+       convert(varchar, a.fecmov, 103) 'Fecha_Mov', a.comnro, a.movcod,
+       b.signo, b.accimp, b.signo * b.accimp 'Importe'
+from tgl_movimientos a, tgl_movimientos_aper b
+where a.fecmov >= '${aaaammdd(desde)}' and a.fecmov < '${aaaammdd(hasta)}'
+  and a.moncod = ${moncod}
+  and a.comnro in (${comprobantes.join(',')})
+  and a.concod = ' '
+  and a.fecreal = b.fecreal and a.tercod = b.tercod and b.funcod = 1
+  and a.movcod in (${config.movDebito}, ${config.movCredito})
+order by a.comnro`;
+}
+
 function consultaPendientes(config) {
   return `select b.fecreal, b.tercod, b.succod, b.sistcod, b.moncod, b.cuecod, movcod, descdet,
        b.fecproceso, b.comnro, b.nromen, m.mentexto, b.importedeb, fecenlace, fecorigen
@@ -105,4 +124,4 @@ function normalizarPendientes(filas, config) {
   return { pendientes, avisos };
 }
 
-module.exports = { COLUMNAS_MOVIMIENTOS, COLUMNAS_PENDIENTES, consultaMovimientos, consultaPendientes, normalizarMovimientos, normalizarPendientes };
+module.exports = { COLUMNAS_MOVIMIENTOS, COLUMNAS_PENDIENTES, consultaMovimientos, consultaPosteriores, consultaPendientes, normalizarMovimientos, normalizarPendientes };
