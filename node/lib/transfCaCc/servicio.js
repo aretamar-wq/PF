@@ -198,7 +198,7 @@ function resumenPorDia(datos) {
       importePendArs: ind.bs.importePendiente[0],
       importePendUsd: ind.bs.importePendiente[2],
       excepciones: ind.excepciones.length,
-      semaforoIbs: sem.ibs.color,
+      semaforoIbs: sem.transferencias.color,
       semaforoBs: sem.bs.color,
       porTipo,
     };
