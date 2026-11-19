@@ -14,8 +14,8 @@
 
   function indicadores(datos, dia) {
     const ok = enDia(dia);
-    // Los movimientos imputados después del período solo sirven para cruzar: no suman en IBS.
-    const movs = datos.movimientos.filter((m) => !m.posterior && ok(m.fecha));
+    // Los movimientos imputados después del período suman en el día de su operación (fechaFiltro).
+    const movs = datos.movimientos.filter((m) => ok(m.fechaFiltro || m.fecha));
     const ops = datos.operaciones.filter((o) => ok(o.fecha));
     const pends = datos.pendientes.filter((p) => p.movcod === datos.config.movDebito && ok(p.fecha));
     const deb = datos.config.movDebito;
@@ -24,7 +24,7 @@
     const ibs = {
       comprobantes: nuevo(), debitos: nuevo(), creditos: nuevo(), pendientes: nuevo(),
       saldoDebitos: nuevo(), saldoCreditos: nuevo(), saldoPendientes: nuevo(),
-      manuales: nuevo(), importeManuales: nuevo(),
+      manuales: nuevo(), importeManuales: nuevo(), posteriores: nuevo(),
     };
     const comps = { 0: new Set(), 2: new Set() };
     const activar = { comprobantes: nuevo(), creditos: nuevo(), debitos: nuevo(), sinOperacion: 0 };
@@ -41,6 +41,7 @@
         comps[k].add(m.comprobante);
       }
       if (m.activarCuentas) continue; // Activar Cuentas: fuera de los indicadores de transferencias
+      if (m.posterior && (m.movcod === deb || !m.centavo)) ibs.posteriores[k]++;
       if (m.movcod === deb) {
         ibs.debitos[k]++;
         ibs.saldoDebitos[k] += m.importe;
@@ -59,7 +60,7 @@
 
     const bs = {
       aprobadas: nuevo(), ejecutadas: nuevo(), pendientes: nuevo(), pendientesUltimoDia: nuevo(), pendientesAnteriores: nuevo(),
-      sinRegistro: nuevo(), porContabilizar: nuevo(), importePendiente: nuevo(), failed: 0, failedEnIbs: 0, posteriores: nuevo(),
+      sinRegistro: nuevo(), porContabilizar: nuevo(), importePendiente: nuevo(), failed: 0, failedEnIbs: 0,
     };
     for (const o of ops) {
       const k = o.moncod;
@@ -69,10 +70,7 @@
       }
       if (o.estado !== 'APPROVED' || !(k in bs.aprobadas)) continue;
       bs.aprobadas[k]++;
-      if (o.clase === 'ejecutada') {
-        bs.ejecutadas[k]++;
-        if (o.posterior) bs.posteriores[k]++;
-      }
+      if (o.clase === 'ejecutada') bs.ejecutadas[k]++;
       else if (o.clase === 'pendiente') {
         bs.pendientes[k]++;
         bs.importePendiente[k] += o.pendiente || 0;
