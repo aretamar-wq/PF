@@ -1279,6 +1279,10 @@ todas las excepciones. Es evidencia de auditoría: se guarda una copia en
 `files/reportes-ca-cc/` y el SHA-256 del PDF queda en el log de seguridad. No usa
 librerías externas (`node/lib/transfCaCc/pdf.js`).
 
+**Días hábiles:** una operación de BankService de un sábado, domingo o feriado
+(calendario de Parametría) se asigna al próximo día hábil, que es cuando la imputa IBS;
+la excepción indica el día real. Los campos de fecha no aceptan días no hábiles.
+
 **Carga de BankService** (`POST /api/transf-ca-cc/bankservice`, historial en
 `GET /api/transf-ca-cc/cargas`): valida el encabezado; UTF-8, CRLF/LF, comillas y "—";
 rechaza fila por fila con motivo (estado, moneda, monto, fechas, CBU de 22 dígitos con

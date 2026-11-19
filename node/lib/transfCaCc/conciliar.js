@@ -73,13 +73,19 @@ function conciliar({ movimientos, pendientes, operaciones, config }) {
   }
 
   const excepciones = [];
-  const exc = (tipo, datos) => excepciones.push({ tipo, comprobante: '', cuenta: '', moneda: '', fecha: '', importe: null, usuario: '', estadoBs: '', detalle: '', ...datos });
+  const exc = (tipo, datos) => {
+    const { fechaOriginal, ...resto } = datos;
+    const e = { tipo, comprobante: '', cuenta: '', moneda: '', fecha: '', importe: null, usuario: '', estadoBs: '', detalle: '', ...resto };
+    // Operación de un día no hábil: se informa el día real.
+    if (fechaOriginal) e.detalle += ` Operación del ${fechaOriginal.split('-').reverse().join('/')} (no hábil), asignada al próximo día hábil.`;
+    excepciones.push(e);
+  };
 
   // Operaciones de BankService.
   const clasificadas = operaciones.map((o) => {
     const r = { ...o, clase: '', subclase: '' };
     const debitos = debitosPorComp.get(o.comprobante) || [];
-    const base = { comprobante: o.comprobante, cuenta: o.cuecod, moneda: etiqueta(o.moncod), fecha: o.fecha, importe: o.monto, estadoBs: o.estado };
+    const base = { comprobante: o.comprobante, cuenta: o.cuecod, moneda: etiqueta(o.moncod), fecha: o.fecha, importe: o.monto, estadoBs: o.estado, fechaOriginal: o.fechaOriginal };
     if (o.estado === 'APPROVED') {
       if (debitos.length > 0) {
         r.clase = 'ejecutada';

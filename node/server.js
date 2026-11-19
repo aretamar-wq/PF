@@ -1308,6 +1308,7 @@ async function handleTransfCaCcDatosGet(parsedUrl, res, session) {
       desde,
       hasta,
       ahora: formatLocal(new Date()),
+      feriados: conciliacionIbs.parseFeriados((parametria.calendario || {}).feriados).fechas,
     });
     transfCaCcUltima.set(session.username, datos);
     try {
