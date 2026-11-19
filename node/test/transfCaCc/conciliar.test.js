@@ -96,9 +96,11 @@ test('excepciones', () => {
   assert.deepStrictEqual(tiposDe(r, 100), []); // crédito contrapartida de sistcod 3
   assert.deepStrictEqual(tiposDe(r, 98), [TIPOS.CREDITO_RELEVANTE]);
   assert.match(r.excepciones.find((e) => e.comprobante === '98').detalle, /sistcod 3/);
-  assert.deepStrictEqual(tiposDe(r, 104), [TIPOS.PEND_IMPORTE]);
-  assert.deepStrictEqual(tiposDe(r, 105), [TIPOS.CUENTA, TIPOS.IMPORTE].sort());
-  assert.deepStrictEqual(tiposDe(r, 101), [TIPOS.PEND_DEBITADO]);
+  assert.deepStrictEqual(tiposDe(r, 104), [TIPOS.DEBITO_PENDIENTE, TIPOS.PEND_IMPORTE].sort());
+  assert.match(r.excepciones.find((e) => e.comprobante === '104' && e.tipo === TIPOS.DEBITO_PENDIENTE).detalle, /Falta el débito en IBS: está en débitos pendientes/);
+  assert.ok(tiposDe(r, 101).includes(TIPOS.CREDITO_FALTANTE)); // tiene débito y no tiene crédito
+  assert.deepStrictEqual(tiposDe(r, 105), [TIPOS.CUENTA, TIPOS.CREDITO_FALTANTE, TIPOS.IMPORTE].sort());
+  assert.deepStrictEqual(tiposDe(r, 101), [TIPOS.CREDITO_FALTANTE, TIPOS.PEND_DEBITADO].sort());
   assert.deepStrictEqual(tiposDe(r, 158871), [TIPOS.PEND_SIN_OPERACION]);
   assert.deepStrictEqual(tiposDe(r, 200), [TIPOS.DEBITO_FAILED]);
   assert.deepStrictEqual(tiposDe(r, 300), [TIPOS.SIN_EJECUTAR]);
@@ -139,7 +141,7 @@ test('filtro por día y saldo de pendientes con acumulado dentro del período', 
 });
 
 test('movimientos imputados en fecha posterior: cruzan, suman en IBS en el día de la operación y no mueven el corte', () => {
-  const m = ibs.normalizarMovimientos([mov(10, '16/11/2026', 25030, 100)], config).movimientos;
+  const m = ibs.normalizarMovimientos([mov(10, '16/11/2026', 25030, 100), mov(10, '16/11/2026', 25031, 100, { sistcod: 3 })], config).movimientos;
   const post = ibs.normalizarMovimientos([mov(9, '18/11/2026', 25030, 50), mov(9, '18/11/2026', 25031, 50, { sistcod: 3 })], config).movimientos.map((x) => ({ ...x, posterior: true }));
   const r = conciliar({ movimientos: [...m, ...post], pendientes: [], operaciones: [op(10, '2026-11-16', 100), op(9, '2026-11-13', 50)], config });
   assert.strictEqual(r.corte.ultimoDiaIbs, '2026-11-16');
@@ -149,7 +151,7 @@ test('movimientos imputados en fecha posterior: cruzan, suman en IBS en el día 
   assert.deepStrictEqual(r.excepciones, []);
   const ind = calculo.indicadores({ ...r, config: { movDebito: '25030', movCredito: '25031' } }, '');
   assert.strictEqual(ind.total(ind.ibs.debitos), 2);
-  assert.strictEqual(ind.total(ind.ibs.creditos), 1);
+  assert.strictEqual(ind.total(ind.ibs.creditos), 2);
   assert.strictEqual(ind.ibs.saldoDebitos[0], 15000);
   assert.strictEqual(ind.total(ind.ibs.posteriores), 2);
   const del13 = calculo.indicadores({ ...r, config: { movDebito: '25030', movCredito: '25031' } }, '2026-11-13');
@@ -176,7 +178,7 @@ test('semáforos: rojo con diferencias, amarillo con pendientes, verde si está 
   const soloPend = conciliar({ movimientos: [], pendientes: ibs.normalizarPendientes([pend(5, 10)], config).pendientes, operaciones: [op(5, '2026-11-16', 10)], config });
   const s2 = calculo.semaforos(calculo.indicadores({ ...soloPend, config: { movDebito: '25030', movCredito: '25031' } }, ''));
   assert.deepStrictEqual([s2.ibs.color, s2.bs.color, s2.activar.color], ['amarillo', 'amarillo', 'verde']);
-  const ok = conciliar({ movimientos: ibs.normalizarMovimientos([mov(5, '16/11/2026', 25030, 10)], config).movimientos, pendientes: [], operaciones: [op(5, '2026-11-16', 10)], config });
+  const ok = conciliar({ movimientos: ibs.normalizarMovimientos([mov(5, '16/11/2026', 25030, 10), mov(5, '16/11/2026', 25031, 10, { sistcod: 3 })], config).movimientos, pendientes: [], operaciones: [op(5, '2026-11-16', 10)], config });
   const s3 = calculo.semaforos(calculo.indicadores({ ...ok, config: { movDebito: '25030', movCredito: '25031' } }, ''));
   assert.deepStrictEqual([s3.ibs.color, s3.bs.color, s3.activar.color], ['verde', 'verde', 'verde']);
 });
