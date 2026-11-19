@@ -250,23 +250,7 @@
           <button type="button" id="tccCargarBtn">Cargar BankService</button>
           <span id="tccEstado" class="tcc-suave"></span>
         </div>
-        <details id="tccCargasBox">
-          <summary>Historial de cargas de BankService</summary>
-          <div id="tccCargaResultado"></div>
-          <div class="tcc-scroll"><table id="tccCargas"><thead><tr><th>#</th><th>Archivo</th><th>Cargado</th><th>Usuario</th><th class="num">Leídas</th><th class="num">Insertadas</th><th class="num">Actualizadas</th><th class="num">Sin cambios</th><th class="num">Rechazadas</th><th class="num">Conflictos</th><th>Operaciones del</th><th>al</th><th></th></tr></thead><tbody></tbody></table></div>
-        </details>
-
-        <details id="tccHistoriaBox">
-          <summary>Historia de días conciliados</summary>
-          <div class="tcc-barra">
-            <label>Desde <input type="date" id="tccHistDesde" /></label>
-            <label>Hasta <input type="date" id="tccHistHasta" /></label>
-            <button type="button" id="tccHistBtn">Ver historia</button>
-            <span id="tccHistEstado" class="tcc-suave">Se guarda el resultado de cada día cada vez que se concilia (lo último pisa a lo anterior); no vuelve a consultar IBS.</span>
-          </div>
-          <div id="tccHistGrafico" class="tcc-grafico" style="display: none;"></div>
-          <div id="tccHistTabla" class="tcc-scroll"></div>
-        </details>
+        <div id="tccCargaResultado"></div>
 
         <div id="tccContenido" style="display: none;">
           <div class="tcc-barra">
@@ -285,19 +269,22 @@
           <h3><span id="tccSemBs" class="tcc-semaforo" role="img"></span>BankService vs IBS</h3>
           <div id="tccBs"></div>
 
-          <div class="tcc-barra" style="margin-top: 22px;">
-            <label>Desde <input type="date" id="tccPerDesde" /></label>
-            <label>Hasta <input type="date" id="tccPerHasta" /></label>
-            <span class="tcc-suave">Aplica solo al gráfico y al saldo de débitos pendientes.</span>
-            <span id="tccPerAviso" class="tcc-suave"></span>
-          </div>
+        </div>
 
-          <h3>Operaciones por fecha</h3>
-          <div id="tccGrafico" class="tcc-grafico"></div>
+        <div class="tcc-barra" style="margin-top: 22px;">
+          <label>Desde <input type="date" id="tccPerDesde" /></label>
+          <label>Hasta <input type="date" id="tccPerHasta" /></label>
+          <span class="tcc-suave">Historial de conciliaciones guardado (lo último conciliado de cada día). Aplica solo al gráfico y al saldo de débitos pendientes.</span>
+          <span id="tccPerAviso" class="tcc-suave"></span>
+        </div>
 
-          <h3>Saldo de débitos pendientes por día</h3>
-          <div id="tccSaldo" class="tcc-scroll"></div>
+        <h3>Operaciones por fecha</h3>
+        <div id="tccGrafico" class="tcc-grafico"></div>
 
+        <h3>Saldo de débitos pendientes por día</h3>
+        <div id="tccSaldo" class="tcc-scroll"></div>
+
+        <div id="tccContenidoExc" style="display: none;">
           <h3>Excepciones a revisar</h3>
           <div class="tcc-barra">
             <label>Tipo <select id="tccExcTipo"><option value="">Todos</option></select></label>
