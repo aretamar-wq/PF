@@ -243,9 +243,8 @@
         <div id="tccAvisos"></div>
 
         <div class="tcc-barra">
-          <label>IBS desde <input type="date" id="tccIbsDesde" /></label>
-          <label>IBS hasta (inclusive) <input type="date" id="tccIbsHasta" /></label>
-          <button type="button" id="tccActualizarBtn">Consultar IBS y conciliar</button>
+          <label>Fecha a conciliar <input type="date" id="tccFecha" /></label>
+          <button type="button" id="tccActualizarBtn">Conciliar</button>
           <label>CSV de BankService <input type="file" id="tccArchivos" accept=".csv,text/csv" multiple /></label>
           <button type="button" id="tccCargarBtn">Cargar BankService</button>
           <span id="tccEstado" class="tcc-suave"></span>
@@ -254,9 +253,6 @@
 
         <div id="tccContenido" style="display: none;">
           <div class="tcc-barra">
-            <label>Día <input type="date" id="tccDia" /></label>
-            <button type="button" id="tccUltimoDiaBtn">Último día de IBS</button>
-            <button type="button" id="tccTodosBtn">Todos los días</button>
             <button type="button" id="tccPdfBtn">Descargar reporte PDF</button>
             <span id="tccDiaTexto" class="tcc-suave"></span>
           </div>
