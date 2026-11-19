@@ -47,8 +47,12 @@ function conciliar({ movimientos, pendientes, operaciones, config }) {
   // BankService: se excluyen de los indicadores de transferencias) y manuales.
   const movs = movimientos.map((m) => {
     const centavo = esCentavo(m);
+    const o = ops.get(m.comprobante);
     return {
       ...m,
+      // Un movimiento imputado después del período se cuenta en el día de su operación
+      // (así entra en los indicadores de IBS del período y en el filtro por día).
+      fechaFiltro: m.posterior && o && o.fecha ? o.fecha : m.fecha,
       centavo,
       activarCuentas: centavo && !ops.has(m.comprobante),
       manual: m.movcod === config.movDebito && !proceso.has(String(m.usuario)),
