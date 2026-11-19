@@ -123,6 +123,7 @@ test('indicadores: control, Activar Cuentas y FAILED en IBS', () => {
   assert.strictEqual(ind.ibs.manuales[0], 0); // el manual del 99999 no es de una operación de BankService
   assert.strictEqual(ind.ibs.debitos[0], 4); // operaciones APPROVED 100, 101, 103 y 105 (99999, 200 y 1 no cuentan)
   assert.strictEqual(ind.bs.importePendiente[0], 70000 + 80000);
+  assert.strictEqual(ind.bs.importeAprobadas[2], 5000); // la 102 en USD
 });
 
 test('filtro por día y saldo de pendientes con acumulado dentro del período', () => {

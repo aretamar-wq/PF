@@ -153,10 +153,12 @@
       tile('Créditos 25031', fmtNum(total(ibs.creditos)), porMoneda(ibs.creditos)) +
       tile('Débitos pendientes', fmtNum(total(ibs.pendientes)), porMoneda(ibs.pendientes)) +
       `</div><div class="tcc-grilla" style="margin-top: 10px;">` +
+      tile('Transferencias BankService en pesos', dinero('0', bs.importeAprobadas[0]), `${fmtNum(bs.aprobadas[0])} APPROVED`) +
       tile('Débitos en pesos', dinero('0', ibs.saldoDebitos[0])) +
       tile('Créditos 25031 en pesos', dinero('0', ibs.saldoCreditos[0])) +
       tile('Débitos pendientes en pesos', dinero('0', ibs.saldoPendientes[0])) +
       `</div><div class="tcc-grilla" style="margin-top: 10px;">` +
+      tile('Transferencias BankService en USD', dinero('2', bs.importeAprobadas[2]), `${fmtNum(bs.aprobadas[2])} APPROVED`) +
       tile('Débitos en USD', dinero('2', ibs.saldoDebitos[2])) +
       tile('Créditos 25031 en USD', dinero('2', ibs.saldoCreditos[2])) +
       tile('Débitos pendientes en USD', dinero('2', ibs.saldoPendientes[2])) +
