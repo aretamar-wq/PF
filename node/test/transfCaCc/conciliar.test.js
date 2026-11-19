@@ -137,9 +137,9 @@ test('filtro por día y saldo de pendientes con acumulado dentro del período', 
   assert.ok(grafico.find((g) => g.fecha === '2026-11-16').ejecutadas >= 3);
 });
 
-test('débito imputado en fecha posterior: cruza como ejecutada, no mueve el corte ni los indicadores de IBS', () => {
+test('movimientos imputados en fecha posterior: cruzan, suman en IBS en el día de la operación y no mueven el corte', () => {
   const m = ibs.normalizarMovimientos([mov(10, '16/11/2026', 25030, 100)], config).movimientos;
-  const post = ibs.normalizarMovimientos([mov(9, '18/11/2026', 25030, 50)], config).movimientos.map((x) => ({ ...x, posterior: true }));
+  const post = ibs.normalizarMovimientos([mov(9, '18/11/2026', 25030, 50), mov(9, '18/11/2026', 25031, 50, { sistcod: 3 })], config).movimientos.map((x) => ({ ...x, posterior: true }));
   const r = conciliar({ movimientos: [...m, ...post], pendientes: [], operaciones: [op(10, '2026-11-16', 100), op(9, '2026-11-13', 50)], config });
   assert.strictEqual(r.corte.ultimoDiaIbs, '2026-11-16');
   const o9 = r.operaciones.find((o) => o.comprobante === '9');
@@ -147,8 +147,13 @@ test('débito imputado en fecha posterior: cruza como ejecutada, no mueve el cor
   assert.strictEqual(o9.posterior, true);
   assert.deepStrictEqual(r.excepciones, []);
   const ind = calculo.indicadores({ ...r, config: { movDebito: '25030', movCredito: '25031' } }, '');
-  assert.strictEqual(ind.total(ind.ibs.debitos), 1);
-  assert.strictEqual(ind.total(ind.bs.posteriores), 1);
+  assert.strictEqual(ind.total(ind.ibs.debitos), 2);
+  assert.strictEqual(ind.total(ind.ibs.creditos), 1);
+  assert.strictEqual(ind.ibs.saldoDebitos[0], 15000);
+  assert.strictEqual(ind.total(ind.ibs.posteriores), 2);
+  const del13 = calculo.indicadores({ ...r, config: { movDebito: '25030', movCredito: '25031' } }, '2026-11-13');
+  assert.strictEqual(del13.total(del13.ibs.debitos), 1); // el posterior cuenta en el día de su operación
+  assert.strictEqual(del13.total(del13.ibs.creditos), 1);
   assert.strictEqual(ind.bs.control.diferencia, 0);
 });
 
