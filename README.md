@@ -1270,6 +1270,15 @@ semáforos. El gráfico "Operaciones por fecha" y el "Saldo de débitos pendient
 leen ese historial para el período Desde - Hasta (`GET /api/transf-ca-cc/historia`), así
 que se ven al abrir la pantalla, sin volver a consultar IBS.
 
+**Exportaciones:** "Exportar CSV" baja las Excepciones a revisar que muestra la tabla
+(filtros y orden), en formato Excel. "Descargar reporte PDF" (`GET /api/transf-ca-cc/reporte?dia=`)
+arma en el servidor, con la última conciliación del usuario, el reporte del día filtrado
+(o del período): quién, cuándo, período de IBS, corte, última carga de BankService,
+SHA-256 de los datos conciliados, semáforos, indicadores, control, saldo de pendientes y
+todas las excepciones. Es evidencia de auditoría: se guarda una copia en
+`files/reportes-ca-cc/` y el SHA-256 del PDF queda en el log de seguridad. No usa
+librerías externas (`node/lib/transfCaCc/pdf.js`).
+
 **Carga de BankService** (`POST /api/transf-ca-cc/bankservice`, historial en
 `GET /api/transf-ca-cc/cargas`): valida el encabezado; UTF-8, CRLF/LF, comillas y "—";
 rechaza fila por fila con motivo (estado, moneda, monto, fechas, CBU de 22 dígitos con
