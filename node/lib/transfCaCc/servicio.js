@@ -70,7 +70,26 @@ async function guardarFotoPendientes(rootDir, pendientes, ahora) {
 }
 
 // desde/hasta: rango de IBS (aaaa-mm-dd, hasta exclusiva). querySybase(sql) -> filas.
-async function obtenerDatos({ rootDir, querySybase, desde, hasta, ahora }) {
+// Fecha de la operación -> día contable: lo de un sábado, domingo o feriado se asigna
+// al próximo día hábil (IBS lo imputa ese día). feriados: Set de aaaa-mm-dd.
+function aDiaHabil(operaciones, feriados = new Set()) {
+  const habil = (iso) => {
+    let f = iso;
+    for (let i = 0; i < 30; i++) {
+      const d = new Date(`${f}T00:00:00Z`).getUTCDay();
+      if (d !== 0 && d !== 6 && !feriados.has(f)) return f;
+      f = sumarDias(f, 1);
+    }
+    return f;
+  };
+  return operaciones.map((o) => {
+    if (!o.fecha) return o;
+    const fecha = habil(o.fecha);
+    return fecha === o.fecha ? o : { ...o, fecha, fechaOriginal: o.fecha };
+  });
+}
+
+async function obtenerDatos({ rootDir, querySybase, desde, hasta, ahora, feriados }) {
   const avisos = [];
   const movFilas = await querySybase(ibs.consultaMovimientos(desde, hasta, config));
   const pendFilas = await querySybase(ibs.consultaPendientes(config));
@@ -104,7 +123,7 @@ async function obtenerDatos({ rootDir, querySybase, desde, hasta, ahora }) {
       lote
     )));
   }
-  const operaciones = bankservice.operacionesDesdeFilas(bsFilas).filter((o) => (o.fecha >= desde && o.fecha < hasta) || conMovimiento.has(o.comprobante));
+  const operaciones = aDiaHabil(bankservice.operacionesDesdeFilas(bsFilas), feriados).filter((o) => (o.fecha >= desde && o.fecha < hasta) || conMovimiento.has(o.comprobante));
   if (operaciones.length === 0) avisos.push('No hay operaciones de BankService en la base para ese período: cargá el archivo.');
 
   // Débitos imputados en fechas posteriores al período: para las operaciones sin
@@ -223,4 +242,4 @@ async function historia(rootDir, desde, hasta) {
   }));
 }
 
-module.exports = { resumenPorDia, guardarDias, historia, obtenerDatos, cargarBankService, historialCargas, detalleCarga, ultimaCarga, sumarDias, config };
+module.exports = { aDiaHabil, resumenPorDia, guardarDias, historia, obtenerDatos, cargarBankService, historialCargas, detalleCarga, ultimaCarga, sumarDias, config };

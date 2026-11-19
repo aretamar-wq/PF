@@ -10,13 +10,14 @@
 //
 //   node scripts/transf-ca-cc.js --ibs movimientos.csv --pendientes pendientes.csv \
 //     --bankservice Movimientos_BankService-102026.csv --bankservice Movimientos_BankService-112026.csv \
-//     [--dia 2026-11-16] [--salida datos.json]
+//     [--dia 2026-11-16] [--feriados 2026-11-20,2026-12-08] [--salida datos.json]
 
 const fs = require('fs');
 const config = require('../lib/transfCaCc/config');
 const ibs = require('../lib/transfCaCc/ibs');
 const bankservice = require('../lib/transfCaCc/bankservice');
 const { conciliar } = require('../lib/transfCaCc/conciliar');
+const { aDiaHabil } = require('../lib/transfCaCc/servicio');
 const { parseCsv } = require('../lib/qnet/util');
 const calculo = require('../../wwwroot/transf-ca-cc-calculo');
 
@@ -57,7 +58,7 @@ for (const ruta of a.bankservice) {
     if (accion === 'conflicto') console.error(`${ruta}: comprobante ${f.comprobante} ya está ${e.estado} y trae ${f.estado}: no se pisa`);
   }
 }
-const operaciones = [...base.values()].map((f) => ({ comprobante: f.comprobante, moncod: f.moncod, cuecod: f.cuecod, monto: f.monto, estado: f.estado, creada: f.creada, ejecutada: f.ejecutada || '', fecha: f.fechaOperacion, error: f.error }));
+const operaciones = aDiaHabil([...base.values()].map((f) => ({ comprobante: f.comprobante, moncod: f.moncod, cuecod: f.cuecod, monto: f.monto, estado: f.estado, creada: f.creada, ejecutada: f.ejecutada || '', fecha: f.fechaOperacion, error: f.error })), new Set(String(a.feriados || '').split(',').filter(Boolean)));
 
 const mov = ibs.normalizarMovimientos(objetos(fs.readFileSync(a.ibs, 'utf8')), config);
 const pend = ibs.normalizarPendientes(objetos(fs.readFileSync(a.pendientes, 'utf8')), config);

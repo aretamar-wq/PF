@@ -191,3 +191,13 @@ test('historia: resumen por día del período (lo que se guarda en transf_ca_cc_
   assert.strictEqual(d16.semaforoBs, 'rojo');
   assert.ok(d16.porTipo['Transfer sin ejecutar'] >= 1);
 });
+
+test('operaciones de sábado, domingo o feriado se asignan al próximo día hábil', () => {
+  const { aDiaHabil } = require('../../lib/transfCaCc/servicio');
+  const ops = aDiaHabil([op(1, '2026-11-14', 10), op(2, '2026-11-15', 10), op(3, '2026-11-20', 10), op(4, '2026-11-18', 10)], new Set(['2026-11-20']));
+  assert.deepStrictEqual(ops.map((o) => [o.fecha, o.fechaOriginal]), [['2026-11-16', '2026-11-14'], ['2026-11-16', '2026-11-15'], ['2026-11-23', '2026-11-20'], ['2026-11-18', undefined]]);
+  const r = conciliar({ movimientos: ibs.normalizarMovimientos([mov(9, '16/11/2026', 25030, 1)], config).movimientos, pendientes: [], operaciones: ops.slice(0, 1), config });
+  const e = r.excepciones.find((x) => x.comprobante === '1');
+  assert.strictEqual(e.fecha, '2026-11-16');
+  assert.match(e.detalle, /Operación del 14\/11\/2026 \(no hábil\)/);
+});
