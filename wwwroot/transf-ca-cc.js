@@ -314,7 +314,8 @@
     return PALETA[h % PALETA.length];
   };
 
-  function pintarExcepciones(lista) {
+  // Excepciones con el filtro de día, tipo y búsqueda, en el orden de la tabla.
+  function excepcionesVisibles(lista) {
     const tipo = $('tccExcTipo').value;
     const q = $('tccExcBuscar').value.trim().toLowerCase();
     let filas = lista.filter((e) => !tipo || e.tipo === tipo);
@@ -327,6 +328,12 @@
       else r = String(a[campo] || '').localeCompare(String(b[campo] || ''), 'es'); // fechas aaaa-mm-dd: orden real
       return asc ? r : -r;
     });
+    return filas;
+  }
+
+  function pintarExcepciones(lista) {
+    const filas = excepcionesVisibles(lista);
+    const { campo, asc } = estado.orden;
     $('tccExcCuenta').textContent = `${fmtNum(filas.length)} de ${fmtNum(lista.length)} excepciones`;
     const monedaCod = (m) => (m === 'USD' ? '2' : '0');
     $('tccExc').querySelector('tbody').innerHTML = filas.slice(0, 5000).map((e) => `<tr>
@@ -352,6 +359,22 @@
     }
     $('tccPerAviso').textContent = '';
     setDia(dia);
+  }
+
+  // CSV para Excel (UTF-8 con BOM, ";" y coma decimal) de lo que muestra la tabla.
+  function exportarExcepciones() {
+    if (!estado.datos) return;
+    const filas = excepcionesVisibles(C.indicadores(estado.datos, estado.dia).excepciones);
+    if (filas.length === 0) {
+      alert('No hay excepciones para exportar con los filtros actuales.');
+      return;
+    }
+    const lineas = [csvExcelLine(['Tipo', 'Comprobante', 'Cuenta', 'Moneda', 'Fecha', 'Importe', 'Usuario', 'Estado BankService', 'Detalle'])];
+    for (const e of filas) {
+      lineas.push(csvExcelLine([e.tipo, e.comprobante, e.cuenta, e.moneda, dmy(e.fecha), e.importe == null ? '' : (e.importe / 100).toFixed(2).replace('.', ','), e.usuario, e.estadoBs, e.detalle]));
+    }
+    const sufijo = estado.dia ? estado.dia : `${estado.datos.rango.desde}-a-${sumarDias(estado.datos.rango.hasta, -1)}`;
+    downloadCsvExcel(`excepciones-ca-cc-${sufijo}.csv`, lineas);
   }
 
   function setDia(dia) {
@@ -382,6 +405,7 @@
   $('tccPerDesde').addEventListener('change', pintarPeriodo);
   $('tccPerHasta').addEventListener('change', pintarPeriodo);
   $('tccExcTipo').addEventListener('change', () => estado.datos && pintar());
+  $('tccExcCsvBtn').addEventListener('click', exportarExcepciones);
   $('tccExcBuscar').addEventListener('input', () => estado.datos && pintarExcepciones(C.indicadores(estado.datos, estado.dia).excepciones));
   document.querySelectorAll('#tccExc th.ordenable').forEach((th) => th.addEventListener('click', () => {
     const campo = th.dataset.orden;
