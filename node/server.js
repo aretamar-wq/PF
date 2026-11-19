@@ -33,6 +33,9 @@ const qnetHistorial = require('./lib/qnet/historial');
 const { crearFuenteSybase } = require('./lib/qnet/fuentes/sybase');
 const qnetBankserviceStore = require('./lib/qnet/bankserviceStore');
 const transfCaCc = require('./lib/transfCaCc/servicio');
+const { generarReporte: generarReporteCaCc } = require('./lib/transfCaCc/reporte');
+// Última conciliación CA -> CC de cada usuario (en memoria), para el reporte PDF.
+const transfCaCcUltima = new Map();
 const { convertDMYToISO, formatLocal, formatDateOnly } = require('./lib/dateUtil');
 
 function parsePort() {
@@ -1238,6 +1241,35 @@ async function handleTransfCaCcCargasGet(parsedUrl, res) {
   writeJsonResponse(res, 200, { cargas: await transfCaCc.historialCargas(rootDir), ultimaCarga: await transfCaCc.ultimaCarga(rootDir) });
 }
 
+// GET /api/transf-ca-cc/reporte?dia=aaaa-mm-dd (vacío = todo el período): PDF de la
+// última conciliación del usuario, como evidencia de auditoría. Se guarda una copia en
+// files/reportes-ca-cc/ y su SHA-256 queda en el log de seguridad.
+async function handleTransfCaCcReporteGet(parsedUrl, res, session) {
+  const datos = transfCaCcUltima.get(session.username);
+  if (!datos) {
+    writeJsonResponse(res, 409, { error: 'Primero consultá IBS y conciliá (el reporte se arma con la última conciliación).' });
+    return;
+  }
+  const dia = parsedUrl.searchParams.get('dia') || '';
+  if (dia && (!/^\d{4}-\d{2}-\d{2}$/.test(dia) || dia < datos.rango.desde || dia >= datos.rango.hasta)) {
+    writeJsonResponse(res, 400, { error: 'El día no está en el período de la última conciliación.' });
+    return;
+  }
+  const r = generarReporteCaCc({ datos, dia, usuario: session.username, ahora: new Date() });
+  const dir = path.join(filesDir, 'reportes-ca-cc');
+  fs.mkdirSync(dir, { recursive: true });
+  fs.writeFileSync(path.join(dir, r.nombre), r.buffer);
+  securityStore.writeSecurityLog(logsDir, `REPORTE CA->CC '${r.nombre}' generado por '${session.username}' (SHA-256 PDF ${r.sha256}, SHA-256 datos ${r.huellaDatos})`);
+  res.writeHead(200, {
+    'Content-Type': 'application/pdf',
+    'Content-Disposition': `attachment; filename="${r.nombre}"`,
+    'Content-Length': r.buffer.length,
+    'X-Reporte-Sha256': r.sha256,
+    'X-Reporte-Nombre': r.nombre,
+  });
+  res.end(r.buffer);
+}
+
 // GET /api/transf-ca-cc/historia?desde=aaaa-mm-dd&hasta=aaaa-mm-dd (inclusive): días ya
 // conciliados, sin volver a consultar IBS.
 async function handleTransfCaCcHistoriaGet(parsedUrl, res) {
@@ -1274,6 +1306,7 @@ async function handleTransfCaCcDatosGet(parsedUrl, res, session) {
       hasta,
       ahora: formatLocal(new Date()),
     });
+    transfCaCcUltima.set(session.username, datos);
     try {
       const dias = await transfCaCc.guardarDias(rootDir, datos, session.username);
       datos.avisos.push(`Historia: se guardó el resultado de ${dias} día(s).`);
@@ -2039,6 +2072,7 @@ async function handleRequest(req, res) {
     if (method === 'POST' && pathname === '/api/conciliacion/ibs') return void (await handleConciliacionIbsPost(req, res, session));
     if (method === 'POST' && pathname === '/api/transf-ca-cc/bankservice') return void (await handleTransfCaCcCargaPost(req, res, session));
     if (method === 'GET' && pathname === '/api/transf-ca-cc/cargas') return void (await handleTransfCaCcCargasGet(parsedUrl, res));
+    if (method === 'GET' && pathname === '/api/transf-ca-cc/reporte') return void (await handleTransfCaCcReporteGet(parsedUrl, res, session));
     if (method === 'GET' && pathname === '/api/transf-ca-cc/historia') return void (await handleTransfCaCcHistoriaGet(parsedUrl, res));
     if (method === 'GET' && pathname === '/api/transf-ca-cc/datos') return void (await handleTransfCaCcDatosGet(parsedUrl, res, session));
     if (method === 'POST' && pathname === '/api/qnet/bankservice') return void (await handleQnetBankservicePost(req, res, session));

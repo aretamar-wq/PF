@@ -377,6 +377,35 @@
     downloadCsvExcel(`excepciones-ca-cc-${sufijo}.csv`, lineas);
   }
 
+  // Reporte PDF del día filtrado (o del período si se ven todos los días), generado en
+  // el servidor con la última conciliación; queda una copia y su SHA-256 en el servidor.
+  async function descargarPdf() {
+    if (!estado.datos) return;
+    const btn = $('tccPdfBtn');
+    btn.disabled = true;
+    $('tccEstado').textContent = 'Generando el reporte PDF...';
+    try {
+      const res = await apiFetch(`/api/transf-ca-cc/reporte?dia=${encodeURIComponent(estado.dia)}`);
+      if (!res.ok) {
+        const data = await res.json().catch(() => ({}));
+        $('tccEstado').textContent = data.error || 'No se pudo generar el reporte.';
+        return;
+      }
+      const blob = await res.blob();
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = res.headers.get('x-reporte-nombre') || 'conciliacion-ca-cc.pdf';
+      a.click();
+      URL.revokeObjectURL(url);
+      $('tccEstado').textContent = `Reporte generado (SHA-256 ${res.headers.get('x-reporte-sha256') || '—'}); queda una copia en el servidor.`;
+    } catch (err) {
+      $('tccEstado').textContent = 'Error: ' + err.message;
+    } finally {
+      btn.disabled = false;
+    }
+  }
+
   function setDia(dia) {
     estado.dia = dia || '';
     $('tccDia').value = estado.dia;
@@ -406,6 +435,7 @@
   $('tccPerHasta').addEventListener('change', pintarPeriodo);
   $('tccExcTipo').addEventListener('change', () => estado.datos && pintar());
   $('tccExcCsvBtn').addEventListener('click', exportarExcepciones);
+  $('tccPdfBtn').addEventListener('click', descargarPdf);
   $('tccExcBuscar').addEventListener('input', () => estado.datos && pintarExcepciones(C.indicadores(estado.datos, estado.dia).excepciones));
   document.querySelectorAll('#tccExc th.ordenable').forEach((th) => th.addEventListener('click', () => {
     const campo = th.dataset.orden;
