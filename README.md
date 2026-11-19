@@ -1436,6 +1436,12 @@ suma (`wwwroot/transf-ca-cc-calculo.js`) y dibuja (`wwwroot/transf-ca-cc.js`). C
 consulta guarda además la **foto diaria de pendientes** (`ibs_pendientes_fotos`), porque
 la consulta de pendientes solo devuelve el estado del momento.
 
+**Débitos imputados en fechas posteriores:** para las operaciones sin débito ni pendiente
+en el período se vuelve a consultar IBS por comprobante y moneda, desde la fecha de la
+operación hasta mañana. Si aparece el débito, la operación cuenta como ejecutada (tile
+verde "Débito imputado en fecha posterior"); esos movimientos no suman en los
+indicadores de IBS del período ni mueven el corte.
+
 **Carga de BankService** (`POST /api/transf-ca-cc/bankservice`, historial en
 `GET /api/transf-ca-cc/cargas`): valida el encabezado; UTF-8, CRLF/LF, comillas y "—";
 rechaza fila por fila con motivo (estado, moneda, monto, fechas, CBU de 22 dígitos con

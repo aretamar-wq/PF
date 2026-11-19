@@ -35,8 +35,11 @@ function conciliar({ movimientos, pendientes, operaciones, config }) {
   const proceso = new Set((config.usuariosProceso || []).map(String));
 
   // Corte: no cambia con los filtros del dashboard.
-  const ultimoDiaIbs = movimientos.reduce((max, m) => (m.fecha > max ? m.fecha : max), '');
-  const mayorComprobante = movimientos.filter((m) => m.movcod === config.movDebito).reduce((max, m) => Math.max(max, numero(m.comprobante)), 0);
+  // Los movimientos imputados en fechas posteriores al período (posterior: true) se
+  // usan para cruzar, pero no mueven el corte ni los indicadores de IBS del período.
+  const delPeriodo = movimientos.filter((m) => !m.posterior);
+  const ultimoDiaIbs = delPeriodo.reduce((max, m) => (m.fecha > max ? m.fecha : max), '');
+  const mayorComprobante = delPeriodo.filter((m) => m.movcod === config.movDebito).reduce((max, m) => Math.max(max, numero(m.comprobante)), 0);
 
   const ops = new Map(operaciones.map((o) => [o.comprobante, o]));
 
@@ -77,6 +80,10 @@ function conciliar({ movimientos, pendientes, operaciones, config }) {
       if (debitos.length > 0) {
         r.clase = 'ejecutada';
         const d = debitos[0];
+        if (debitos.every((x) => x.posterior)) {
+          r.posterior = true;
+          r.fechaDebito = d.fecha;
+        }
         if (d.moncod !== o.moncod) exc(TIPOS.MONEDA, { ...base, fecha: d.fecha, usuario: d.usuario, detalle: `IBS debitó en ${etiqueta(d.moncod)} y BankService es ${etiqueta(o.moncod)}.` });
         if (d.importe !== o.monto) exc(TIPOS.IMPORTE, { ...base, fecha: d.fecha, usuario: d.usuario, detalle: `IBS debitó ${dinero(d.moncod, d.importe)} y BankService dice ${dinero(o.moncod, o.monto)}.` });
         if (d.cuecod !== o.cuecod) exc(TIPOS.CUENTA, { ...base, fecha: d.fecha, usuario: d.usuario, detalle: `IBS debitó la cuenta ${d.cuecod} y BankService es de la cuenta ${o.cuecod}.` });

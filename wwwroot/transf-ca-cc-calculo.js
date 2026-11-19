@@ -14,7 +14,8 @@
 
   function indicadores(datos, dia) {
     const ok = enDia(dia);
-    const movs = datos.movimientos.filter((m) => ok(m.fecha));
+    // Los movimientos imputados después del período solo sirven para cruzar: no suman en IBS.
+    const movs = datos.movimientos.filter((m) => !m.posterior && ok(m.fecha));
     const ops = datos.operaciones.filter((o) => ok(o.fecha));
     const pends = datos.pendientes.filter((p) => p.movcod === datos.config.movDebito && ok(p.fecha));
     const deb = datos.config.movDebito;
@@ -58,7 +59,7 @@
 
     const bs = {
       aprobadas: nuevo(), ejecutadas: nuevo(), pendientes: nuevo(), pendientesUltimoDia: nuevo(), pendientesAnteriores: nuevo(),
-      sinRegistro: nuevo(), porContabilizar: nuevo(), importePendiente: nuevo(), failed: 0, failedEnIbs: 0,
+      sinRegistro: nuevo(), porContabilizar: nuevo(), importePendiente: nuevo(), failed: 0, failedEnIbs: 0, posteriores: nuevo(),
     };
     for (const o of ops) {
       const k = o.moncod;
@@ -68,7 +69,10 @@
       }
       if (o.estado !== 'APPROVED' || !(k in bs.aprobadas)) continue;
       bs.aprobadas[k]++;
-      if (o.clase === 'ejecutada') bs.ejecutadas[k]++;
+      if (o.clase === 'ejecutada') {
+        bs.ejecutadas[k]++;
+        if (o.posterior) bs.posteriores[k]++;
+      }
       else if (o.clase === 'pendiente') {
         bs.pendientes[k]++;
         bs.importePendiente[k] += o.pendiente || 0;
