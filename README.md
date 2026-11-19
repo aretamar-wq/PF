@@ -1263,6 +1263,12 @@ operación hasta mañana. Si aparece el débito, la operación cuenta como ejecu
 movimientos (débitos 25030 y créditos 25031) suman en "IBS - Transferencias Loop" en el
 día de su operación, pero no mueven el corte (último día y mayor comprobante).
 
+**Historia:** cada conciliación guarda el resultado de cada día de su período (fecha de
+la operación) en `transf_ca_cc_dias`, pisando lo anterior: APPROVED, en IBS, con débito
+pendiente, sin registro, por contabilizar, importes pendientes, excepciones por tipo y
+semáforos. "Historia de días conciliados" (`GET /api/transf-ca-cc/historia?desde=&hasta=`)
+muestra el gráfico y la tabla de cualquier período sin volver a consultar IBS.
+
 **Carga de BankService** (`POST /api/transf-ca-cc/bankservice`, historial en
 `GET /api/transf-ca-cc/cargas`): valida el encabezado; UTF-8, CRLF/LF, comillas y "—";
 rechaza fila por fila con motivo (estado, moneda, monto, fechas, CBU de 22 dígitos con

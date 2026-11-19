@@ -256,6 +256,18 @@
           <div class="tcc-scroll"><table id="tccCargas"><thead><tr><th>#</th><th>Archivo</th><th>Cargado</th><th>Usuario</th><th class="num">Leídas</th><th class="num">Insertadas</th><th class="num">Actualizadas</th><th class="num">Sin cambios</th><th class="num">Rechazadas</th><th class="num">Conflictos</th><th>Operaciones del</th><th>al</th><th></th></tr></thead><tbody></tbody></table></div>
         </details>
 
+        <details id="tccHistoriaBox">
+          <summary>Historia de días conciliados</summary>
+          <div class="tcc-barra">
+            <label>Desde <input type="date" id="tccHistDesde" /></label>
+            <label>Hasta <input type="date" id="tccHistHasta" /></label>
+            <button type="button" id="tccHistBtn">Ver historia</button>
+            <span id="tccHistEstado" class="tcc-suave">Se guarda el resultado de cada día cada vez que se concilia (lo último pisa a lo anterior); no vuelve a consultar IBS.</span>
+          </div>
+          <div id="tccHistGrafico" class="tcc-grafico" style="display: none;"></div>
+          <div id="tccHistTabla" class="tcc-scroll"></div>
+        </details>
+
         <div id="tccContenido" style="display: none;">
           <div class="tcc-barra">
             <label>Día <input type="date" id="tccDia" /></label>

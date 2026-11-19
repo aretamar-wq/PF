@@ -415,3 +415,26 @@ CREATE TABLE IF NOT EXISTS ibs_pendientes_fotos (
   contenido LONGTEXT NOT NULL,
   PRIMARY KEY (fecha)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- Historia de la "Conciliación Transferencias CA -> CC": el resultado de cada día
+-- conciliado (fecha de la operación en BankService). Cada conciliación pisa los días
+-- de su período con lo último; el gráfico de historia lee de acá sin volver a IBS.
+CREATE TABLE IF NOT EXISTS transf_ca_cc_dias (
+  fecha DATE NOT NULL,
+  aprobadas INT NOT NULL DEFAULT 0,
+  ejecutadas INT NOT NULL DEFAULT 0,
+  pendientes INT NOT NULL DEFAULT 0,
+  sin_registro INT NOT NULL DEFAULT 0,
+  por_contabilizar INT NOT NULL DEFAULT 0,
+  pend_ars INT NOT NULL DEFAULT 0,
+  pend_usd INT NOT NULL DEFAULT 0,
+  importe_pend_ars DECIMAL(18,2) NOT NULL DEFAULT 0,
+  importe_pend_usd DECIMAL(18,2) NOT NULL DEFAULT 0,
+  excepciones INT NOT NULL DEFAULT 0,
+  semaforo_ibs VARCHAR(10) NOT NULL DEFAULT '',
+  semaforo_bs VARCHAR(10) NOT NULL DEFAULT '',
+  excepciones_json LONGTEXT NULL,
+  generado_en DATETIME NOT NULL,
+  generado_por VARCHAR(255) NOT NULL DEFAULT '',
+  PRIMARY KEY (fecha)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
