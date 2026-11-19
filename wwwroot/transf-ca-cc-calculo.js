@@ -40,13 +40,17 @@
       } else {
         comps[k].add(m.comprobante);
       }
-      if (m.activarCuentas) continue; // Activar Cuentas: fuera de los indicadores de transferencias
-      if (m.posterior && (m.movcod === deb || !m.centavo)) ibs.posteriores[k]++;
+      // Débitos 25030: todos, incluidos los de 1 centavo (también los de Activar Cuentas).
       if (m.movcod === deb) {
         ibs.debitos[k]++;
         ibs.saldoDebitos[k] += m.importe;
+        if (m.posterior) ibs.posteriores[k]++;
+      }
+      if (m.activarCuentas) continue; // el resto de los indicadores de transferencias no los cuenta
+      if (m.movcod === deb) {
         if (m.manual) { ibs.manuales[k]++; ibs.importeManuales[k] += m.importe; }
       } else if (m.movcod === cre && !m.centavo) {
+        if (m.posterior) ibs.posteriores[k]++;
         ibs.creditos[k]++;
         ibs.saldoCreditos[k] += m.importe;
       }
