@@ -211,3 +211,10 @@ test('Débitos 25030 no incluye los de 1 centavo (se ven en Activar Cuentas)', (
   assert.strictEqual(ind.ibs.creditos[0], 0); // los créditos siguen sin los de 1 centavo
   assert.strictEqual(ind.activar.debitos[0], 1);
 });
+
+test('Comprobantes: las operaciones de BankService del día sin las de 1 centavo, con detalle por estado', () => {
+  const r = conciliar({ movimientos: [], pendientes: [], operaciones: [op(1, '2026-11-16', 10), op(2, '2026-11-16', 0.01), op(3, '2026-11-16', 5, { estado: 'FAILED' }), op(4, '2026-11-16', 7, { moncod: '2' }), op(5, '2026-11-13', 7)], config });
+  const ind = calculo.indicadores({ ...r, config: { movDebito: '25030', movCredito: '25031' } }, '2026-11-16');
+  assert.deepStrictEqual([ind.ibs.comprobantes[0], ind.ibs.comprobantes[2]], [2, 1]);
+  assert.deepStrictEqual(ind.ibs.comprobantesEstado, { APPROVED: 2, FAILED: 1, PENDING_EXECUTION: 0 });
+});
