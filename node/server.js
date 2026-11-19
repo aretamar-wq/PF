@@ -1238,7 +1238,10 @@ async function handleTransfCaCcCargasGet(parsedUrl, res) {
     writeJsonResponse(res, detalle ? 200 : 404, detalle || { error: 'No existe esa carga.' });
     return;
   }
-  writeJsonResponse(res, 200, { cargas: await transfCaCc.historialCargas(rootDir), ultimaCarga: await transfCaCc.ultimaCarga(rootDir) });
+  // Feriados de Parametría: la pantalla no deja elegir sábados, domingos ni feriados.
+  const parametria = await parametriaStore.getParametria(rootDir);
+  const { fechas: feriados } = conciliacionIbs.parseFeriados((parametria.calendario || {}).feriados);
+  writeJsonResponse(res, 200, { cargas: await transfCaCc.historialCargas(rootDir), ultimaCarga: await transfCaCc.ultimaCarga(rootDir), feriados: [...feriados].sort() });
 }
 
 // GET /api/transf-ca-cc/reporte?dia=aaaa-mm-dd (vacío = todo el período): PDF de la

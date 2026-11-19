@@ -7,7 +7,7 @@
 (function () {
   const C = window.TransfCaCcCalculo;
   const $ = (id) => document.getElementById(id);
-  const estado = { datos: null, dia: '', orden: { campo: 'fecha', asc: true }, historia: null, historiaClave: '' };
+  const estado = { datos: null, dia: '', orden: { campo: 'fecha', asc: true }, historia: null, historiaClave: '', feriados: new Set() };
 
   // --- Formato (es-AR) ----------------------------------------------------------
   const fmtNum = (n) => Number(n || 0).toLocaleString('es-AR');
@@ -76,6 +76,8 @@
         return;
       }
       pintarUltimaCarga(data.ultimaCarga);
+      estado.feriados = new Set(data.feriados || []);
+      if (ajustarFechas()) pintarPeriodo();
     } catch (err) {
       $('tccUltimaCarga').textContent = 'Error leyendo la última carga de BankService: ' + err.message;
     }
@@ -357,6 +359,10 @@
       $('tccPerAviso').textContent = `El ${dmy(dia)} no está en la conciliación cargada (${dmy(d.rango.desde)} al ${dmy(sumarDias(d.rango.hasta, -1))}).`;
       return;
     }
+    if (!esHabil(dia)) {
+      $('tccPerAviso').textContent = `El ${dmy(dia)} ${motivoNoHabil(dia)}: no se puede elegir.`;
+      return;
+    }
     $('tccPerAviso').textContent = '';
     setDia(dia);
   }
@@ -412,6 +418,40 @@
     pintar();
   }
 
+  // --- Días hábiles -------------------------------------------------------------------
+  // Los campos de fecha no dejan elegir sábados, domingos ni feriados (calendario de
+  // Parametría): un "Desde" se corre al próximo día hábil y un "Hasta" o "Día" al
+  // anterior, con un aviso.
+  const esHabil = (iso) => {
+    const d = new Date(`${iso}T00:00:00Z`).getUTCDay();
+    return d !== 0 && d !== 6 && !estado.feriados.has(iso);
+  };
+  function diaHabil(iso, paso) {
+    let f = iso;
+    for (let i = 0; i < 30 && !esHabil(f); i++) f = sumarDias(f, paso);
+    return f;
+  }
+  const CAMPOS_FECHA = { tccIbsDesde: 1, tccIbsHasta: -1, tccPerDesde: 1, tccPerHasta: -1, tccDia: -1 };
+  function motivoNoHabil(iso) {
+    if (estado.feriados.has(iso)) return 'es feriado';
+    return new Date(`${iso}T00:00:00Z`).getUTCDay() === 6 ? 'es sábado' : 'es domingo';
+  }
+  // Corrige un campo si quedó en un día no hábil. Devuelve true si lo cambió.
+  function corregirFecha(id, avisar) {
+    const el = $(id);
+    if (!el.value || esHabil(el.value)) return false;
+    const antes = el.value;
+    el.value = diaHabil(antes, CAMPOS_FECHA[id]);
+    if (avisar) $('tccEstado').textContent = `El ${dmy(antes)} ${motivoNoHabil(antes)}: se tomó el ${dmy(el.value)}.`;
+    return true;
+  }
+  // Corrige todos los campos; devuelve true si cambió el período del gráfico.
+  function ajustarFechas() {
+    let periodo = false;
+    for (const id of Object.keys(CAMPOS_FECHA)) if (corregirFecha(id, false) && id.startsWith('tccPer')) periodo = true;
+    return periodo;
+  }
+
   // --- Eventos ----------------------------------------------------------------------
   function abrir() {
     const hoy = formatDateOnlyLocal(new Date());
@@ -419,6 +459,7 @@
     if (!$('tccIbsDesde').value) $('tccIbsDesde').value = `${sumarDias(hoy.slice(0, 8) + '01', -1).slice(0, 8)}01`;
     if (!$('tccPerHasta').value) $('tccPerHasta').value = hoy;
     if (!$('tccPerDesde').value) $('tccPerDesde').value = sumarDias(hoy, -30);
+    ajustarFechas();
     showMainSection('transfCaCcSection');
     cargarUltimaCarga();
     pintarPeriodo();
@@ -428,11 +469,21 @@
   $('tccCerrarBtn').addEventListener('click', () => showMainSection('flowDetail'));
   $('tccCargarBtn').addEventListener('click', cargarCsv);
   $('tccActualizarBtn').addEventListener('click', actualizar);
-  $('tccDia').addEventListener('change', () => setDia($('tccDia').value));
+  $('tccDia').addEventListener('change', () => {
+    corregirFecha('tccDia', true);
+    setDia($('tccDia').value);
+  });
+  for (const id of ['tccIbsDesde', 'tccIbsHasta']) $(id).addEventListener('change', () => corregirFecha(id, true));
   $('tccUltimoDiaBtn').addEventListener('click', () => estado.datos && setDia(estado.datos.corte.ultimoDiaIbs));
   $('tccTodosBtn').addEventListener('click', () => setDia(''));
-  $('tccPerDesde').addEventListener('change', pintarPeriodo);
-  $('tccPerHasta').addEventListener('change', pintarPeriodo);
+  $('tccPerDesde').addEventListener('change', () => {
+    corregirFecha('tccPerDesde', true);
+    pintarPeriodo();
+  });
+  $('tccPerHasta').addEventListener('change', () => {
+    corregirFecha('tccPerHasta', true);
+    pintarPeriodo();
+  });
   $('tccExcTipo').addEventListener('change', () => estado.datos && pintar());
   $('tccExcCsvBtn').addEventListener('click', exportarExcepciones);
   $('tccPdfBtn').addEventListener('click', descargarPdf);
