@@ -46,8 +46,8 @@
             <li><button type="button" id="outputFilesBtn">Archivos de salida</button></li>
             <li><button type="button" id="dashboardBtn">Dashboard</button></li>
             <li><button type="button" id="conciliacionIbsBtn">Conciliación con IBS</button></li>
-            <li><button type="button" id="qnetBtn">Conciliación Loop</button></li>
-            <li><button type="button" id="tccBtn">Conciliación Transferencias CA -&gt; CC</button></li>
+            <li><button type="button" id="qnetBtn">Conciliación Loop (anterior)</button></li>
+            <li><button type="button" id="tccBtn">Conciliación Loop</button></li>
             <li><button type="button" id="logoutBtn">Cerrar sesión</button></li>
           </ul>
         </div>
@@ -235,7 +235,7 @@
 
       <section id="transfCaCcSection" class="tcc" style="display: none;">
         <div class="section-head">
-          <h2>Conciliación Transferencias CA -&gt; CC</h2>
+          <h2>Conciliación Loop</h2>
           <button type="button" id="tccCerrarBtn">Volver a flows</button>
         </div>
         <div id="tccUltimaCarga" class="tcc-suave"></div>
@@ -257,7 +257,7 @@
             <span id="tccDiaTexto" class="tcc-suave"></span>
           </div>
 
-          <h3><span id="tccSemIbs" class="tcc-semaforo" role="img"></span>IBS - Transferencias Loop (25030 - 25031)</h3>
+          <h3><span id="tccSemIbs" class="tcc-semaforo" role="img"></span>IBS - Transferencias CA -&gt; CC (25030 - 25031)</h3>
           <div id="tccIbs"></div>
 
           <div id="tccGrupos"></div>
@@ -302,7 +302,7 @@
 
       <section id="qnetSection" style="display: none;">
         <div class="section-head">
-          <h2>Conciliación Loop</h2>
+          <h2>Conciliación Loop (anterior)</h2>
           <button type="button" id="closeQnetBtn">Volver a flows</button>
         </div>
         <p class="muted">

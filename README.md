@@ -1243,9 +1243,9 @@ operaciones duplicadas"), pero no las filas que fallaron por otra cosa
 cortada antes de consultar su estado queda con `realizado` = `SI` y
 `errorConsulta` = `Consulta de estado pendiente`.
 
-### Conciliación Transferencias CA -> CC (QNET entre IBS/Loop, pendientes y BankService)
+### Conciliación Loop (transferencias CA -> CC y pago de servicios contra BankService)
 
-Menú **Conciliación Transferencias CA -> CC**. Concilia las transferencias QNET de **un
+Menú **Conciliación Loop** (la pantalla anterior quedó como **Conciliación Loop (anterior)**). Concilia las transferencias QNET de **un
 día** (campo "Fecha a conciliar"; no acepta sábados, domingos ni feriados) entre los movimientos de IBS (débitos 25030 y créditos 25031 de cualquier `sistcod`), los
 débitos pendientes y BankService.
 
@@ -1284,7 +1284,7 @@ librerías externas (`node/lib/transfCaCc/pdf.js`).
 la excepción indica el día real. Los campos de fecha no aceptan días no hábiles.
 
 **Pares de movimientos:** además de 25030/25031 (Transferencias Loop) se concilian las
-transacciones 25032 (débito) / 25033 (crédito) en su propia sección, con los mismos
+transacciones de Pago de Servicios, 25032 (débito) / 25033 (crédito), en su propia sección, con los mismos
 indicadores, colores, semáforo y excepciones (con el par entre paréntesis). Cada operación
 de BankService va con el par que tiene su comprobante en IBS o en débitos pendientes; si no
 tiene ninguno, con 25030/25031. Los pares se configuran en `node/lib/transfCaCc/config.js`
@@ -1360,7 +1360,7 @@ falta esté en los débitos pendientes y que todo cierre contra BankService.
 Conciliación Transferencias CA -> CC, ver abajo). "Cargar a la base" o subir archivos al
 conciliar usa esa misma carga.
 
-**Desde la app:** menú **Conciliación Loop**. Se cargan los archivos de BankService (o ya
+**Desde la app:** menú **Conciliación Loop (anterior)**. Se cargan los archivos de BankService (o ya
 están en la base), se elige la **fecha** (un día) y **Conciliar** corre en segundo plano (dos
 consultas a Sybase; una conciliación a la vez) mostrando el avance. Al terminar se ve
 el dashboard (indicadores de partidas, desbalance y cruce, excepciones del día por
