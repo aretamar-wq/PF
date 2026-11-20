@@ -203,7 +203,7 @@
       tile('Transacciones de 1 centavo (comprobantes)', fmtNum(total(activar.comprobantes)), porMoneda(activar.comprobantes)) +
       tile('Créditos de 1 centavo', fmtNum(total(activar.creditos)), porMoneda(activar.creditos)) +
       tile('Débitos de 1 centavo', fmtNum(total(activar.debitos)), porMoneda(activar.debitos)) +
-      `</div><p class="tcc-suave">Movimientos de 1 centavo sin operación en BankService (no cuentan en las transferencias). Los de 1 centavo que sí están en BankService se concilian con su par de movimientos.</p>`;
+      `</div><p class="tcc-suave">Movimientos de 1 centavo sin operación en BankService (no cuentan en Transferencias CA -> CC ni en Pago de Servicios). Los de 1 centavo que sí están en BankService se concilian con su par de movimientos.</p>`;
 
     const sem = C.semaforos(ind);
     const etiquetas = { verde: 'Verde: todo OK', amarillo: 'Amarillo: débitos pendientes o a revisar', rojo: 'Rojo: hay diferencias' };

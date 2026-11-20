@@ -3750,7 +3750,7 @@ async function cargarBankserviceQnet() {
       setQnetProgreso(data.error || 'No se pudo cargar BankService.', true);
       return;
     }
-    setQnetProgreso(`BankService cargado: ${data.nuevas} nuevas, ${data.actualizadas} actualizadas` + (data.descartadas ? `, ${data.descartadas} filas rechazadas` : '') + (data.conflictos ? `, ${data.conflictos} conflictos de estado` : '') + (data.yaCargados ? `, ${data.yaCargados} archivo(s) ya cargado(s)` : '') + '. El detalle fila por fila está en Conciliación Transferencias CA -> CC.');
+    setQnetProgreso(`BankService cargado: ${data.nuevas} nuevas, ${data.actualizadas} actualizadas` + (data.descartadas ? `, ${data.descartadas} filas rechazadas` : '') + (data.conflictos ? `, ${data.conflictos} conflictos de estado` : '') + (data.yaCargados ? `, ${data.yaCargados} archivo(s) ya cargado(s)` : '') + '. El detalle fila por fila está en Conciliación Loop.');
     document.getElementById('qnetFiles').value = '';
     await loadQnetBaseResumen();
   } catch (err) {
