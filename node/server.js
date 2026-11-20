@@ -27,11 +27,6 @@ const debinOutputStore = require('./lib/debinOutputStore');
 const conciliacionIbs = require('./lib/conciliacionIbs');
 const sybaseClient = require('./lib/sybaseClient');
 const crypto = require('crypto');
-const qnetCorrida = require('./lib/qnet/corrida');
-const qnetConfig = require('./lib/qnet/config');
-const qnetHistorial = require('./lib/qnet/historial');
-const { crearFuenteSybase } = require('./lib/qnet/fuentes/sybase');
-const qnetBankserviceStore = require('./lib/qnet/bankserviceStore');
 const transfCaCc = require('./lib/transfCaCc/servicio');
 const { generarReporte: generarReporteCaCc } = require('./lib/transfCaCc/reporte');
 // Última conciliación CA -> CC de cada usuario (en memoria), para el reporte PDF.
@@ -1140,73 +1135,15 @@ function readTransferenciasRechazadasArchivo(desde, hasta, apiRows) {
   return rows;
 }
 
-// --- Conciliación Loop (Loop + débitos pendientes desde Sybase, BankService por archivo) ---
-// La corrida hace ~30 consultas a Sybase: corre en segundo plano y la pantalla
-// consulta el avance (POST /api/qnet/ejecutar -> GET /api/qnet/estado). Una sola a la vez.
-
-const QNET_DIR = path.join(rootDir, 'qnet', 'corridas');
-const QNET_ID = qnetHistorial.ID;
-const QNET_ARCHIVOS_DESCARGA = ['excepciones.csv', 'resumen.csv', 'conciliacion-comprobantes.csv', 'pendientes-por-dia.csv', 'fuentes.csv', 'corrida.log'];
-const QNET_MAX_BYTES = 25 * 1024 * 1024;
-const qnetJobs = new Map();
-
-function qnetJobCorriendo() {
-  return [...qnetJobs.values()].find((j) => j.estado === 'corriendo') || null;
-}
-
 // Archivos de BankService del pedido ([{ nombre, contenido }]) -> los válidos, o un error.
-function qnetArchivosDelPedido(payload) {
+const BANKSERVICE_MAX_BYTES = 25 * 1024 * 1024;
+function archivosBankServiceDelPedido(payload) {
   const archivos = Array.isArray(payload.archivos) ? payload.archivos : [];
   const validos = archivos.filter((a) => a && typeof a.nombre === 'string' && typeof a.contenido === 'string' && a.contenido.trim());
-  if (validos.length > 6 || validos.reduce((s, a) => s + a.contenido.length, 0) > QNET_MAX_BYTES) {
+  if (validos.length > 6 || validos.reduce((s, a) => s + a.contenido.length, 0) > BANKSERVICE_MAX_BYTES) {
     return { error: 'Demasiados archivos o demasiado grandes (máximo 6 y 25 MB en total).' };
   }
   return { validos: validos.map((a) => ({ nombre: path.basename(a.nombre), contenido: a.contenido })) };
-}
-
-// Carga archivos de BankService en bankservice_movimientos (misma carga que la
-// Conciliación Transferencias CA -> CC). Devuelve totales y el detalle por archivo.
-async function qnetCargarBankservice(archivos, usuario) {
-  const resultados = await transfCaCc.cargarBankService(rootDir, archivos, usuario, formatLocal(new Date()));
-  const errores = resultados.filter((r) => r.error);
-  if (errores.length > 0 && errores.length === resultados.length) {
-    const err = new Error(errores.map((r) => `${r.nombre}: ${r.error}`).join(' | '));
-    err.statusCode = 400;
-    throw err;
-  }
-  const total = { nuevas: 0, actualizadas: 0, descartadas: 0, yaCargados: 0, conflictos: 0, resultados };
-  for (const r of resultados) {
-    if (r.yaCargado) total.yaCargados++;
-    total.nuevas += r.insertadas || 0;
-    total.actualizadas += r.actualizadas || 0;
-    total.descartadas += r.rechazadas || 0;
-    total.conflictos += (r.conflictos || []).length;
-  }
-  return total;
-}
-
-// POST /api/qnet/bankservice: solo carga los archivos en la base (sin conciliar).
-async function handleQnetBankservicePost(req, res, session) {
-  const { validos, error } = qnetArchivosDelPedido(await readJsonBody(req));
-  if (error || validos.length === 0) {
-    writeJsonResponse(res, 400, { error: error || 'Elegí al menos un archivo de BankService.' });
-    return;
-  }
-  try {
-    const r = await qnetCargarBankservice(validos, session.username);
-    securityStore.writeSecurityLog(logsDir, `BANKSERVICE cargado por '${session.username}': ${validos.length} archivo(s), ${r.nuevas} nuevas, ${r.actualizadas} actualizadas, ${r.descartadas} descartadas`);
-    writeJsonResponse(res, 200, { ...r, resumen: await qnetBankserviceStore.resumen(rootDir) });
-  } catch (err) {
-    writeJsonResponse(res, err.statusCode === 400 ? 400 : 500, { error: err.message });
-  }
-}
-
-async function handleQnetBankserviceResumenGet(res) {
-  try {
-    writeJsonResponse(res, 200, await qnetBankserviceStore.resumen(rootDir));
-  } catch (err) {
-    writeJsonResponse(res, 500, { error: `No se pudo leer la tabla qnet_bankservice (¿se aplicó deploy/mariadb-schema.sql?): ${err.message}` });
-  }
 }
 
 // --- Conciliación Transferencias CA -> CC ----------------------------------------
@@ -1214,7 +1151,7 @@ async function handleQnetBankserviceResumenGet(res) {
 // POST /api/transf-ca-cc/bankservice { archivos: [{ nombre, contenido }] }: carga de
 // BankService (una transacción por archivo; un archivo ya cargado no se procesa).
 async function handleTransfCaCcCargaPost(req, res, session) {
-  const { validos, error } = qnetArchivosDelPedido(await readJsonBody(req));
+  const { validos, error } = archivosBankServiceDelPedido(await readJsonBody(req));
   if (error || validos.length === 0) {
     writeJsonResponse(res, 400, { error: error || 'Elegí al menos un archivo de BankService.' });
     return;
@@ -1294,7 +1231,7 @@ async function handleTransfCaCcHistoriaGet(parsedUrl, res) {
 // clasificado para el dashboard.
 async function handleTransfCaCcDatosGet(parsedUrl, res, session) {
   const hoy = formatDateOnly(new Date());
-  const desde = parsedUrl.searchParams.get('desde') || qnetBankserviceStore.inicioDeMes(hoy, -1);
+  const desde = parsedUrl.searchParams.get('desde') || transfCaCc.sumarDias(hoy, -1);
   const hasta = parsedUrl.searchParams.get('hasta') || transfCaCc.sumarDias(hoy, 1);
   if (!/^\d{4}-\d{2}-\d{2}$/.test(desde) || !/^\d{4}-\d{2}-\d{2}$/.test(hasta) || desde >= hasta) {
     writeJsonResponse(res, 400, { error: 'Rango inválido: desde y hasta (exclusiva) en formato aaaa-mm-dd, con desde anterior a hasta.' });
@@ -1322,103 +1259,6 @@ async function handleTransfCaCcDatosGet(parsedUrl, res, session) {
   } catch (err) {
     writeJsonResponse(res, 502, { error: `No se pudieron obtener los datos: ${err.message}` });
   }
-}
-
-async function handleQnetEjecutarPost(req, res, session) {
-  const payload = await readJsonBody(req);
-  const { validos, error } = qnetArchivosDelPedido(payload);
-  if (error) {
-    writeJsonResponse(res, 400, { error });
-    return;
-  }
-  const fecha = String(payload.fecha || '');
-  if (!/^\d{4}-\d{2}-\d{2}$/.test(fecha)) {
-    writeJsonResponse(res, 400, { error: 'Indicá la fecha a conciliar (un día, formato aaaa-mm-dd).' });
-    return;
-  }
-  if (qnetJobCorriendo()) {
-    writeJsonResponse(res, 409, { error: 'Ya hay una conciliación Loop en curso: esperá a que termine.' });
-    return;
-  }
-
-  const job = { id: crypto.randomBytes(6).toString('hex'), estado: 'corriendo', progreso: [], usuario: session.username, inicio: Date.now(), resultado: null, error: null };
-  qnetJobs.set(job.id, job);
-  for (const [id, j] of qnetJobs) if (qnetJobs.size > 10 && j.estado !== 'corriendo') qnetJobs.delete(id); // no acumular
-  securityStore.writeSecurityLog(logsDir, `CONCILIACION LOOP del ${fecha} iniciada por '${session.username}' (${validos.length} archivo(s) de BankService subidos; el resto de la base)`);
-
-  (async () => {
-    try {
-      const progreso = (m) => job.progreso.push(m);
-      // BankService: lo subido se guarda en la base y la conciliación lee de la base.
-      if (validos.length > 0) {
-        const c = await qnetCargarBankservice(validos, session.username);
-        progreso(`BankService cargado en la base: ${c.nuevas} nuevas, ${c.actualizadas} actualizadas, ${c.descartadas} descartadas.`);
-      }
-      const bankservice = qnetBankserviceStore.archivosDesdeFilas(await qnetBankserviceStore.leerVentana(rootDir, fecha));
-      if (bankservice.length === 0) throw new Error('No hay movimientos de BankService en la base para ese período: cargá el archivo del mes.');
-      progreso(`BankService desde la base: ${bankservice.map((a) => a.nombre).join(', ')}`);
-      const parametria = await parametriaStore.getParametria(rootDir);
-      const fuente = crearFuenteSybase(parametria.sybase, sybaseClient.querySybase, qnetConfig, { progreso });
-      // Lo ejecutado un fin de semana o feriado se contabiliza el próximo día hábil (calendario de Parametría).
-      const { fechas: feriados } = conciliacionIbs.parseFeriados((parametria.calendario || {}).feriados);
-      const r = await qnetCorrida.ejecutarCorrida({
-        fuente,
-        bankservice,
-        fecha,
-        hoy: formatDateOnly(new Date()),
-        diaContable: qnetConfig.postergarNoHabiles ? (iso) => conciliacionIbs.proximoDiaHabil(iso, feriados) : (iso) => iso,
-        salidaDir: QNET_DIR,
-        progreso,
-      });
-      job.resultado = { id: r.id, exitCode: r.exitCode, avisos: r.avisos };
-      job.estado = 'listo';
-      securityStore.writeSecurityLog(logsDir, `CONCILIACION LOOP ${r.id} terminada (código de salida ${r.exitCode}) para '${session.username}'`);
-    } catch (err) {
-      job.estado = 'error';
-      job.error = err.message;
-      securityStore.writeSecurityLog(logsDir, `CONCILIACION LOOP falló para '${session.username}': ${err.message}`);
-    }
-  })();
-  writeJsonResponse(res, 202, { jobId: job.id });
-}
-
-function handleQnetEstadoGet(parsedUrl, res) {
-  const job = qnetJobs.get(parsedUrl.searchParams.get('job') || '');
-  if (!job) {
-    writeJsonResponse(res, 404, { error: 'No se encontró esa conciliación (se reinició el servidor o ya expiró).' });
-    return;
-  }
-  writeJsonResponse(res, 200, { estado: job.estado, progreso: job.progreso.slice(-40), resultado: job.resultado, error: job.error, segundos: Math.round((Date.now() - job.inicio) / 1000) });
-}
-
-function handleQnetCorridasGet(res) {
-  writeJsonResponse(res, 200, { corridas: qnetHistorial.listarCorridas(QNET_DIR).slice(0, 200).map((c) => ({ ...c, fechaGenerada: formatLocal(new Date(c.generada)) })) });
-}
-
-// Una corrida por fecha (la más nueva), para ver cómo se movieron las excepciones y el saldo día a día.
-function handleQnetEvolucionGet(res) {
-  writeJsonResponse(res, 200, { dias: qnetHistorial.evolucion(QNET_DIR) });
-}
-
-function handleQnetDashboardGet(parsedUrl, res) {
-  const id = parsedUrl.searchParams.get('id') || '';
-  const archivo = QNET_ID.test(id) ? path.join(QNET_DIR, id, 'dashboard.html') : '';
-  if (!archivo || !fs.existsSync(archivo)) {
-    writeJsonResponse(res, 404, { error: 'No se encontró el dashboard de esa corrida (si terminó con errores, mirá el log).' });
-    return;
-  }
-  writeJsonResponse(res, 200, { id, html: fs.readFileSync(archivo, 'utf8') });
-}
-
-function handleQnetArchivoGet(parsedUrl, res, session) {
-  const id = parsedUrl.searchParams.get('id') || '';
-  const name = parsedUrl.searchParams.get('name') || '';
-  if (!QNET_ID.test(id) || !QNET_ARCHIVOS_DESCARGA.includes(name) || !fs.existsSync(path.join(QNET_DIR, id, name))) {
-    writeJsonResponse(res, 404, { error: 'No se encontró el archivo.' });
-    return;
-  }
-  securityStore.writeSecurityLog(logsDir, `CONCILIACION LOOP ${id}: '${name}' descargado por '${session.username}'`);
-  writeJsonResponse(res, 200, { name: `qnet-${id}-${name}`, content: fs.readFileSync(path.join(QNET_DIR, id, name), 'utf8') });
 }
 
 // POST /api/conciliacion/ibs { fecha: yyyy-MM-dd, tipo?: 'altas' | 'pagos',
@@ -2079,14 +1919,6 @@ async function handleRequest(req, res) {
     if (method === 'GET' && pathname === '/api/transf-ca-cc/reporte') return void (await handleTransfCaCcReporteGet(parsedUrl, res, session));
     if (method === 'GET' && pathname === '/api/transf-ca-cc/historia') return void (await handleTransfCaCcHistoriaGet(parsedUrl, res));
     if (method === 'GET' && pathname === '/api/transf-ca-cc/datos') return void (await handleTransfCaCcDatosGet(parsedUrl, res, session));
-    if (method === 'POST' && pathname === '/api/qnet/bankservice') return void (await handleQnetBankservicePost(req, res, session));
-    if (method === 'GET' && pathname === '/api/qnet/bankservice') return void (await handleQnetBankserviceResumenGet(res));
-    if (method === 'POST' && pathname === '/api/qnet/ejecutar') return void (await handleQnetEjecutarPost(req, res, session));
-    if (method === 'GET' && pathname === '/api/qnet/estado') return void handleQnetEstadoGet(parsedUrl, res);
-    if (method === 'GET' && pathname === '/api/qnet/corridas') return void handleQnetCorridasGet(res);
-    if (method === 'GET' && pathname === '/api/qnet/evolucion') return void handleQnetEvolucionGet(res);
-    if (method === 'GET' && pathname === '/api/qnet/dashboard') return void handleQnetDashboardGet(parsedUrl, res);
-    if (method === 'GET' && pathname === '/api/qnet/archivo') return void handleQnetArchivoGet(parsedUrl, res, session);
     if (method === 'GET' && pathname === '/api/http-logs/content') return void handleHttpLogContentGet(parsedUrl, res, session);
     if (method === 'GET' && pathname === '/api/certs-browse') return void handleCertsBrowseGet(parsedUrl, res, session);
     if (method === 'POST' && pathname === '/api/check-operations') return void (await handleCheckOperations(req, res, session));

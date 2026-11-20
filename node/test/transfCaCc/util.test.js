@@ -1,7 +1,7 @@
 'use strict';
 const test = require('node:test');
 const assert = require('node:assert');
-const { parseCsv, centavos, parseFechaHora, csvTexto } = require('../../lib/qnet/util');
+const { parseCsv, centavos, parseFechaHora, csvTexto } = require('../../lib/transfCaCc/util');
 
 test('parseCsv: comillas con comas, "" escapada, CRLF y LF, BOM', () => {
   const filas = parseCsv('﻿a,b,c\r\n"x, y","di ""hola""",—\nz,,\n');

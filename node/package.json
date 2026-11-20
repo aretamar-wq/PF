@@ -6,7 +6,7 @@
   "main": "server.js",
   "scripts": {
     "start": "node server.js",
-    "test": "node --test test/qnet/*.test.js test/transfCaCc/*.test.js test/*.test.js"
+    "test": "node --test test/transfCaCc/*.test.js test/*.test.js"
   },
   "engines": {
     "node": ">=20"

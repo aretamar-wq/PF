@@ -352,7 +352,6 @@ fieldset legend { color: var(--navy); font-weight: 600; padding: 0 6px; }
 #usersTable { margin-bottom: 8px; }
 
 /* Conciliación Loop: la tabla de evolución día a día no parte los textos */
-#qnetEvolucion th, #qnetEvolucion td { white-space: nowrap; }
 
 .multi-filter { position: relative; display: inline-block; }
 .multi-filter summary { cursor: pointer; padding: 6px 10px; border: 1px solid var(--border, #ccc); border-radius: 6px; background: #fff; }
