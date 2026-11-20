@@ -47,6 +47,7 @@
             <li><button type="button" id="dashboardBtn">Dashboard</button></li>
             <li><button type="button" id="conciliacionIbsBtn">Conciliación con IBS</button></li>
             <li><button type="button" id="tccBtn">Conciliación Loop</button></li>
+            <li><button type="button" id="fxBtn">Conciliación FX</button></li>
             <li><button type="button" id="logoutBtn">Cerrar sesión</button></li>
           </ul>
         </div>
@@ -299,6 +300,71 @@
         </div>
       </section>
 
+
+      <section id="fxSection" class="tcc" style="display: none;">
+        <div class="section-head">
+          <h2>Conciliación FX</h2>
+          <button type="button" id="fxCerrarBtn">Volver a flows</button>
+        </div>
+        <div id="fxUltimaCarga" class="tcc-suave"></div>
+        <p id="fxResumen" class="tcc-resumen"></p>
+        <div id="fxAvisos"></div>
+
+        <div class="tcc-barra">
+          <label>Fecha a conciliar <input type="date" id="fxFecha" /></label>
+          <button type="button" id="fxActualizarBtn">Conciliar</button>
+          <label>CSV de FX de BankService <input type="file" id="fxArchivos" accept=".csv,text/csv" multiple /></label>
+          <button type="button" id="fxCargarBtn">Cargar BankService FX</button>
+          <span id="fxEstado" class="tcc-suave"></span>
+        </div>
+        <div id="fxCargaResultado"></div>
+
+        <div id="fxContenido" style="display: none;">
+          <div class="tcc-barra">
+            <button type="button" id="fxPdfBtn">Descargar reporte PDF</button>
+            <span id="fxDiaTexto" class="tcc-suave"></span>
+          </div>
+          <div id="fxLados"></div>
+        </div>
+
+        <div class="tcc-barra" style="margin-top: 22px;">
+          <label>Desde <input type="date" id="fxPerDesde" /></label>
+          <label>Hasta <input type="date" id="fxPerHasta" /></label>
+          <label class="tcc-check"><input type="checkbox" id="fxSoloProblemas" /> Solo días con débitos pendientes o diferencias</label>
+          <span class="tcc-suave">Historial de conciliaciones guardado (lo último conciliado de cada día). Aplica solo al gráfico y al saldo de débitos pendientes.</span>
+          <span id="fxPerAviso" class="tcc-suave"></span>
+        </div>
+
+        <h3>Órdenes por fecha</h3>
+        <div class="tcc-barra">
+          <label>Operación <select id="fxGraficoLado"><option value="">Compra y venta</option><option value="BUY">Compra de USD</option><option value="SELL">Venta de USD</option></select></label>
+        </div>
+        <div id="fxGrafico" class="tcc-grafico"></div>
+
+        <h3>Importe operado por fecha (USD)</h3>
+        <div id="fxGraficoImporte" class="tcc-grafico"></div>
+
+        <h3>Saldo de débitos pendientes por día</h3>
+        <div id="fxSaldo" class="tcc-scroll"></div>
+
+        <div id="fxContenidoExc" style="display: none;">
+          <h3>Excepciones a revisar</h3>
+          <div class="tcc-barra">
+            <label>Tipo <select id="fxExcTipo"><option value="">Todos</option></select></label>
+            <label>Operación <select id="fxExcLado"><option value="">Compra y venta</option><option value="BUY">Compra de USD</option><option value="SELL">Venta de USD</option></select></label>
+            <label>Buscar <input type="search" id="fxExcBuscar" placeholder="comprobante, CUIT, cuenta, moneda, fecha, detalle" /></label>
+            <button type="button" id="fxExcCsvBtn">Exportar CSV</button>
+            <span id="fxExcCuenta" class="tcc-suave"></span>
+          </div>
+          <div class="tcc-scroll-v"><table id="fxExc"><thead><tr>
+            <th class="ordenable" data-orden="tipo">Tipo</th><th class="ordenable" data-orden="lado">Operación</th><th class="ordenable num" data-orden="comprobante">Comprobante</th>
+            <th class="ordenable num" data-orden="cuenta">Cuenta</th><th class="ordenable" data-orden="cuit">CUIT</th><th class="ordenable" data-orden="moneda">Moneda</th>
+            <th class="ordenable" data-orden="fecha">Fecha</th><th class="ordenable num" data-orden="importe">Importe</th>
+            <th class="ordenable" data-orden="usuario">Usuario</th><th class="ordenable" data-orden="estadoBs">Estado BankService</th>
+            <th class="ordenable" data-orden="detalle">Detalle</th>
+          </tr></thead><tbody></tbody></table></div>
+        </div>
+      </section>
 
       <section id="dashboardSection" style="display: none;">
         <div class="section-head">
@@ -578,5 +644,7 @@
   <script src="/app.js"></script>
   <script src="/transf-ca-cc-calculo.js"></script>
   <script src="/transf-ca-cc.js"></script>
+  <script src="/fx-calculo.js"></script>
+  <script src="/fx.js"></script>
 </body>
 </html>
