@@ -123,7 +123,7 @@ test('indicadores: control, Activar Cuentas y FAILED en IBS', () => {
   assert.strictEqual(ind.activar.sinOperacion, 1);
   assert.strictEqual(ind.ibs.creditos[0], 1); // solo el de la operación 100 de BankService (99998 y 98 no están)
   assert.strictEqual(ind.ibs.manuales[0], 0); // el manual del 99999 no es de una operación de BankService
-  assert.strictEqual(ind.ibs.debitos[0], 4); // operaciones APPROVED 100, 101, 103 y 105 (99999, 200 y 1 no cuentan)
+  assert.strictEqual(ind.ibs.debitos[0], 5); // APPROVED 100, 101, 103, 105 y la FAILED 200 (99999 y 1 no tienen operación)
   assert.strictEqual(ind.bs.importePendiente[0], 70000 + 80000);
   assert.strictEqual(ind.bs.importeAprobadas[2], 5000); // la 102 en USD
 });
@@ -339,4 +339,14 @@ test('créditos que faltan: con el débito hecho (rojo) y con el débito pendien
   const solo91 = conciliar({ movimientos: [], pendientes: p, operaciones: [op(91, '2026-11-16', 20)], config });
   const sem = calculo.semaforos(calculo.indicadores({ ...solo91, config: { movDebito: '25030', movCredito: '25031' } }, '2026-11-16')).transferencias;
   assert.strictEqual(sem.color, 'amarillo');
+});
+
+test('movimientos de una operación PENDING_EXECUTION suman en Débitos y Créditos (y quedan en rojo contra las APPROVED)', () => {
+  const m = ibs.normalizarMovimientos([mov(100, '16/11/2026', 25030, 50), mov(100, '16/11/2026', 25031, 50, { sistcod: 3 }), mov(101, '16/11/2026', 25030, 30), mov(101, '16/11/2026', 25031, 30, { sistcod: 3 })], config).movimientos;
+  const r = conciliar({ movimientos: m, pendientes: [], operaciones: [op(100, '2026-11-16', 50), op(101, '2026-11-16', 30, { estado: 'PENDING_EXECUTION' })], config });
+  const ind = calculo.indicadores({ ...r, config: { movDebito: '25030', movCredito: '25031' } }, '2026-11-16');
+  assert.deepStrictEqual([ind.ibs.debitos[0], ind.ibs.creditos[0], ind.ibs.saldoDebitos[0]], [2, 2, 8000]);
+  assert.strictEqual(ind.bs.importeNoAprobadasEnIbs[0], 3000);
+  const c = calculo.coloresTransferencias(ind);
+  assert.deepStrictEqual([c.debitos, c.creditos], ['err', 'err']);
 });
