@@ -63,6 +63,7 @@ function conciliar({ movimientos, pendientes, operaciones, config }) {
       // día de esa operación (aunque IBS lo haya imputado otro día).
       fechaFiltro: o && o.fecha ? o.fecha : m.fecha,
       aprobada: !!(o && o.estado === 'APPROVED'),
+      conOperacion: !!o,
       fechaOperacion: o && o.fecha ? o.fecha : '',
       centavo,
       activarCuentas: centavo && !ops.has(m.comprobante),

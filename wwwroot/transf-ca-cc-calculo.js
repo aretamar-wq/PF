@@ -40,9 +40,11 @@
         activar.sinOperacion++;
         continue;
       }
-      // BankService manda: Débitos y Créditos cuentan solo los movimientos de operaciones
-      // APPROVED de BankService (lo demás se ve en Excepciones).
-      if (!m.aprobada) continue;
+      // BankService manda: Débitos y Créditos cuentan los movimientos de operaciones de
+      // BankService. Los de operaciones FAILED / PENDING_EXECUTION también suman (IBS los
+      // tiene), y por eso el indicador queda en rojo contra las APPROVED. Los movimientos
+      // sin operación en BankService se ven solo en Excepciones.
+      if (!m.aprobada && !m.conOperacion) continue;
       if (m.movcod === deb) {
         ibs.debitos[k]++;
         ibs.saldoDebitos[k] += m.importe;
@@ -71,7 +73,7 @@
 
     const bs = {
       aprobadas: nuevo(), ejecutadas: nuevo(), pendientes: nuevo(), pendientesUltimoDia: nuevo(), pendientesAnteriores: nuevo(),
-      sinRegistro: nuevo(), porContabilizar: nuevo(), importePendiente: nuevo(), importeAprobadas: nuevo(), montoSinDebito: nuevo(), sinDebitoNiCredito: nuevo(), montoSinDebitoNiCredito: nuevo(), failed: 0, failedEnIbs: 0, sinEjecutar: 0, sinEjecutarEnIbs: 0,
+      sinRegistro: nuevo(), porContabilizar: nuevo(), importePendiente: nuevo(), importeAprobadas: nuevo(), montoSinDebito: nuevo(), sinDebitoNiCredito: nuevo(), montoSinDebitoNiCredito: nuevo(), failed: 0, failedEnIbs: 0, sinEjecutar: 0, sinEjecutarEnIbs: 0, importeNoAprobadasEnIbs: nuevo(),
     };
     for (const o of ops) {
       const k = o.moncod;
@@ -83,6 +85,7 @@
         bs.sinEjecutar++;
         if (o.clase === 'debitadaNoAprobada') bs.sinEjecutarEnIbs++;
       }
+      if (o.clase === 'debitadaNoAprobada' && k in bs.importeNoAprobadasEnIbs) bs.importeNoAprobadasEnIbs[k] += o.monto;
       if (o.estado !== 'APPROVED' || !(k in bs.aprobadas)) continue;
       bs.aprobadas[k]++;
       bs.importeAprobadas[k] += o.monto;
