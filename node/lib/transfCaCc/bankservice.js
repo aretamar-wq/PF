@@ -13,7 +13,7 @@
 //   final (APPROVED/FAILED) nunca vuelve a PENDING_EXECUTION ni cambia por otro
 //   final: es un conflicto y se informa. Cada cambio de estado queda en la auditoría.
 
-const { sha256, parseCsv, centavos, parseFechaHora } = require('../qnet/util');
+const { sha256, parseCsv, centavos, parseFechaHora } = require('./util');
 
 const ENCABEZADO = [
   'Comprobante', 'Creada', 'Ejecutada', 'Estado', 'Titular', 'CUIT titular', 'CBU origen', 'CBU destino',

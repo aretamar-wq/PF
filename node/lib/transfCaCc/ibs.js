@@ -4,7 +4,7 @@
 // normalización de sus filas. El dashboard nunca se conecta a IBS: recibe lo que
 // devuelve esta capa.
 
-const { centavos, parseFechaHora } = require('../qnet/util');
+const { centavos, parseFechaHora } = require('./util');
 
 const COLUMNAS_MOVIMIENTOS = ['usrident', 'sistcod', 'moncod', 'cuecod', 'Fecha_Mov', 'comnro', 'movcod', 'signo', 'accimp', 'Importe'];
 const COLUMNAS_PENDIENTES = ['fecreal', 'tercod', 'succod', 'sistcod', 'moncod', 'cuecod', 'movcod', 'descdet', 'fecproceso', 'comnro', 'nromen', 'mentexto', 'importedeb', 'fecenlace', 'fecorigen'];
