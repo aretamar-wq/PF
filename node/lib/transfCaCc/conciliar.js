@@ -26,6 +26,9 @@ const TIPOS = {
   DEBITO_PENDIENTE: 'Débito pendiente',
   DEBITO_POR_CONTABILIZAR: 'Débito por contabilizar',
   CREDITO_FALTANTE: 'Falta el crédito 25031',
+  MAS_DE_UN_CREDITO: 'Más de un crédito 25031',
+  CREDITO_IMPORTE: 'Importe del crédito 25031 distinto',
+  CREDITO_SIN_DEBITO: 'Crédito 25031 sin débito',
 };
 
 const numero = (c) => Number(c) || 0;
@@ -109,14 +112,25 @@ function conciliar({ movimientos, pendientes, operaciones, config }) {
           r.posterior = true;
           r.fechaDebito = d.fecha;
         }
-        if (d.moncod !== o.moncod) exc(TIPOS.MONEDA, { ...base, fecha: d.fecha, usuario: d.usuario, detalle: `IBS debitó en ${etiqueta(d.moncod)} y BankService es ${etiqueta(o.moncod)}.` });
-        if (d.importe !== o.monto) exc(TIPOS.IMPORTE, { ...base, fecha: d.fecha, usuario: d.usuario, detalle: `IBS debitó ${dinero(d.moncod, d.importe)} y BankService dice ${dinero(o.moncod, o.monto)}.` });
-        if (d.cuecod !== o.cuecod) exc(TIPOS.CUENTA, { ...base, fecha: d.fecha, usuario: d.usuario, detalle: `IBS debitó la cuenta ${d.cuecod} y BankService es de la cuenta ${o.cuecod}.` });
+        if (d.moncod !== o.moncod) exc(TIPOS.MONEDA, { ...base, usuario: d.usuario, detalle: `IBS debitó en ${etiqueta(d.moncod)} y BankService es ${etiqueta(o.moncod)}.` });
+        if (d.importe !== o.monto) exc(TIPOS.IMPORTE, { ...base, usuario: d.usuario, detalle: `IBS debitó ${dinero(d.moncod, d.importe)} y BankService dice ${dinero(o.moncod, o.monto)}.` });
+        if (d.cuecod !== o.cuecod) exc(TIPOS.CUENTA, { ...base, usuario: d.usuario, detalle: `IBS debitó la cuenta ${d.cuecod} y BankService es de la cuenta ${o.cuecod}.` });
         // Debitada pero sin su crédito 25031 en IBS (ni en fechas posteriores).
-        if (!(creditosPorComp.get(o.comprobante) || []).some((c) => c.moncod === o.moncod)) {
+        const creditos = (creditosPorComp.get(o.comprobante) || []).filter((c) => c.moncod === o.moncod);
+        if (creditos.length === 0) {
           exc(TIPOS.CREDITO_FALTANTE, { ...base, usuario: d.usuario, detalle: `IBS tiene el débito del ${d.fecha.split('-').reverse().join('/')} por ${dinero(d.moncod, d.importe)} y no tiene el crédito ${config.movCredito} de la operación.` });
         }
+        if (creditos.length > 1) {
+          exc(TIPOS.MAS_DE_UN_CREDITO, { ...base, importe: creditos.reduce((s, c) => s + c.importe, 0), usuario: creditos[0].usuario, detalle: `${creditos.length} créditos ${config.movCredito}: ${creditos.map((c) => `${dinero(c.moncod, c.importe)} (${c.fecha.split('-').reverse().join('/')}, cuenta ${c.cuecod})`).join(', ')}.` });
+        }
+        for (const c of creditos) {
+          if (c.importe !== o.monto) exc(TIPOS.CREDITO_IMPORTE, { ...base, importe: c.importe, usuario: c.usuario, detalle: `IBS acreditó ${dinero(c.moncod, c.importe)} el ${c.fecha.split('-').reverse().join('/')} y BankService dice ${dinero(o.moncod, o.monto)}.` });
+        }
       } else {
+        const creditos = (creditosPorComp.get(o.comprobante) || []).filter((c) => c.moncod === o.moncod);
+        if (creditos.length > 0) {
+          exc(TIPOS.CREDITO_SIN_DEBITO, { ...base, importe: creditos[0].importe, usuario: creditos[0].usuario, detalle: `IBS tiene ${creditos.length} crédito(s) ${config.movCredito} (${creditos.map((c) => `${dinero(c.moncod, c.importe)} del ${c.fecha.split('-').reverse().join('/')}`).join(', ')}) y no tiene el débito ${config.movDebito}.` });
+        }
         const pend = (pendPorClave.get(`${o.moncod}|${o.comprobante}`) || [])[0];
         if (pend) {
           r.clase = 'pendiente';
@@ -148,7 +162,7 @@ function conciliar({ movimientos, pendientes, operaciones, config }) {
   // Excepciones sobre los débitos de IBS.
   for (const [comprobante, debitos] of debitosPorComp) {
     const o = ops.get(comprobante);
-    const base = { comprobante, cuenta: debitos[0].cuecod, moneda: etiqueta(debitos[0].moncod), fecha: debitos[0].fecha, usuario: debitos[0].usuario, estadoBs: o ? o.estado : '' };
+    const base = { comprobante, cuenta: debitos[0].cuecod, moneda: etiqueta(debitos[0].moncod), fecha: debitos[0].fechaFiltro || debitos[0].fecha, usuario: debitos[0].usuario, estadoBs: o ? o.estado : '' };
     if (debitos.length > 1) {
       exc(TIPOS.MAS_DE_UN_DEBITO, { ...base, importe: debitos.reduce((s, d) => s + d.importe, 0), detalle: `${debitos.length} débitos ${config.movDebito}: ${debitos.map((d) => `${dinero(d.moncod, d.importe)} (${d.fecha})`).join(', ')}.` });
     }
@@ -161,11 +175,11 @@ function conciliar({ movimientos, pendientes, operaciones, config }) {
   for (const m of movs) {
     if (m.activarCuentas) continue;
     const o = ops.get(m.comprobante);
-    const base = { comprobante: m.comprobante, cuenta: m.cuecod, moneda: etiqueta(m.moncod), fecha: m.fecha, usuario: m.usuario, importe: m.importe, estadoBs: o ? o.estado : '' };
+    const base = { comprobante: m.comprobante, cuenta: m.cuecod, moneda: etiqueta(m.moncod), fecha: m.fechaFiltro || m.fecha, usuario: m.usuario, importe: m.importe, estadoBs: o ? o.estado : '' };
     // Un crédito 25031 que es la contrapartida de una operación APPROVED (mismo
     // comprobante, moneda e importe) es normal; cualquier otro mayor a 1 centavo se revisa.
     const contrapartida = o && o.estado === 'APPROVED' && o.moncod === m.moncod && o.monto === m.importe;
-    if (m.movcod === config.movCredito && !m.centavo && !contrapartida) {
+    if (m.movcod === config.movCredito && !m.centavo && !contrapartida && !(o && o.estado === 'APPROVED')) {
       exc(TIPOS.CREDITO_RELEVANTE, { ...base, detalle: `Crédito ${config.movCredito} de ${dinero(m.moncod, m.importe)} (sistcod ${m.sistcod || '?'})${o ? '' : ' sin operación en BankService'}: a revisar.` });
     }
     if (m.manual) {
