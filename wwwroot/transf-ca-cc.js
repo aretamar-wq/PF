@@ -52,7 +52,7 @@
       $('tccArchivos').value = '';
       $('tccCargaResultado').innerHTML = data.resultados.map((r) => {
         if (r.error) return `<p class="tcc-aviso">${esc(r.nombre)}: ${esc(r.error)}</p>`;
-        if (r.yaCargado) return `<p class="tcc-aviso">${esc(r.nombre)}: archivo ya cargado (${esc(r.cargaPrevia.nombre)}, ${esc(r.cargaPrevia.cargado_en)}). No se procesó de nuevo.</p>`;
+        if (r.yaCargado) return `<p class="tcc-aviso">${esc(r.nombre)}: archivo ya cargado (${esc(r.cargaPrevia.nombre)}, ${esc(r.cargaPrevia.cargado_en)}). No se procesó de nuevo${r.cuitsCompletados ? `; se completó el CUIT de ${fmtNum(r.cuitsCompletados)} operación(es)` : ''}.</p>`;
         const problemas = [...r.rechazos.map((x) => `Fila ${x.fila}${x.comprobante ? ` (comprobante ${esc(x.comprobante)})` : ''}: rechazada, ${esc(x.motivo)}`), ...r.conflictos.map((x) => `Fila ${x.fila} (comprobante ${esc(x.comprobante)}): conflicto, ${esc(x.motivo)}`)];
         return `<p>${esc(r.nombre)}: ${fmtNum(r.leidas)} leídas, ${fmtNum(r.insertadas)} insertadas, ${fmtNum(r.actualizadas)} actualizadas, ${fmtNum(r.sinCambios)} sin cambios, ${fmtNum(r.rechazadas)} rechazadas, ${fmtNum(r.conflictos.length)} conflictos.</p>` +
           (problemas.length ? `<details><summary>Ver ${problemas.length} fila(s) con problemas</summary><div class="tcc-suave">${problemas.slice(0, 500).join('<br>')}</div></details>` : '');
@@ -343,7 +343,7 @@
     const tipo = $('tccExcTipo').value;
     const q = $('tccExcBuscar').value.trim().toLowerCase();
     let filas = lista.filter((e) => !tipo || e.tipo === tipo);
-    if (q) filas = filas.filter((e) => [e.comprobante, e.cuenta, e.moneda, dmy(e.fecha), e.fecha, e.detalle].some((v) => String(v || '').toLowerCase().includes(q)));
+    if (q) filas = filas.filter((e) => [e.comprobante, e.cuit, e.cuenta, e.moneda, dmy(e.fecha), e.fecha, e.detalle].some((v) => String(v || '').toLowerCase().includes(q)));
     const { campo, asc } = estado.orden;
     const numericos = ['comprobante', 'cuenta', 'importe'];
     filas.sort((a, b) => {
@@ -362,7 +362,7 @@
     const monedaCod = (m) => (m === 'USD' ? '2' : '0');
     $('tccExc').querySelector('tbody').innerHTML = filas.slice(0, 5000).map((e) => `<tr>
       <td><span class="tcc-pill" style="background:${colorTipo(e.tipo)}">${esc(e.tipo)}</span></td>
-      <td class="num">${esc(e.comprobante)}</td><td class="num">${esc(e.cuenta || '—')}</td><td>${esc(e.moneda)}</td>
+      <td class="num">${esc(e.comprobante)}</td><td class="num">${esc(e.cuenta || '—')}</td><td class="mono">${esc(e.cuit || '—')}</td><td>${esc(e.moneda)}</td>
       <td>${esc(dmy(e.fecha))}</td><td class="num">${e.importe == null ? '—' : esc(dinero(monedaCod(e.moneda), e.importe))}</td>
       <td>${esc(e.usuario || '—')}</td><td>${esc(e.estadoBs || '—')}</td><td class="detalle">${esc(e.detalle)}</td></tr>`).join('');
     document.querySelectorAll('#tccExc th.ordenable').forEach((th) => {
@@ -388,9 +388,9 @@
       alert('No hay excepciones para exportar con los filtros actuales.');
       return;
     }
-    const lineas = [csvExcelLine(['Tipo', 'Comprobante', 'Cuenta', 'Moneda', 'Fecha', 'Importe', 'Usuario', 'Estado BankService', 'Detalle'])];
+    const lineas = [csvExcelLine(['Tipo', 'Comprobante', 'Cuenta', 'CUIT', 'Moneda', 'Fecha', 'Importe', 'Usuario', 'Estado BankService', 'Detalle'])];
     for (const e of filas) {
-      lineas.push(csvExcelLine([e.tipo, e.comprobante, e.cuenta, e.moneda, dmy(e.fecha), e.importe == null ? '' : (e.importe / 100).toFixed(2).replace('.', ','), e.usuario, e.estadoBs, e.detalle]));
+      lineas.push(csvExcelLine([e.tipo, e.comprobante, e.cuenta, e.cuit, e.moneda, dmy(e.fecha), e.importe == null ? '' : (e.importe / 100).toFixed(2).replace('.', ','), e.usuario, e.estadoBs, e.detalle]));
     }
     const sufijo = estado.dia ? estado.dia : `${estado.datos.rango.desde}-a-${sumarDias(estado.datos.rango.hasta, -1)}`;
     downloadCsvExcel(`excepciones-ca-cc-${sufijo}.csv`, lineas);

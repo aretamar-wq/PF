@@ -295,3 +295,11 @@ test('créditos: más de uno, importe distinto y crédito sin débito figuran en
   assert.strictEqual(e43.fecha, '2026-11-16');
   assert.match(e43.detalle, /18\/11\/2026/);
 });
+
+test('Excepciones a revisar: llevan el CUIT del titular de la operación de BankService', () => {
+  const r = conciliar({ movimientos: ibs.normalizarMovimientos([mov(50, '16/11/2026', 25030, 99)], config).movimientos, pendientes: [], operaciones: [{ ...op(50, '2026-11-16', 100), cuit: '20321655271' }], config });
+  assert.ok(r.excepciones.length > 0);
+  assert.ok(r.excepciones.every((e) => e.cuit === '20321655271'));
+  const sinOp = conciliar({ movimientos: ibs.normalizarMovimientos([mov(51, '16/11/2026', 25030, 99)], config).movimientos, pendientes: [], operaciones: [], config });
+  assert.strictEqual(sinOp.excepciones[0].cuit, '');
+});

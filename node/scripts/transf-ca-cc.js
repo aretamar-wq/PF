@@ -58,7 +58,7 @@ for (const ruta of a.bankservice) {
     if (accion === 'conflicto') console.error(`${ruta}: comprobante ${f.comprobante} ya está ${e.estado} y trae ${f.estado}: no se pisa`);
   }
 }
-const operaciones = aDiaHabil([...base.values()].map((f) => ({ comprobante: f.comprobante, moncod: f.moncod, cuecod: f.cuecod, monto: f.monto, estado: f.estado, creada: f.creada, ejecutada: f.ejecutada || '', fecha: f.fechaOperacion, error: f.error })), new Set(String(a.feriados || '').split(',').filter(Boolean)));
+const operaciones = aDiaHabil([...base.values()].map((f) => ({ comprobante: f.comprobante, moncod: f.moncod, cuecod: f.cuecod, cuit: f.cuit, monto: f.monto, estado: f.estado, creada: f.creada, ejecutada: f.ejecutada || '', fecha: f.fechaOperacion, error: f.error })), new Set(String(a.feriados || '').split(',').filter(Boolean)));
 
 const mov = ibs.normalizarMovimientos(objetos(fs.readFileSync(a.ibs, 'utf8')), config);
 const pend = ibs.normalizarPendientes(objetos(fs.readFileSync(a.pendientes, 'utf8')), config);

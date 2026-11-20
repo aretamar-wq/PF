@@ -77,6 +77,7 @@ function leerArchivo(nombre, contenido, config) {
       comprobante,
       moncod: config.monedas[moneda],
       cuecod: String(parseInt(cbu.slice(10, 21), 10)),
+      cuit: g('CUIT titular').replace(/\D/g, '').slice(0, 20),
       monto,
       estado,
       creada,
@@ -94,7 +95,7 @@ function leerArchivo(nombre, contenido, config) {
 
 const montoDecimal = (c) => (c / 100).toFixed(2);
 const mismoValor = (a, b) =>
-  a.moncod === String(b.moncod) && a.cuecod === String(b.cuecod) && montoDecimal(a.monto) === Number(b.monto).toFixed(2) &&
+  a.moncod === String(b.moncod) && a.cuecod === String(b.cuecod) && a.cuit === String(b.cuit_titular || '') && montoDecimal(a.monto) === Number(b.monto).toFixed(2) &&
   a.estado === b.estado && a.creada === String(b.creada) && (a.ejecutada || null) === (b.ejecutada || null) &&
   a.fechaOperacion === String(b.fecha_operacion).slice(0, 10) && a.error === String(b.error || '');
 
@@ -114,7 +115,20 @@ async function cargarArchivo(conn, archivo, usuario, ahora, config) {
   const leido = leerArchivo(archivo.nombre, archivo.contenido, config);
   const [previas] = await conn.query('SELECT id, nombre, cargado_en FROM bankservice_cargas WHERE hash = ? LIMIT 1', [leido.hash]);
   if (previas.length > 0) {
-    return { nombre: archivo.nombre, yaCargado: true, cargaPrevia: previas[0], mensaje: `archivo ya cargado (${previas[0].nombre}, ${previas[0].cargado_en})` };
+    // Archivo ya cargado: no se procesa de nuevo, pero se completa el CUIT del titular en
+    // las operaciones que lo tienen vacío (cargadas antes de que se guardara).
+    let cuitsCompletados = 0;
+    const conCuit = leido.filas.filter((f) => f.cuit);
+    for (let i = 0; i < conCuit.length; i += 500) {
+      const lote = conCuit.slice(i, i + 500);
+      const [r] = await conn.query(
+        `UPDATE bankservice_movimientos SET cuit_titular = CASE comprobante ${lote.map(() => 'WHEN ? THEN ?').join(' ')} END
+         WHERE cuit_titular = '' AND comprobante IN (${lote.map(() => '?').join(', ')})`,
+        [...lote.flatMap((f) => [f.comprobante, f.cuit]), ...lote.map((f) => f.comprobante)]
+      );
+      cuitsCompletados += (r && r.affectedRows) || 0;
+    }
+    return { nombre: archivo.nombre, yaCargado: true, cuitsCompletados, cargaPrevia: previas[0], mensaje: `archivo ya cargado (${previas[0].nombre}, ${previas[0].cargado_en})` };
   }
   const r = { nombre: archivo.nombre, hash: leido.hash, leidas: leido.leidas, insertadas: 0, actualizadas: 0, sinCambios: 0, rechazadas: leido.rechazadas.length, conflictos: [], rechazos: leido.rechazadas };
   const fechas = leido.filas.map((f) => f.fechaOperacion).sort();
@@ -130,7 +144,7 @@ async function cargarArchivo(conn, archivo, usuario, ahora, config) {
     for (let i = 0; i < leido.filas.length; i += 500) {
       const lote = leido.filas.slice(i, i + 500);
       const [existentes] = await conn.query(
-        `SELECT comprobante, moncod, cuecod, monto, estado, creada, ejecutada, fecha_operacion, error FROM bankservice_movimientos
+        `SELECT comprobante, moncod, cuecod, cuit_titular, monto, estado, creada, ejecutada, fecha_operacion, error FROM bankservice_movimientos
          WHERE comprobante IN (${lote.map(() => '?').join(', ')}) FOR UPDATE`,
         lote.map((f) => f.comprobante)
       );
@@ -138,18 +152,18 @@ async function cargarArchivo(conn, archivo, usuario, ahora, config) {
       for (const f of lote) {
         const e = porComp.get(f.comprobante);
         const accion = decidir(f, e);
-        const valores = [f.moncod, f.cuecod, montoDecimal(f.monto), f.estado, f.creada, f.ejecutada, f.fechaOperacion, f.error, cargaId, ahora];
+        const valores = [f.moncod, f.cuecod, f.cuit, montoDecimal(f.monto), f.estado, f.creada, f.ejecutada, f.fechaOperacion, f.error, cargaId, ahora];
         if (accion === 'insertar') {
           await conn.query(
-            `INSERT INTO bankservice_movimientos (comprobante, moncod, cuecod, monto, estado, creada, ejecutada, fecha_operacion, error, carga_id, cargado_en)
-             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+            `INSERT INTO bankservice_movimientos (comprobante, moncod, cuecod, cuit_titular, monto, estado, creada, ejecutada, fecha_operacion, error, carga_id, cargado_en)
+             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
             [f.comprobante, ...valores]
           );
           await conn.query('INSERT INTO bankservice_auditoria (comprobante, estado_anterior, estado_nuevo, carga_id, fecha) VALUES (?, NULL, ?, ?, ?)', [f.comprobante, f.estado, cargaId, ahora]);
           r.insertadas++;
         } else if (accion === 'actualizar') {
           await conn.query(
-            `UPDATE bankservice_movimientos SET moncod = ?, cuecod = ?, monto = ?, estado = ?, creada = ?, ejecutada = ?, fecha_operacion = ?, error = ?, carga_id = ?, cargado_en = ?
+            `UPDATE bankservice_movimientos SET moncod = ?, cuecod = ?, cuit_titular = ?, monto = ?, estado = ?, creada = ?, ejecutada = ?, fecha_operacion = ?, error = ?, carga_id = ?, cargado_en = ?
              WHERE comprobante = ?`,
             [...valores, f.comprobante]
           );
@@ -182,6 +196,7 @@ function operacionesDesdeFilas(filas) {
     comprobante: String(f.comprobante),
     moncod: String(f.moncod),
     cuecod: String(f.cuecod),
+    cuit: String(f.cuit_titular || ''),
     monto: Math.round(Number(f.monto) * 100),
     estado: f.estado,
     creada: String(f.creada || ''),
