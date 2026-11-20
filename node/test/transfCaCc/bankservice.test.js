@@ -22,12 +22,21 @@ function conexionFalsa() {
       if (/^SELECT id, nombre, cargado_en FROM bankservice_cargas/.test(sql)) return [db.cargas.filter((c) => c.hash === p[0])];
       if (/^INSERT INTO bankservice_cargas/.test(sql)) { db.cargas.push({ id: db.cargas.length + 1, nombre: p[0], hash: p[1], cargado_en: p[8] }); return [{ insertId: db.cargas.length }]; }
       if (/^\s*SELECT comprobante, moncod/.test(sql)) return [p.filter((c) => db.movs.has(c)).map((c) => db.movs.get(c))];
+      if (/^\s*UPDATE bankservice_movimientos SET cuit_titular = CASE/.test(sql)) {
+        const n = (p.length) / 3;
+        let afectadas = 0;
+        for (let i = 0; i < n; i++) {
+          const m = db.movs.get(p[i * 2]);
+          if (m && !m.cuit_titular) { m.cuit_titular = p[i * 2 + 1]; afectadas++; }
+        }
+        return [{ affectedRows: afectadas }];
+      }
       if (/^\s*INSERT INTO bankservice_movimientos/.test(sql)) {
         if (conn.fallarEn === p[0]) throw new Error('falla simulada');
-        db.movs.set(p[0], { comprobante: p[0], moncod: p[1], cuecod: p[2], monto: p[3], estado: p[4], creada: p[5], ejecutada: p[6], fecha_operacion: p[7], error: p[8] });
+        db.movs.set(p[0], { comprobante: p[0], moncod: p[1], cuecod: p[2], cuit_titular: p[3], monto: p[4], estado: p[5], creada: p[6], ejecutada: p[7], fecha_operacion: p[8], error: p[9] });
         return [{}];
       }
-      if (/^\s*UPDATE bankservice_movimientos/.test(sql)) { db.movs.set(p[10], { comprobante: p[10], moncod: p[0], cuecod: p[1], monto: p[2], estado: p[3], creada: p[4], ejecutada: p[5], fecha_operacion: p[6], error: p[7] }); return [{}]; }
+      if (/^\s*UPDATE bankservice_movimientos/.test(sql)) { db.movs.set(p[11], { comprobante: p[11], moncod: p[0], cuecod: p[1], cuit_titular: p[2], monto: p[3], estado: p[4], creada: p[5], ejecutada: p[6], fecha_operacion: p[7], error: p[8] }); return [{}]; }
       if (/^INSERT INTO bankservice_auditoria/.test(sql)) { db.auditoria.push(/NULL/.test(sql) ? [p[0], null, p[1]] : p.slice(0, 3)); return [{}]; }
       if (/^UPDATE bankservice_cargas/.test(sql)) return [{}];
       throw new Error('consulta no prevista: ' + sql);
@@ -93,4 +102,16 @@ test('carga: si algo falla, el archivo no entra (transacción)', async () => {
   await assert.rejects(cargar(conn, 'a.csv', csv(fila(1, 'APPROVED'), fila(2, 'APPROVED'))));
   assert.strictEqual(conn.db.movs.size, 0);
   assert.strictEqual(conn.db.cargas.length, 0);
+});
+
+test('CUIT del titular: se guarda y, si el archivo ya estaba cargado sin CUIT, se completa', async () => {
+  const conn = conexionFalsa();
+  const contenido = csv(fila(1, 'APPROVED'));
+  await cargar(conn, 'nov.csv', contenido);
+  assert.strictEqual(conn.db.movs.get('1').cuit_titular, '20111111112');
+  conn.db.movs.get('1').cuit_titular = ''; // cargado antes de que se guardara el CUIT
+  const r = await cargar(conn, 'nov.csv', contenido);
+  assert.ok(r.yaCargado);
+  assert.strictEqual(r.cuitsCompletados, 1);
+  assert.strictEqual(conn.db.movs.get('1').cuit_titular, '20111111112');
 });

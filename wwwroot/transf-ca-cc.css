@@ -87,3 +87,4 @@
 .tcc .tcc-semaforo.amarillo { background: #f0b429; box-shadow: 0 0 0 3px rgba(240, 180, 41, 0.25); }
 .tcc .tcc-semaforo.rojo { background: #d92d20; box-shadow: 0 0 0 3px rgba(217, 45, 32, 0.2); }
 .tcc .tcc-barra label.tcc-check { flex-direction: row; align-items: center; gap: 6px; color: var(--tcc-texto); font-size: 0.85rem; }
+.tcc td.mono { font-variant-numeric: tabular-nums; white-space: nowrap; }

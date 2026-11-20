@@ -285,13 +285,13 @@
           <h3>Excepciones a revisar</h3>
           <div class="tcc-barra">
             <label>Tipo <select id="tccExcTipo"><option value="">Todos</option></select></label>
-            <label>Buscar <input type="search" id="tccExcBuscar" placeholder="comprobante, cuenta, moneda, fecha, detalle" /></label>
+            <label>Buscar <input type="search" id="tccExcBuscar" placeholder="comprobante, CUIT, cuenta, moneda, fecha, detalle" /></label>
             <button type="button" id="tccExcCsvBtn">Exportar CSV</button>
             <span id="tccExcCuenta" class="tcc-suave"></span>
           </div>
           <div class="tcc-scroll-v"><table id="tccExc"><thead><tr>
             <th class="ordenable" data-orden="tipo">Tipo</th><th class="ordenable num" data-orden="comprobante">Comprobante</th>
-            <th class="ordenable num" data-orden="cuenta">Cuenta</th><th class="ordenable" data-orden="moneda">Moneda</th>
+            <th class="ordenable num" data-orden="cuenta">Cuenta</th><th class="ordenable" data-orden="cuit">CUIT</th><th class="ordenable" data-orden="moneda">Moneda</th>
             <th class="ordenable" data-orden="fecha">Fecha</th><th class="ordenable num" data-orden="importe">Importe</th>
             <th class="ordenable" data-orden="usuario">Usuario</th><th class="ordenable" data-orden="estadoBs">Estado BankService</th>
             <th class="ordenable" data-orden="detalle">Detalle</th>

@@ -1297,7 +1297,7 @@ los dígitos 9-10 de la moneda); SHA-256 del archivo ("archivo ya cargado"); una
 transacción por archivo; UPSERT por comprobante solo si cambió; un estado final nunca
 vuelve atrás (conflicto informado); auditoría de cada cambio de estado
 (`bankservice_auditoria`) y registro de cada carga (`bankservice_cargas`). Solo se guarda
-comprobante, moneda, cuenta, monto, estado, fechas y error (sin nombres, CUIT ni CBU).
+comprobante, moneda, cuenta, CUIT del titular, monto, estado, fechas y error (sin nombres ni CBU). Excepciones a revisar muestra el CUIT; si un CSV ya estaba cargado, volver a cargarlo completa el CUIT que falte.
 
 **Reglas** (configurables en `node/lib/transfCaCc/config.js`, incluidos los usuarios de
 proceso 123123123 y 36077255): APPROVED ejecutada en IBS (valida importe, moneda y
