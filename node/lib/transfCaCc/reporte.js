@@ -127,7 +127,7 @@ function generarReporte({ datos, dia, usuario, ahora = new Date() }) {
   const huella = crypto.createHash('sha256').update(JSON.stringify({ rango: datos.rango, generado: datos.generado, movimientos: datos.movimientos, pendientes: datos.pendientes, operaciones: datos.operaciones })).digest('hex');
 
   // Encabezado
-  pdf.texto(M, y + 14, 'Conciliación Transferencias CA -> CC', { tam: 16, negrita: true });
+  pdf.texto(M, y + 14, 'Conciliación Loop', { tam: 16, negrita: true });
   y += 30;
   pdf.texto(M, y, `Reporte ${alcance}`, { tam: 11, negrita: true, colorHex: '#1f4e8c' });
   y += 16;
@@ -185,7 +185,7 @@ function generarReporte({ datos, dia, usuario, ahora = new Date() }) {
       ['Operaciones FAILED en BS que figuran en IBS', fmtNum(b.failedEnIbs), `de ${fmtNum(b.failed)} operaciones FAILED en BankService`, b.failedEnIbs === 0 ? 'ok' : 'err'],
     ], 2);
   };
-  seccionGrupo('IBS - Transferencias Loop (25030 - 25031)', ind, '25030', '25031');
+  seccionGrupo('IBS - Transferencias CA -> CC (25030 - 25031)', ind, '25030', '25031');
   const otros = Object.values(datos.grupos || {}).map((r) => ({ r, ig: calculo.indicadores({ ...r, rango: datos.rango }, dia || '') }));
   for (const { r, ig } of otros) {
     seccionGrupo(r.grupo.titulo, ig, r.config.movDebito, r.config.movCredito);
@@ -227,11 +227,11 @@ function generarReporte({ datos, dia, usuario, ahora = new Date() }) {
   // Pie: página y huella en todas las páginas.
   const totalPaginas = pdf.paginas.length;
   pdf.paginas.forEach((pagina, i) => {
-    pdf.texto(M, pdf.alto - 22, `Conciliación Transferencias CA -> CC · Reporte ${alcance} · SHA-256 datos ${huella.slice(0, 16)}…`, { tam: 7, colorHex: '#5b6576', pagina });
+    pdf.texto(M, pdf.alto - 22, `Conciliación Loop · Reporte ${alcance} · SHA-256 datos ${huella.slice(0, 16)}…`, { tam: 7, colorHex: '#5b6576', pagina });
     pdf.texto(M + W, pdf.alto - 22, `Página ${i + 1} de ${totalPaginas}`, { tam: 7, colorHex: '#5b6576', alinear: 'der', pagina });
   });
 
-  const buffer = pdf.aBuffer({ titulo: `Conciliación Transferencias CA -> CC - Reporte ${alcance}`, autor: usuario, asunto: `SHA-256 de los datos: ${huella}`, fecha: ahora });
+  const buffer = pdf.aBuffer({ titulo: `Conciliación Loop - Reporte ${alcance}`, autor: usuario, asunto: `SHA-256 de los datos: ${huella}`, fecha: ahora });
   const nombre = `conciliacion-ca-cc-${dia || `${datos.rango.desde}-a-${hastaIncl}`}-${ahora.toISOString().slice(0, 19).replace(/[-:T]/g, '')}.pdf`;
   return { buffer, nombre, huellaDatos: huella, sha256: crypto.createHash('sha256').update(buffer).digest('hex') };
 }
