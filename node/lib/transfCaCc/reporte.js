@@ -198,9 +198,9 @@ function generarReporte({ datos, dia, usuario, ahora = new Date() }) {
 
   titulo('IBS - Activar Cuentas', semActivar);
   grilla([
-    ['Transacciones de 1 centavo (comprobantes)', fmtNum(total(activar.comprobantes)), porMoneda(activar.comprobantes)],
-    ['Créditos de 1 centavo', fmtNum(total(activar.creditos)), porMoneda(activar.creditos)],
-    ['Débitos de 1 centavo', fmtNum(total(activar.debitos)), porMoneda(activar.debitos)],
+    ['Transacciones de 1 centavo (comprobantes)', fmtNum(total(activar.comprobantes)), porMoneda(activar.comprobantes), total(activar.comprobantes) ? 'warn' : 'ok'],
+    ['Créditos de 1 centavo', fmtNum(total(activar.creditos)), porMoneda(activar.creditos), total(activar.creditos) ? 'warn' : 'ok'],
+    ['Débitos de 1 centavo', fmtNum(total(activar.debitos)), porMoneda(activar.debitos), total(activar.debitos) ? 'warn' : 'ok'],
   ], 3);
 
 
