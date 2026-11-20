@@ -17,7 +17,8 @@ const TIPOS = {
   SIN_REGISTRO: 'APPROVED sin registro en IBS',
   MAS_DE_UN_DEBITO: 'Más de un débito',
   DEBITO_SIN_OPERACION: 'Débito sin operación en BankService',
-  DEBITO_FAILED: 'Débito de operación FAILED / sin ejecutar',
+  DEBITO_FAILED: 'Operación FAILED con movimientos en IBS',
+  SIN_EJECUTAR_CON_MOVIMIENTOS: 'Operación sin ejecutar con movimientos en IBS',
   PEND_DEBITADO: 'Pendiente sobre comprobante ya debitado',
   PEND_SIN_OPERACION: 'Pendiente sin operación APPROVED',
   CREDITO_RELEVANTE: 'Crédito 25031 de importe relevante',
@@ -168,7 +169,7 @@ function conciliar({ movimientos, pendientes, operaciones, config }) {
         if (debitos.length) partes.push(`${debitos.length} débito(s) ${config.movDebito} (${debitos.map(fmt).join(', ')})`);
         if (creditos.length) partes.push(`${creditos.length} crédito(s) ${config.movCredito} (${creditos.map(fmt).join(', ')})`);
         const primero = debitos[0] || creditos[0];
-        exc(TIPOS.DEBITO_FAILED, {
+        exc(o.estado === 'PENDING_EXECUTION' ? TIPOS.SIN_EJECUTAR_CON_MOVIMIENTOS : TIPOS.DEBITO_FAILED, {
           ...base,
           usuario: primero.usuario,
           importe: primero.importe,
