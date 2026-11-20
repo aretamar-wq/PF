@@ -152,12 +152,24 @@ function conciliar({ movimientos, pendientes, operaciones, config }) {
         }
       }
     } else {
-      if (debitos.length > 0) {
-        r.clase = 'debitadaNoAprobada';
-        const d = debitos[0];
-        exc(TIPOS.DEBITO_FAILED, { ...base, fecha: d.fecha, usuario: d.usuario, importe: d.importe, detalle: `IBS tiene ${debitos.length} débito(s) por ${dinero(d.moncod, d.importe)} para una operación ${o.estado}.` });
-      }
-      if (o.estado === 'PENDING_EXECUTION') {
+      // Operación FAILED / sin ejecutar: una sola excepción con todo lo que IBS tiene
+      // (débitos y créditos). Sin movimientos, una PENDING_EXECUTION es "Transfer sin ejecutar".
+      const creditos = (creditosPorComp.get(o.comprobante) || []).filter((c) => c.moncod === o.moncod);
+      const fmt = (m) => `${dinero(m.moncod, m.importe)} del ${m.fecha.split('-').reverse().join('/')}`;
+      if (debitos.length > 0) r.clase = 'debitadaNoAprobada';
+      if (debitos.length > 0 || creditos.length > 0) {
+        const partes = [];
+        if (debitos.length) partes.push(`${debitos.length} débito(s) ${config.movDebito} (${debitos.map(fmt).join(', ')})`);
+        if (creditos.length) partes.push(`${creditos.length} crédito(s) ${config.movCredito} (${creditos.map(fmt).join(', ')})`);
+        const primero = debitos[0] || creditos[0];
+        exc(TIPOS.DEBITO_FAILED, {
+          ...base,
+          usuario: primero.usuario,
+          importe: primero.importe,
+          detalle: `BankService la tiene ${o.estado}${o.estado === 'PENDING_EXECUTION' ? ` (creada el ${o.creada})` : ''} e IBS tiene ${partes.join(' y ')}.` +
+            (o.estado === 'PENDING_EXECUTION' ? ' Si se ejecutó después, cargá el CSV de BankService más nuevo.' : ''),
+        });
+      } else if (o.estado === 'PENDING_EXECUTION') {
         exc(TIPOS.SIN_EJECUTAR, { ...base, fecha: o.creada.slice(0, 10), detalle: `Creada el ${o.creada}; sin ejecutar.` });
       }
     }
@@ -184,7 +196,7 @@ function conciliar({ movimientos, pendientes, operaciones, config }) {
     // Un crédito 25031 que es la contrapartida de una operación APPROVED (mismo
     // comprobante, moneda e importe) es normal; cualquier otro mayor a 1 centavo se revisa.
     const contrapartida = o && o.estado === 'APPROVED' && o.moncod === m.moncod && o.monto === m.importe;
-    if (m.movcod === config.movCredito && !m.centavo && !contrapartida && !(o && o.estado === 'APPROVED')) {
+    if (m.movcod === config.movCredito && !m.centavo && !contrapartida && !o) {
       exc(TIPOS.CREDITO_RELEVANTE, { ...base, detalle: `Crédito ${config.movCredito} de ${dinero(m.moncod, m.importe)} (sistcod ${m.sistcod || '?'})${o ? '' : ' sin operación en BankService'}: a revisar.` });
     }
     if (m.manual) {
