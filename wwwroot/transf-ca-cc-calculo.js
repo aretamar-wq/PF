@@ -71,7 +71,7 @@
 
     const bs = {
       aprobadas: nuevo(), ejecutadas: nuevo(), pendientes: nuevo(), pendientesUltimoDia: nuevo(), pendientesAnteriores: nuevo(),
-      sinRegistro: nuevo(), porContabilizar: nuevo(), importePendiente: nuevo(), importeAprobadas: nuevo(), montoSinDebito: nuevo(), failed: 0, failedEnIbs: 0,
+      sinRegistro: nuevo(), porContabilizar: nuevo(), importePendiente: nuevo(), importeAprobadas: nuevo(), montoSinDebito: nuevo(), sinDebitoNiCredito: nuevo(), montoSinDebitoNiCredito: nuevo(), failed: 0, failedEnIbs: 0,
     };
     for (const o of ops) {
       const k = o.moncod;
@@ -82,7 +82,11 @@
       if (o.estado !== 'APPROVED' || !(k in bs.aprobadas)) continue;
       bs.aprobadas[k]++;
       bs.importeAprobadas[k] += o.monto;
-      if (o.clase === 'pendiente' || o.clase === 'porContabilizar') bs.montoSinDebito[k] += o.monto;
+      if (o.clase === 'pendiente' || o.clase === 'porContabilizar') {
+        bs.montoSinDebito[k] += o.monto;
+        // Para los créditos: los pendientes que tampoco tienen el crédito todavía.
+        if (!o.tieneCredito) { bs.sinDebitoNiCredito[k]++; bs.montoSinDebitoNiCredito[k] += o.monto; }
+      }
       if (o.clase === 'ejecutada') bs.ejecutadas[k]++;
       else if (o.clase === 'pendiente') {
         bs.pendientes[k]++;
@@ -192,8 +196,11 @@
     const esperar = (k) => bs.pendientes[k] + bs.porContabilizar[k];
     const comparar = (valor, aprobado, faltante) => (valor === aprobado ? 'ok' : faltante > 0 && valor + faltante === aprobado ? 'warn' : 'err');
     const peor = (a, b) => (a === 'err' || b === 'err' ? 'err' : a === 'warn' || b === 'warn' ? 'warn' : 'ok');
-    const cant = (campo) => peor(...MONEDAS.map((k) => comparar(ibs[campo][k], bs.aprobadas[k], esperar(k))));
-    const imp = (campo, k) => comparar(ibs[campo][k], bs.importeAprobadas[k], bs.montoSinDebito[k]);
+    // Débitos: la diferencia aceptable son los pendientes. Créditos: solo los pendientes
+    // que tampoco tienen el crédito (un pendiente puede tener ya su crédito).
+    const faltante = (campo, k) => (campo === 'debitos' ? esperar(k) : bs.sinDebitoNiCredito[k]);
+    const cant = (campo) => peor(...MONEDAS.map((k) => comparar(ibs[campo][k], bs.aprobadas[k], faltante(campo, k))));
+    const imp = (campo, k) => comparar(ibs[campo][k], bs.importeAprobadas[k], campo === 'saldoDebitos' ? bs.montoSinDebito[k] : bs.montoSinDebitoNiCredito[k]);
     const pend = (n) => (n > 0 ? 'warn' : 'ok');
     return {
       debitos: cant('debitos'),
