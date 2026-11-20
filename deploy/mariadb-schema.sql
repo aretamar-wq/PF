@@ -442,3 +442,77 @@ CREATE TABLE IF NOT EXISTS transf_ca_cc_dias (
   generado_por VARCHAR(255) NOT NULL DEFAULT '',
   PRIMARY KEY (fecha)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- --- Conciliación FX -----------------------------------------------------------
+-- Órdenes de compra / venta de dólares de BankService (fx-orders-settlement-*.csv).
+-- Se guarda el CUIT del cliente; no se guardan nombres.
+CREATE TABLE IF NOT EXISTS fx_cargas (
+  id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
+  nombre VARCHAR(255) NOT NULL,
+  hash CHAR(64) NOT NULL,
+  filas_leidas INT NOT NULL DEFAULT 0,
+  insertadas INT NOT NULL DEFAULT 0,
+  actualizadas INT NOT NULL DEFAULT 0,
+  sin_cambios INT NOT NULL DEFAULT 0,
+  rechazadas INT NOT NULL DEFAULT 0,
+  conflictos INT NOT NULL DEFAULT 0,
+  fecha_min DATE NULL,
+  fecha_max DATE NULL,
+  rechazos_json LONGTEXT NULL,
+  cargado_por VARCHAR(255) NOT NULL DEFAULT '',
+  cargado_en DATETIME NOT NULL,
+  PRIMARY KEY (id),
+  UNIQUE KEY uq_fx_cargas_hash (hash)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+CREATE TABLE IF NOT EXISTS fx_ordenes (
+  id VARCHAR(64) NOT NULL,
+  comprobante VARCHAR(30) NOT NULL DEFAULT '',
+  ticket VARCHAR(30) NOT NULL DEFAULT '',
+  status VARCHAR(40) NOT NULL,
+  side VARCHAR(4) NOT NULL,
+  ars DECIMAL(18,2) NOT NULL,
+  usd DECIMAL(18,2) NOT NULL,
+  precio VARCHAR(30) NULL,
+  creada DATETIME NOT NULL,
+  confirmada DATETIME NULL,
+  fecha_operacion DATE NOT NULL,
+  customer_cuit VARCHAR(20) NOT NULL DEFAULT '',
+  fail_reason VARCHAR(500) NOT NULL DEFAULT '',
+  failure_category VARCHAR(50) NOT NULL DEFAULT '',
+  carga_id BIGINT UNSIGNED NOT NULL,
+  cargado_en DATETIME NOT NULL,
+  PRIMARY KEY (id),
+  KEY ix_fx_ordenes_comprobante (comprobante),
+  KEY ix_fx_ordenes_fecha (fecha_operacion)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+CREATE TABLE IF NOT EXISTS fx_auditoria (
+  id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
+  orden_id VARCHAR(64) NOT NULL,
+  estado_anterior VARCHAR(40) NULL,
+  estado_nuevo VARCHAR(40) NOT NULL,
+  carga_id BIGINT UNSIGNED NOT NULL,
+  fecha DATETIME NOT NULL,
+  PRIMARY KEY (id),
+  KEY ix_fx_auditoria_orden (orden_id)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- Resultado de cada día conciliado (uno por día y lado: BUY / SELL); se pisa al reconciliar.
+CREATE TABLE IF NOT EXISTS fx_dias (
+  fecha DATE NOT NULL,
+  lado VARCHAR(4) NOT NULL,
+  completadas INT NOT NULL DEFAULT 0,
+  completas INT NOT NULL DEFAULT 0,
+  pendientes INT NOT NULL DEFAULT 0,
+  diferencias INT NOT NULL DEFAULT 0,
+  importe_ars DECIMAL(18,2) NOT NULL DEFAULT 0,
+  importe_usd DECIMAL(18,2) NOT NULL DEFAULT 0,
+  pend_ars DECIMAL(18,2) NOT NULL DEFAULT 0,
+  pend_usd DECIMAL(18,2) NOT NULL DEFAULT 0,
+  excepciones INT NOT NULL DEFAULT 0,
+  semaforo VARCHAR(10) NOT NULL DEFAULT '',
+  generado_en DATETIME NOT NULL,
+  generado_por VARCHAR(255) NOT NULL DEFAULT '',
+  PRIMARY KEY (fecha, lado)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;

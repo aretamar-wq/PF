@@ -31,6 +31,10 @@ const transfCaCc = require('./lib/transfCaCc/servicio');
 const { generarReporte: generarReporteCaCc } = require('./lib/transfCaCc/reporte');
 // Última conciliación CA -> CC de cada usuario (en memoria), para el reporte PDF.
 const transfCaCcUltima = new Map();
+const fx = require('./lib/fx/servicio');
+const { generarReporte: generarReporteFx } = require('./lib/fx/reporte');
+// Última conciliación FX de cada usuario (en memoria), para el reporte PDF.
+const fxUltima = new Map();
 const { convertDMYToISO, formatLocal, formatDateOnly } = require('./lib/dateUtil');
 
 function parsePort() {
@@ -1261,6 +1265,122 @@ async function handleTransfCaCcDatosGet(parsedUrl, res, session) {
   }
 }
 
+// --- Conciliación FX -------------------------------------------------------------
+
+// POST /api/fx/bankservice { archivos: [{ nombre, contenido }] }: carga de las órdenes
+// de FX de BankService (una transacción por archivo; un archivo ya cargado no se procesa).
+async function handleFxCargaPost(req, res, session) {
+  const { validos, error } = archivosBankServiceDelPedido(await readJsonBody(req));
+  if (error || validos.length === 0) {
+    writeJsonResponse(res, 400, { error: error || 'Elegí al menos un archivo de FX de BankService.' });
+    return;
+  }
+  const resultados = await fx.cargar(rootDir, validos, session.username, formatLocal(new Date()));
+  for (const r of resultados) {
+    securityStore.writeSecurityLog(
+      logsDir,
+      `BANKSERVICE FX '${r.nombre}' por '${session.username}': ` +
+        (r.error ? `error: ${r.error}` : r.yaCargado ? 'archivo ya cargado' : `${r.insertadas} insertadas, ${r.actualizadas} actualizadas, ${r.sinCambios} sin cambios, ${r.rechazadas} rechazadas, ${r.conflictos.length} conflictos`)
+    );
+  }
+  writeJsonResponse(res, 200, { resultados });
+}
+
+// GET /api/fx/cargas[?id=N]: historial de cargas, o rechazos y conflictos de una.
+async function handleFxCargasGet(parsedUrl, res) {
+  const id = parsedUrl.searchParams.get('id');
+  try {
+    if (id) {
+      const detalle = await fx.detalleCarga(rootDir, Number(id));
+      writeJsonResponse(res, detalle ? 200 : 404, detalle || { error: 'No existe esa carga.' });
+      return;
+    }
+    const parametria = await parametriaStore.getParametria(rootDir);
+    const { fechas: feriados } = conciliacionIbs.parseFeriados((parametria.calendario || {}).feriados);
+    writeJsonResponse(res, 200, { cargas: await fx.historialCargas(rootDir), ultimaCarga: await fx.ultimaCarga(rootDir), feriados: [...feriados].sort() });
+  } catch (err) {
+    writeJsonResponse(res, 500, { error: `No se pudieron leer las cargas de FX (¿se crearon las tablas fx_*?): ${err.message}` });
+  }
+}
+
+// GET /api/fx/reporte?dia=aaaa-mm-dd: PDF de la última conciliación FX del usuario. Se
+// guarda una copia en files/reportes-fx/ y su SHA-256 queda en el log de seguridad.
+async function handleFxReporteGet(parsedUrl, res, session) {
+  const datos = fxUltima.get(session.username);
+  if (!datos) {
+    writeJsonResponse(res, 409, { error: 'Primero conciliá (el reporte se arma con la última conciliación).' });
+    return;
+  }
+  const dia = parsedUrl.searchParams.get('dia') || datos.rango.desde;
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(dia) || dia < datos.rango.desde || dia >= datos.rango.hasta) {
+    writeJsonResponse(res, 400, { error: 'El día no es el de la última conciliación.' });
+    return;
+  }
+  const r = generarReporteFx({ datos, dia, usuario: session.username, ahora: new Date() });
+  const dir = path.join(filesDir, 'reportes-fx');
+  fs.mkdirSync(dir, { recursive: true });
+  fs.writeFileSync(path.join(dir, r.nombre), r.buffer);
+  securityStore.writeSecurityLog(logsDir, `REPORTE FX '${r.nombre}' generado por '${session.username}' (SHA-256 PDF ${r.sha256}, SHA-256 datos ${r.huellaDatos})`);
+  res.writeHead(200, {
+    'Content-Type': 'application/pdf',
+    'Content-Disposition': `attachment; filename="${r.nombre}"`,
+    'Content-Length': r.buffer.length,
+    'X-Reporte-Sha256': r.sha256,
+    'X-Reporte-Nombre': r.nombre,
+  });
+  res.end(r.buffer);
+}
+
+// GET /api/fx/historia?desde=aaaa-mm-dd&hasta=aaaa-mm-dd (inclusive): días ya conciliados.
+async function handleFxHistoriaGet(parsedUrl, res) {
+  const desde = parsedUrl.searchParams.get('desde') || '';
+  const hasta = parsedUrl.searchParams.get('hasta') || '';
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(desde) || !/^\d{4}-\d{2}-\d{2}$/.test(hasta)) {
+    writeJsonResponse(res, 400, { error: 'Indicá desde y hasta (aaaa-mm-dd).' });
+    return;
+  }
+  try {
+    writeJsonResponse(res, 200, { dias: await fx.historia(rootDir, desde, hasta) });
+  } catch (err) {
+    writeJsonResponse(res, 500, { error: `No se pudo leer la historia (¿se creó la tabla fx_dias?): ${err.message}` });
+  }
+}
+
+// GET /api/fx/datos?desde=aaaa-mm-dd&hasta=aaaa-mm-dd (hasta exclusiva, un día): consulta
+// IBS (25001 a 25012 y débitos pendientes), lee las órdenes de FX de la base y devuelve
+// todo clasificado para el dashboard.
+async function handleFxDatosGet(parsedUrl, res, session) {
+  const hoy = formatDateOnly(new Date());
+  const desde = parsedUrl.searchParams.get('desde') || fx.sumarDias(hoy, -1);
+  const hasta = parsedUrl.searchParams.get('hasta') || fx.sumarDias(desde, 1);
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(desde) || !/^\d{4}-\d{2}-\d{2}$/.test(hasta) || desde >= hasta) {
+    writeJsonResponse(res, 400, { error: 'Rango inválido: desde y hasta (exclusiva) en formato aaaa-mm-dd, con desde anterior a hasta.' });
+    return;
+  }
+  const parametria = await parametriaStore.getParametria(rootDir);
+  try {
+    const datos = await fx.obtenerDatos({
+      rootDir,
+      querySybase: (sql) => sybaseClient.querySybase(parametria.sybase, sql),
+      desde,
+      hasta,
+      ahora: formatLocal(new Date()),
+      feriados: conciliacionIbs.parseFeriados((parametria.calendario || {}).feriados).fechas,
+    });
+    fxUltima.set(session.username, datos);
+    try {
+      const dias = await fx.guardarDias(rootDir, datos, session.username);
+      datos.avisos.push(`Historia: se guardó el resultado de ${dias} día(s).`);
+    } catch (err) {
+      datos.avisos.push(`No se pudo guardar la historia de los días conciliados (¿se creó la tabla fx_dias?): ${err.message}`);
+    }
+    securityStore.writeSecurityLog(logsDir, `CONCILIACION FX ${desde}..${hasta} consultada por '${session.username}': ${datos.movimientos.length} movimientos IBS, ${datos.pendientes.length} pendientes, ${datos.ordenes.length} órdenes BankService, ${datos.excepciones.length} excepciones`);
+    writeJsonResponse(res, 200, datos);
+  } catch (err) {
+    writeJsonResponse(res, 502, { error: `No se pudieron obtener los datos: ${err.message}` });
+  }
+}
+
 // POST /api/conciliacion/ibs { fecha: yyyy-MM-dd, tipo?: 'altas' | 'pagos',
 // contenido?: <CSV del extracto de IBS> } — cruza las altas (o los pagos) de
 // Plazo Fijo de ese día contra los movimientos de IBS (ver conciliacionIbs.js)
@@ -1919,6 +2039,11 @@ async function handleRequest(req, res) {
     if (method === 'GET' && pathname === '/api/transf-ca-cc/reporte') return void (await handleTransfCaCcReporteGet(parsedUrl, res, session));
     if (method === 'GET' && pathname === '/api/transf-ca-cc/historia') return void (await handleTransfCaCcHistoriaGet(parsedUrl, res));
     if (method === 'GET' && pathname === '/api/transf-ca-cc/datos') return void (await handleTransfCaCcDatosGet(parsedUrl, res, session));
+    if (method === 'POST' && pathname === '/api/fx/bankservice') return void (await handleFxCargaPost(req, res, session));
+    if (method === 'GET' && pathname === '/api/fx/cargas') return void (await handleFxCargasGet(parsedUrl, res));
+    if (method === 'GET' && pathname === '/api/fx/reporte') return void (await handleFxReporteGet(parsedUrl, res, session));
+    if (method === 'GET' && pathname === '/api/fx/historia') return void (await handleFxHistoriaGet(parsedUrl, res));
+    if (method === 'GET' && pathname === '/api/fx/datos') return void (await handleFxDatosGet(parsedUrl, res, session));
     if (method === 'GET' && pathname === '/api/http-logs/content') return void handleHttpLogContentGet(parsedUrl, res, session);
     if (method === 'GET' && pathname === '/api/certs-browse') return void handleCertsBrowseGet(parsedUrl, res, session);
     if (method === 'POST' && pathname === '/api/check-operations') return void (await handleCheckOperations(req, res, session));

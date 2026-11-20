@@ -1500,6 +1500,39 @@ Los CSV de IBS llevan exactamente las columnas de cada consulta; imprime el cont
 (APPROVED = ejecutadas + pendientes + sin registro + por contabilizar), las excepciones
 por tipo y el saldo de pendientes por día, y deja el JSON que consume el dashboard.
 
+### Conciliación FX (compra y venta de dólares contra BankService)
+
+Menú **Conciliación FX**. Concilia las órdenes de FX de BankService
+(`fx-orders-settlement-*.csv`) de **un día hábil** (por defecto, el anterior a hoy)
+contra los movimientos 25001 a 25012 de IBS y los débitos pendientes.
+
+- **Carga**: el CSV se sube desde la pantalla. El navegador manda solo las columnas
+  que usa la conciliación (id, status, side, importes, receiptNumber, fechas, CUIT;
+  no los nombres). Se guarda en MariaDB (`fx_ordenes`, con `fx_cargas` y
+  `fx_auditoria`): un archivo ya cargado (mismo SHA-256) no se procesa de nuevo, se
+  actualiza por id de orden solo si cambió y un estado final (COMPLETED / FAILED)
+  nunca cambia.
+- **Reglas** (`node/lib/fx/conciliar.js`): BankService manda. Cada orden COMPLETED
+  tiene que tener en IBS sus 6 movimientos con comprobante = receiptNumber:
+  compra de USD (BUY) 25001 a 25006 y venta (SELL) 25007 a 25012; los de pesos por
+  el importe en pesos y los de dólares por el importe en dólares. Lo que falta y está
+  en débitos pendientes es amarillo; lo que falta sin pendiente, un duplicado, un
+  importe distinto, un movimiento sin orden o una orden FAILED / en revisión con
+  movimientos es rojo. Si a una orden le falta algún movimiento se busca en IBS
+  hasta hoy (imputado en una fecha posterior) y se suma en el día de la orden.
+  La fecha de la orden es su `settlementDate` (lo de un sábado, domingo o feriado
+  va al próximo día hábil).
+- **Pantalla**: una sección por operación (compra / venta) con su semáforo,
+  importes en pesos y dólares, tipo de cambio promedio, un indicador por movimiento
+  (verde si coincide con BankService, amarillo si la diferencia son pendientes, rojo
+  si no), órdenes completas / con débito pendiente / con faltantes, débitos
+  pendientes y movimientos manuales; el historial de días conciliados (`fx_dias`)
+  con los gráficos de órdenes e importe por fecha y el saldo de pendientes; y las
+  excepciones (filtro por tipo y operación, CSV y reporte PDF con SHA-256, copia en
+  `files/reportes-fx/`).
+- **API**: `POST /api/fx/bankservice`, `GET /api/fx/cargas`, `GET /api/fx/datos`,
+  `GET /api/fx/historia`, `GET /api/fx/reporte`.
+
 ### Conciliación con IBS (altas y pagos de Plazo Fijo, transferencias DEBIN)
 
 Panel **"Conciliación con IBS"** (menú): se elige **qué conciliar** (altas o
