@@ -355,7 +355,7 @@ CREATE INDEX IF NOT EXISTS idx_dbn_consulta_comprobante ON dbn_consulta (id_comp
 -- BankService (transferencias QNET), para la "Conciliación Transferencias CA -> CC"
 -- y la Conciliación Loop. Se carga desde el CSV (Movimientos_BankService-mmaaaa.csv
 -- o de cualquier rango) y la conciliación lo lee siempre de acá. Minimización de
--- datos: solo lo que usa la conciliación, sin nombres, CUIT ni CBU.
+-- datos: solo lo que usa la conciliación (con el CUIT del titular), sin nombres ni CBU.
 CREATE TABLE IF NOT EXISTS bankservice_cargas (
   id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
   nombre VARCHAR(255) NOT NULL,
@@ -379,6 +379,7 @@ CREATE TABLE IF NOT EXISTS bankservice_movimientos (
   comprobante VARCHAR(30) NOT NULL,
   moncod VARCHAR(2) NOT NULL,
   cuecod VARCHAR(20) NOT NULL,
+  cuit_titular VARCHAR(20) NOT NULL DEFAULT '',
   monto DECIMAL(18,2) NOT NULL,
   estado VARCHAR(20) NOT NULL,
   creada DATETIME NOT NULL,
@@ -392,6 +393,9 @@ CREATE TABLE IF NOT EXISTS bankservice_movimientos (
   KEY idx_bankservice_mov_ejecutada (ejecutada),
   CONSTRAINT fk_bankservice_mov_carga FOREIGN KEY (carga_id) REFERENCES bankservice_cargas (id)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- Si la tabla ya existía: el CUIT del titular (se completa al volver a cargar los CSV).
+ALTER TABLE bankservice_movimientos ADD COLUMN IF NOT EXISTS cuit_titular VARCHAR(20) NOT NULL DEFAULT '' AFTER cuecod;
 
 -- Cada cambio de estado (incluido el alta) de una operación de BankService.
 CREATE TABLE IF NOT EXISTS bankservice_auditoria (

@@ -105,7 +105,7 @@ async function obtenerDatos({ rootDir, querySybase, desde, hasta, ahora, feriado
   // un día y se debitan después, o se crearon antes).
   const bsFilas = await db().query(
     rootDir,
-    `SELECT comprobante, moncod, cuecod, monto, estado, creada, ejecutada, fecha_operacion, error
+    `SELECT comprobante, moncod, cuecod, cuit_titular, monto, estado, creada, ejecutada, fecha_operacion, error
      FROM bankservice_movimientos WHERE fecha_operacion >= ? AND fecha_operacion < ?`,
     [sumarDias(desde, -10), sumarDias(hasta, 10)]
   );
@@ -118,7 +118,7 @@ async function obtenerDatos({ rootDir, querySybase, desde, hasta, ahora, feriado
     const lote = faltan.slice(i, i + 500);
     bsFilas.push(...(await db().query(
       rootDir,
-      `SELECT comprobante, moncod, cuecod, monto, estado, creada, ejecutada, fecha_operacion, error
+      `SELECT comprobante, moncod, cuecod, cuit_titular, monto, estado, creada, ejecutada, fecha_operacion, error
        FROM bankservice_movimientos WHERE comprobante IN (${lote.map(() => '?').join(', ')})`,
       lote
     )));

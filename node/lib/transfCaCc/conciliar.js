@@ -93,7 +93,9 @@ function conciliar({ movimientos, pendientes, operaciones, config }) {
   const conCodigos = (tipo) => tipo.replace('25031', config.movCredito).replace('25030', config.movDebito);
   const exc = (tipo, datos) => {
     const { fechaOriginal, ...resto } = datos;
-    const e = { tipo: conCodigos(tipo), comprobante: '', cuenta: '', moneda: '', fecha: '', importe: null, usuario: '', estadoBs: '', detalle: '', ...resto };
+    // CUIT del titular: el de la operación de BankService del comprobante (si hay).
+    const opCuit = ops.get(String(resto.comprobante || ''));
+    const e = { tipo: conCodigos(tipo), comprobante: '', cuit: opCuit && opCuit.cuit ? opCuit.cuit : '', cuenta: '', moneda: '', fecha: '', importe: null, usuario: '', estadoBs: '', detalle: '', ...resto };
     // Operación de un día no hábil: se informa el día real.
     if (fechaOriginal) e.detalle += ` Operación del ${fechaOriginal.split('-').reverse().join('/')} (no hábil), asignada al próximo día hábil.`;
     excepciones.push(e);

@@ -220,8 +220,8 @@ function generarReporte({ datos, dia, usuario, ahora = new Date() }) {
     y += 14;
   } else {
     const filas = excepcionesTodas.slice().sort((a, b) => a.tipo.localeCompare(b.tipo, 'es') || String(a.fecha).localeCompare(String(b.fecha)) || (Number(a.comprobante) || 0) - (Number(b.comprobante) || 0));
-    tabla([{ t: 'Tipo', w: 16 }, { t: 'Comprobante', w: 9, der: true }, { t: 'Cuenta', w: 8, der: true }, { t: 'Moneda', w: 6 }, { t: 'Fecha', w: 9 }, { t: 'Importe', w: 12, der: true }, { t: 'Usuario', w: 8 }, { t: 'Estado BS', w: 12 }, { t: 'Detalle', w: 28 }],
-      filas.map((e) => [e.tipo, e.comprobante, e.cuenta || '—', e.moneda, dmy(e.fecha), e.importe == null ? '—' : dinero(e.moneda === 'USD' ? '2' : '0', e.importe), e.usuario || '—', (e.estadoBs || '—').replace('_', '_ '), e.detalle]), 7);
+    tabla([{ t: 'Tipo', w: 15 }, { t: 'Comprobante', w: 9, der: true }, { t: 'Cuenta', w: 8, der: true }, { t: 'CUIT', w: 11 }, { t: 'Moneda', w: 6 }, { t: 'Fecha', w: 9 }, { t: 'Importe', w: 12, der: true }, { t: 'Usuario', w: 8 }, { t: 'Estado BS', w: 11 }, { t: 'Detalle', w: 25 }],
+      filas.map((e) => [e.tipo, e.comprobante, e.cuenta || '—', e.cuit || '—', e.moneda, dmy(e.fecha), e.importe == null ? '—' : dinero(e.moneda === 'USD' ? '2' : '0', e.importe), e.usuario || '—', (e.estadoBs || '—').replace('_', '_ '), e.detalle]), 7);
   }
 
   // Pie: página y huella en todas las páginas.
