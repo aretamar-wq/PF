@@ -176,6 +176,7 @@
       `</div><div class="tcc-grilla" style="margin-top: 10px;">` +
       tile('APPROVED que no figuran en IBS ni en pendientes', fmtNum(sinReg), `${porMoneda(bs.sinRegistro)}${total(bs.porContabilizar) ? ` · ${fmtNum(total(bs.porContabilizar))} pendientes de contabilizar` : ''}`, sinReg === 0 ? 'ok' : 'err') +
       tile('Operaciones FAILED en BS que figuran en IBS', fmtNum(bs.failedEnIbs), `de ${fmtNum(bs.failed)} operaciones FAILED en BankService`, bs.failedEnIbs === 0 ? 'ok' : 'err') +
+      tile('Operaciones PENDING_EXECUTION en BS que figuran en IBS', fmtNum(bs.sinEjecutarEnIbs), `de ${fmtNum(bs.sinEjecutar)} operaciones PENDING_EXECUTION en BankService`, bs.sinEjecutarEnIbs === 0 ? 'ok' : 'err') +
       `</div>` +
       (total(ibs.posteriores) ? `<p class="tcc-suave">Incluye ${fmtNum(total(ibs.posteriores))} movimiento(s) imputados en fechas posteriores al período (${porMoneda(ibs.posteriores)}), sumados en el día de su operación.</p>` : '');
   }

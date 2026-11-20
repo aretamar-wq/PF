@@ -183,7 +183,8 @@ function generarReporte({ datos, dia, usuario, ahora = new Date() }) {
     grilla([
       ['APPROVED que no figuran en IBS ni en pendientes', fmtNum(sr), `${porMoneda(b.sinRegistro)}${total(b.porContabilizar) ? ` · ${fmtNum(total(b.porContabilizar))} pendientes de contabilizar` : ''}`, sr === 0 ? 'ok' : 'err'],
       ['Operaciones FAILED en BS que figuran en IBS', fmtNum(b.failedEnIbs), `de ${fmtNum(b.failed)} operaciones FAILED en BankService`, b.failedEnIbs === 0 ? 'ok' : 'err'],
-    ], 2);
+      ['Operaciones PENDING_EXECUTION en BS que figuran en IBS', fmtNum(b.sinEjecutarEnIbs), `de ${fmtNum(b.sinEjecutar)} operaciones PENDING_EXECUTION en BankService`, b.sinEjecutarEnIbs === 0 ? 'ok' : 'err'],
+    ], 3);
   };
   seccionGrupo('IBS - Transferencias CA -> CC (25030 - 25031)', ind, '25030', '25031');
   const otros = Object.values(datos.grupos || {}).map((r) => ({ r, ig: calculo.indicadores({ ...r, rango: datos.rango }, dia || '') }));
