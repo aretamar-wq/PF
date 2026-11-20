@@ -26,6 +26,7 @@ const TIPOS = {
   DEBITO_PENDIENTE: 'Débito pendiente',
   DEBITO_POR_CONTABILIZAR: 'Débito por contabilizar',
   CREDITO_FALTANTE: 'Falta el crédito 25031',
+  CREDITO_FALTANTE_PENDIENTE: 'Falta el crédito 25031 (débito pendiente)',
   MAS_DE_UN_CREDITO: 'Más de un crédito 25031',
   CREDITO_IMPORTE: 'Importe del crédito 25031 distinto',
   CREDITO_SIN_DEBITO: 'Crédito 25031 sin débito',
@@ -143,6 +144,10 @@ function conciliar({ movimientos, pendientes, operaciones, config }) {
           r.pendiente = pend.importe;
           if (pend.importe !== o.monto) exc(TIPOS.PEND_IMPORTE, { ...base, detalle: `El débito pendiente es de ${dinero(o.moncod, pend.importe)} y la operación de ${dinero(o.moncod, o.monto)}.` });
           exc(TIPOS.DEBITO_PENDIENTE, { ...base, cuenta: pend.cuecod || o.cuecod, importe: pend.importe, detalle: `Falta el débito en IBS: está en débitos pendientes desde el ${(pend.fechaOrigen || '').split('-').reverse().join('/') || 'sin fecha'} por ${dinero(o.moncod, pend.importe)} (${pend.motivo || 'sin motivo'}).` });
+          // Tampoco tiene el crédito: se informa aparte (amarillo, como el pendiente).
+          if (creditos.length === 0) {
+            exc(TIPOS.CREDITO_FALTANTE_PENDIENTE, { ...base, detalle: `Falta el crédito ${config.movCredito} de ${dinero(o.moncod, o.monto)}: el débito está en débitos pendientes y el crédito todavía no se hizo.` });
+          }
         } else if (numero(o.comprobante) < mayorComprobante || (ultimoDiaIbs && o.fecha < ultimoDiaIbs)) {
           r.clase = 'sinRegistro';
           exc(TIPOS.SIN_REGISTRO, { ...base, detalle: `Falta el débito en IBS: sin débito ni débito pendiente (mayor comprobante de IBS: ${mayorComprobante}; último día de IBS: ${ultimoDiaIbs}).` });

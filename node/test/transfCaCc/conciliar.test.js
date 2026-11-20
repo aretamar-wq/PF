@@ -96,7 +96,7 @@ test('excepciones', () => {
   assert.deepStrictEqual(tiposDe(r, 100), []); // crédito contrapartida de sistcod 3
   assert.deepStrictEqual(tiposDe(r, 98), [TIPOS.CREDITO_RELEVANTE]);
   assert.match(r.excepciones.find((e) => e.comprobante === '98').detalle, /sistcod 3/);
-  assert.deepStrictEqual(tiposDe(r, 104), [TIPOS.DEBITO_PENDIENTE, TIPOS.PEND_IMPORTE].sort());
+  assert.deepStrictEqual(tiposDe(r, 104), [TIPOS.DEBITO_PENDIENTE, TIPOS.PEND_IMPORTE, TIPOS.CREDITO_FALTANTE_PENDIENTE].sort());
   assert.match(r.excepciones.find((e) => e.comprobante === '104' && e.tipo === TIPOS.DEBITO_PENDIENTE).detalle, /Falta el débito en IBS: está en débitos pendientes/);
   assert.ok(tiposDe(r, 101).includes(TIPOS.CREDITO_FALTANTE)); // tiene débito y no tiene crédito
   assert.deepStrictEqual(tiposDe(r, 105), [TIPOS.CUENTA, TIPOS.CREDITO_FALTANTE, TIPOS.IMPORTE].sort());
@@ -328,4 +328,15 @@ test('operación PENDING_EXECUTION con débito y crédito en IBS: una sola excep
   assert.deepStrictEqual(tiposDe(r, 80), [TIPOS.DEBITO_FAILED]);
   assert.match(r.excepciones[0].detalle, /PENDING_EXECUTION .*1 débito\(s\) 25030 .* y 1 crédito\(s\) 25031/);
   assert.match(r.excepciones[0].detalle, /CSV de BankService más nuevo/);
+});
+
+test('créditos que faltan: con el débito hecho (rojo) y con el débito pendiente (amarillo)', () => {
+  const m = ibs.normalizarMovimientos([mov(90, '16/11/2026', 25030, 10)], config).movimientos;
+  const p = ibs.normalizarPendientes([pend(91, 20)], config).pendientes;
+  const r = conciliar({ movimientos: m, pendientes: p, operaciones: [op(90, '2026-11-16', 10), op(91, '2026-11-16', 20)], config });
+  assert.deepStrictEqual(tiposDe(r, 90), [TIPOS.CREDITO_FALTANTE]);
+  assert.deepStrictEqual(tiposDe(r, 91), [TIPOS.DEBITO_PENDIENTE, TIPOS.CREDITO_FALTANTE_PENDIENTE].sort());
+  const solo91 = conciliar({ movimientos: [], pendientes: p, operaciones: [op(91, '2026-11-16', 20)], config });
+  const sem = calculo.semaforos(calculo.indicadores({ ...solo91, config: { movDebito: '25030', movCredito: '25031' } }, '2026-11-16')).transferencias;
+  assert.strictEqual(sem.color, 'amarillo');
 });
