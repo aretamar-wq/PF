@@ -208,9 +208,9 @@
     }
 
     $('tccActivar').innerHTML = `<div class="tcc-grilla">` +
-      tile('Transacciones de 1 centavo (comprobantes)', fmtNum(total(activar.comprobantes)), porMoneda(activar.comprobantes)) +
-      tile('Créditos de 1 centavo', fmtNum(total(activar.creditos)), porMoneda(activar.creditos)) +
-      tile('Débitos de 1 centavo', fmtNum(total(activar.debitos)), porMoneda(activar.debitos)) +
+      tile('Transacciones de 1 centavo (comprobantes)', fmtNum(total(activar.comprobantes)), porMoneda(activar.comprobantes), total(activar.comprobantes) ? 'warn' : 'ok') +
+      tile('Créditos de 1 centavo', fmtNum(total(activar.creditos)), porMoneda(activar.creditos), total(activar.creditos) ? 'warn' : 'ok') +
+      tile('Débitos de 1 centavo', fmtNum(total(activar.debitos)), porMoneda(activar.debitos), total(activar.debitos) ? 'warn' : 'ok') +
       `</div><p class="tcc-suave">Movimientos de 1 centavo sin operación en BankService (no cuentan en Transferencias CA -> CC ni en Pago de Servicios). Los de 1 centavo que sí están en BankService se concilian con su par de movimientos.</p>`;
 
     const sem = C.semaforos(ind);
