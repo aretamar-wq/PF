@@ -92,7 +92,7 @@ test('excepciones', () => {
   assert.deepStrictEqual(tiposDe(r, 99999), [TIPOS.DEBITO_MANUAL, TIPOS.DEBITO_SIN_OPERACION, TIPOS.DEBITO_SIN_OPERACION, TIPOS.MAS_DE_UN_DEBITO].sort());
   assert.deepStrictEqual(tiposDe(r, 99998), [TIPOS.CREDITO_RELEVANTE]);
   assert.match(r.excepciones.find((e) => e.comprobante === '99998').detalle, /sin operación en BankService/);
-  assert.deepStrictEqual(tiposDe(r, 99997), []); // Activar Cuentas
+  assert.deepStrictEqual(tiposDe(r, 99997), [TIPOS.ACTIVAR_CUENTAS]); // 1 centavo sin operación: informativo
   assert.deepStrictEqual(tiposDe(r, 100), []); // crédito contrapartida de sistcod 3
   assert.deepStrictEqual(tiposDe(r, 98), [TIPOS.CREDITO_RELEVANTE]);
   assert.match(r.excepciones.find((e) => e.comprobante === '98').detalle, /sistcod 3/);

@@ -28,6 +28,7 @@ const TIPOS = {
   DEBITO_POR_CONTABILIZAR: 'Débito por contabilizar',
   CREDITO_FALTANTE: 'Falta el crédito 25031',
   CREDITO_FALTANTE_PENDIENTE: 'Falta el crédito 25031 (débito pendiente)',
+  ACTIVAR_CUENTAS: 'Activar Cuentas (1 centavo)',
   MAS_DE_UN_CREDITO: 'Más de un crédito 25031',
   CREDITO_IMPORTE: 'Importe del crédito 25031 distinto',
   CREDITO_SIN_DEBITO: 'Crédito 25031 sin débito',
@@ -197,7 +198,15 @@ function conciliar({ movimientos, pendientes, operaciones, config }) {
     }
   }
   for (const m of movs) {
-    if (m.activarCuentas) continue;
+    // Movimientos de 1 centavo sin operación en BankService: se listan (informativo) para
+    // poder ver el detalle de lo que suma "IBS - Activar Cuentas".
+    if (m.activarCuentas) {
+      exc(TIPOS.ACTIVAR_CUENTAS, {
+        comprobante: m.comprobante, cuenta: m.cuecod, moneda: etiqueta(m.moncod), fecha: m.fecha, usuario: m.usuario, importe: m.importe,
+        detalle: `${m.movcod === config.movDebito ? 'Débito' : 'Crédito'} ${m.movcod} de ${dinero(m.moncod, m.importe)} (sistcod ${m.sistcod || '?'}) sin operación en BankService. Informativo.`,
+      });
+      continue;
+    }
     const o = ops.get(m.comprobante);
     const base = { comprobante: m.comprobante, cuenta: m.cuecod, moneda: etiqueta(m.moncod), fecha: m.fechaFiltro || m.fecha, usuario: m.usuario, importe: m.importe, estadoBs: o ? o.estado : '' };
     // Un crédito 25031 que es la contrapartida de una operación APPROVED (mismo
