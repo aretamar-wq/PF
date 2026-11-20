@@ -131,7 +131,7 @@
   // Semáforo de cada sección (sobre el filtro de día activo): rojo si hay diferencias,
   // amarillo si hay débitos pendientes (o algo a revisar que no es diferencia), verde
   // si está todo bien. Cada uno trae los motivos para el tooltip.
-  const EXC_IBS = ['Más de un débito', 'Débito sin operación en BankService', 'Débito de operación FAILED / sin ejecutar', 'Crédito 25031 de importe relevante', 'Pendiente sobre comprobante ya debitado', 'Pendiente sin operación APPROVED', 'Falta el crédito 25031'];
+  const EXC_IBS = ['Más de un débito', 'Débito sin operación en BankService', 'Débito de operación FAILED / sin ejecutar', 'Crédito 25031 de importe relevante', 'Pendiente sobre comprobante ya debitado', 'Pendiente sin operación APPROVED', 'Falta el crédito 25031', 'Más de un crédito 25031', 'Importe del crédito 25031 distinto', 'Crédito 25031 sin débito'];
   const EXC_BS = ['Importe distinto', 'Moneda distinta', 'Cuenta distinta', 'Pendiente con importe distinto', 'APPROVED sin registro en IBS', 'Débito de operación FAILED / sin ejecutar'];
 
   function semaforos(ind) {

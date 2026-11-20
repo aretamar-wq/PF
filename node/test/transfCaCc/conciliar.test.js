@@ -277,3 +277,21 @@ test('semáforo de Transferencias Loop: el más crítico entre excepciones e ind
   assert.strictEqual(s.color, 'rojo');
   assert.ok(s.motivos.some((m) => /Créditos 25031/.test(m)));
 });
+
+test('créditos: más de uno, importe distinto y crédito sin débito figuran en Excepciones, en el día de la operación', () => {
+  const m = ibs.normalizarMovimientos([
+    mov(40, '16/11/2026', 25030, 100), mov(40, '16/11/2026', 25031, 100, { sistcod: 3 }), mov(40, '17/11/2026', 25031, 100, { sistcod: 3 }),
+    mov(41, '16/11/2026', 25030, 50), mov(41, '16/11/2026', 25031, 45, { sistcod: 3 }),
+    mov(42, '16/11/2026', 25031, 70, { sistcod: 3 }),
+    mov(43, '18/11/2026', 25030, 80), mov(43, '18/11/2026', 25031, 81, { sistcod: 3 }),
+  ], config).movimientos.map((x) => (x.comprobante === '43' ? { ...x, posterior: true } : x));
+  const r = conciliar({ movimientos: m, pendientes: [], operaciones: [op(40, '2026-11-16', 100), op(41, '2026-11-16', 50), op(42, '2026-11-16', 70), op(43, '2026-11-16', 80)], config });
+  assert.deepStrictEqual(tiposDe(r, 40), [TIPOS.MAS_DE_UN_CREDITO]);
+  assert.deepStrictEqual(tiposDe(r, 41), [TIPOS.CREDITO_IMPORTE]);
+  assert.ok(tiposDe(r, 42).includes(TIPOS.CREDITO_SIN_DEBITO));
+  // El débito y el crédito del 18/11 son de una operación del 16/11: la excepción va al 16/11.
+  const e43 = r.excepciones.find((e) => e.comprobante === '43');
+  assert.strictEqual(e43.tipo, TIPOS.CREDITO_IMPORTE);
+  assert.strictEqual(e43.fecha, '2026-11-16');
+  assert.match(e43.detalle, /18\/11\/2026/);
+});
