@@ -142,7 +142,7 @@ function isCsvFlow(flow) {
 // de flows) se muestran de una a la vez: mostrar una implica ocultar el
 // resto. Ningún panel (perfil, parametría, usuarios, archivos de salida) se
 // abre como <dialog> flotante, todos reemplazan el contenido de esta área.
-const MAIN_SECTION_IDS = ['flowDetail', 'outputFilesSection', 'dashboardSection', 'conciliacionIbsSection', 'transfCaCcSection', 'profileSection', 'parametriaSection', 'usersSection'];
+const MAIN_SECTION_IDS = ['flowDetail', 'outputFilesSection', 'dashboardSection', 'conciliacionIbsSection', 'transfCaCcSection', 'fxSection', 'profileSection', 'parametriaSection', 'usersSection'];
 
 function showMainSection(id) {
   for (const sectionId of MAIN_SECTION_IDS) {
