@@ -313,3 +313,11 @@ test('crédito sin débito con el débito en pendientes: no es excepción y el c
   const c = calculo.coloresTransferencias(calculo.indicadores({ ...r, config: { movDebito: '25030', movCredito: '25031' } }, '2026-11-16'));
   assert.deepStrictEqual([c.debitos, c.creditos, c.saldoDebitos[0], c.saldoCreditos[0]], ['warn', 'ok', 'warn', 'ok']);
 });
+
+test('indicador: operaciones PENDING_EXECUTION de BankService que figuran en IBS', () => {
+  const m = ibs.normalizarMovimientos([mov(70, '16/11/2026', 25030, 30)], config).movimientos;
+  const r = conciliar({ movimientos: m, pendientes: [], operaciones: [op(70, '2026-11-16', 30, { estado: 'PENDING_EXECUTION' }), op(71, '2026-11-16', 30, { estado: 'PENDING_EXECUTION' })], config });
+  const ind = calculo.indicadores({ ...r, config: { movDebito: '25030', movCredito: '25031' } }, '2026-11-16');
+  assert.deepStrictEqual([ind.bs.sinEjecutar, ind.bs.sinEjecutarEnIbs], [2, 1]);
+  assert.strictEqual(calculo.semaforos(ind).transferencias.color, 'rojo');
+});
