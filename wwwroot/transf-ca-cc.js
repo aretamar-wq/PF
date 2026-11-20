@@ -129,10 +129,17 @@
     }
   }
 
+  // El filtro de tipo se arma con las excepciones del día conciliado (con su cantidad),
+  // así no ofrece tipos que ese día no tiene. Si el tipo elegido sigue existiendo, queda.
   function prepararFiltros() {
-    const todas = [...estado.datos.excepciones, ...gruposExtra().flatMap((g) => g.datos.excepciones.map((e) => ({ ...e, tipo: `${e.tipo} (${g.etiqueta})` })))];
-    const tipos = [...new Set(todas.map((e) => e.tipo))].sort((a, b) => a.localeCompare(b, 'es'));
-    $('tccExcTipo').innerHTML = '<option value="">Todos</option>' + tipos.map((t) => `<option value="${esc(t)}">${esc(t)}</option>`).join('');
+    const sel = $('tccExcTipo');
+    const elegido = sel.value;
+    const cuenta = new Map();
+    for (const e of excepcionesDelDia()) cuenta.set(e.tipo, (cuenta.get(e.tipo) || 0) + 1);
+    const tipos = [...cuenta.keys()].sort((a, b) => a.localeCompare(b, 'es'));
+    sel.innerHTML = `<option value="">Todos (${fmtNum([...cuenta.values()].reduce((s, n) => s + n, 0))})</option>` +
+      tipos.map((t) => `<option value="${esc(t)}">${esc(t)} (${fmtNum(cuenta.get(t))})</option>`).join('');
+    sel.value = cuenta.has(elegido) ? elegido : '';
   }
 
   // --- Pintado ----------------------------------------------------------------------
