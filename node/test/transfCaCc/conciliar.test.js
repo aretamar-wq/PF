@@ -321,3 +321,11 @@ test('indicador: operaciones PENDING_EXECUTION de BankService que figuran en IBS
   assert.deepStrictEqual([ind.bs.sinEjecutar, ind.bs.sinEjecutarEnIbs], [2, 1]);
   assert.strictEqual(calculo.semaforos(ind).transferencias.color, 'rojo');
 });
+
+test('operación PENDING_EXECUTION con débito y crédito en IBS: una sola excepción con todo el detalle', () => {
+  const m = ibs.normalizarMovimientos([mov(80, '16/11/2026', 25030, 30), mov(80, '16/11/2026', 25031, 30, { sistcod: 3 })], config).movimientos;
+  const r = conciliar({ movimientos: m, pendientes: [], operaciones: [op(80, '2026-11-16', 30, { estado: 'PENDING_EXECUTION' })], config });
+  assert.deepStrictEqual(tiposDe(r, 80), [TIPOS.DEBITO_FAILED]);
+  assert.match(r.excepciones[0].detalle, /PENDING_EXECUTION .*1 débito\(s\) 25030 .* y 1 crédito\(s\) 25031/);
+  assert.match(r.excepciones[0].detalle, /CSV de BankService más nuevo/);
+});
