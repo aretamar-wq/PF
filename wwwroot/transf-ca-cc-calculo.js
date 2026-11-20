@@ -71,13 +71,17 @@
 
     const bs = {
       aprobadas: nuevo(), ejecutadas: nuevo(), pendientes: nuevo(), pendientesUltimoDia: nuevo(), pendientesAnteriores: nuevo(),
-      sinRegistro: nuevo(), porContabilizar: nuevo(), importePendiente: nuevo(), importeAprobadas: nuevo(), montoSinDebito: nuevo(), sinDebitoNiCredito: nuevo(), montoSinDebitoNiCredito: nuevo(), failed: 0, failedEnIbs: 0,
+      sinRegistro: nuevo(), porContabilizar: nuevo(), importePendiente: nuevo(), importeAprobadas: nuevo(), montoSinDebito: nuevo(), sinDebitoNiCredito: nuevo(), montoSinDebitoNiCredito: nuevo(), failed: 0, failedEnIbs: 0, sinEjecutar: 0, sinEjecutarEnIbs: 0,
     };
     for (const o of ops) {
       const k = o.moncod;
       if (o.estado === 'FAILED') {
         bs.failed++;
         if (o.clase === 'debitadaNoAprobada') bs.failedEnIbs++;
+      }
+      if (o.estado === 'PENDING_EXECUTION') {
+        bs.sinEjecutar++;
+        if (o.clase === 'debitadaNoAprobada') bs.sinEjecutarEnIbs++;
       }
       if (o.estado !== 'APPROVED' || !(k in bs.aprobadas)) continue;
       bs.aprobadas[k]++;
@@ -160,6 +164,7 @@
     const b = ind.bs;
     const rojosBs = contar(EXC_BS);
     if (b.failedEnIbs && !rojosBs.some((m) => m.includes('FAILED'))) rojosBs.push(`${b.failedEnIbs} FAILED con débito en IBS`);
+    if (b.sinEjecutarEnIbs && !rojosBs.some((m) => m.includes('sin ejecutar'))) rojosBs.push(`${b.sinEjecutarEnIbs} PENDING_EXECUTION con débito en IBS`);
     if (b.control.diferencia !== 0) rojosBs.push(`El control no cierra (diferencia ${b.control.diferencia})`);
     const amarillosBs = [];
     if (total(b.pendientes)) amarillosBs.push(`${total(b.pendientes)} operación(es) con débito pendiente`);
