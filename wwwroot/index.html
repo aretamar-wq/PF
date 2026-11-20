@@ -46,7 +46,6 @@
             <li><button type="button" id="outputFilesBtn">Archivos de salida</button></li>
             <li><button type="button" id="dashboardBtn">Dashboard</button></li>
             <li><button type="button" id="conciliacionIbsBtn">Conciliación con IBS</button></li>
-            <li><button type="button" id="qnetBtn">Conciliación Loop (anterior)</button></li>
             <li><button type="button" id="tccBtn">Conciliación Loop</button></li>
             <li><button type="button" id="logoutBtn">Cerrar sesión</button></li>
           </ul>
@@ -300,44 +299,6 @@
         </div>
       </section>
 
-      <section id="qnetSection" style="display: none;">
-        <div class="section-head">
-          <h2>Conciliación Loop (anterior)</h2>
-          <button type="button" id="closeQnetBtn">Volver a flows</button>
-        </div>
-        <p class="muted">
-          Verifica que cada transferencia QNET esté en Loop con su débito al cliente y su crédito a la cuenta puente, que lo
-          que falta esté en los débitos pendientes y que todo cierre contra BankService. Se concilia <strong>un día</strong>:
-          Loop y los débitos pendientes se consultan directo en Sybase; BankService se lee de la base: cargá los archivos
-          (<code>Movimientos_BankService-mmaaaa.csv</code>) con "Cargar a la base" o subilos al conciliar. Si un comprobante ya
-          estaba, se actualiza con lo más nuevo.
-          Cada conciliación queda guardada: abrila de nuevo o mirá cómo se movió día a día.
-        </p>
-        <div class="actions conciliacion-actions">
-          <label>Archivos de BankService <input type="file" id="qnetFiles" accept=".csv,text/csv" multiple /></label>
-          <button type="button" id="qnetCargarBtn">Cargar a la base</button>
-          <label>Fecha a conciliar <input type="date" id="qnetFecha" /></label>
-          <button type="button" id="qnetRunBtn">Conciliar</button>
-        </div>
-        <div id="qnetBaseResumen" class="muted"></div>
-        <div id="qnetProgreso" class="muted" style="margin: 8px 0;"></div>
-        <div class="actions conciliacion-actions">
-          <label>Histórico <select id="qnetCorridas"></select></label>
-          <button type="button" id="qnetAbrirBtn">Abrir</button>
-          <button type="button" id="qnetEvolucionBtn">Evolución día a día</button>
-          <span id="qnetDescargas" style="display: none;">
-            Descargar:
-            <button type="button" data-qnet-archivo="excepciones.csv">Excepciones</button>
-            <button type="button" data-qnet-archivo="resumen.csv">Resumen</button>
-            <button type="button" data-qnet-archivo="conciliacion-comprobantes.csv">Por comprobante</button>
-            <button type="button" data-qnet-archivo="pendientes-por-dia.csv">Pendientes por día</button>
-            <button type="button" data-qnet-archivo="fuentes.csv">Fuentes</button>
-            <button type="button" data-qnet-archivo="corrida.log">Log</button>
-          </span>
-        </div>
-        <div id="qnetEvolucion" style="display: none; margin-top: 10px;"></div>
-        <iframe id="qnetFrame" title="Dashboard de la conciliación Loop" sandbox="allow-scripts" style="display: none; width: 100%; height: 85vh; border: 1px solid var(--border, #ccc); border-radius: 6px; margin-top: 10px;"></iframe>
-      </section>
 
       <section id="dashboardSection" style="display: none;">
         <div class="section-head">

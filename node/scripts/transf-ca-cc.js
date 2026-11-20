@@ -18,7 +18,7 @@ const ibs = require('../lib/transfCaCc/ibs');
 const bankservice = require('../lib/transfCaCc/bankservice');
 const { conciliar } = require('../lib/transfCaCc/conciliar');
 const { aDiaHabil } = require('../lib/transfCaCc/servicio');
-const { parseCsv } = require('../lib/qnet/util');
+const { parseCsv } = require('../lib/transfCaCc/util');
 const calculo = require('../../wwwroot/transf-ca-cc-calculo');
 
 function args(argv) {
