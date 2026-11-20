@@ -303,3 +303,13 @@ test('Excepciones a revisar: llevan el CUIT del titular de la operación de Bank
   const sinOp = conciliar({ movimientos: ibs.normalizarMovimientos([mov(51, '16/11/2026', 25030, 99)], config).movimientos, pendientes: [], operaciones: [], config });
   assert.strictEqual(sinOp.excepciones[0].cuit, '');
 });
+
+test('crédito sin débito con el débito en pendientes: no es excepción y el crédito cuenta en verde', () => {
+  const m = ibs.normalizarMovimientos([mov(60, '16/11/2026', 25030, 10), mov(60, '16/11/2026', 25031, 10, { sistcod: 3 }), mov(61, '16/11/2026', 25031, 20, { sistcod: 3 })], config).movimientos;
+  const p = ibs.normalizarPendientes([pend(61, 20)], config).pendientes;
+  const r = conciliar({ movimientos: m, pendientes: p, operaciones: [op(60, '2026-11-16', 10), op(61, '2026-11-16', 20)], config });
+  assert.ok(!r.excepciones.some((e) => e.tipo === TIPOS.CREDITO_SIN_DEBITO));
+  assert.deepStrictEqual(tiposDe(r, 61), [TIPOS.DEBITO_PENDIENTE]);
+  const c = calculo.coloresTransferencias(calculo.indicadores({ ...r, config: { movDebito: '25030', movCredito: '25031' } }, '2026-11-16'));
+  assert.deepStrictEqual([c.debitos, c.creditos, c.saldoDebitos[0], c.saldoCreditos[0]], ['warn', 'ok', 'warn', 'ok']);
+});

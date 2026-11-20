@@ -130,7 +130,10 @@ function conciliar({ movimientos, pendientes, operaciones, config }) {
         }
       } else {
         const creditos = (creditosPorComp.get(o.comprobante) || []).filter((c) => c.moncod === o.moncod);
-        if (creditos.length > 0) {
+        r.tieneCredito = creditos.length > 0;
+        const enPendientes = (pendPorClave.get(`${o.moncod}|${o.comprobante}`) || []).length > 0;
+        // Con el débito en pendientes, que el crédito ya esté es normal: no es excepción.
+        if (creditos.length > 0 && !enPendientes) {
           exc(TIPOS.CREDITO_SIN_DEBITO, { ...base, importe: creditos[0].importe, usuario: creditos[0].usuario, detalle: `IBS tiene ${creditos.length} crédito(s) ${config.movCredito} (${creditos.map((c) => `${dinero(c.moncod, c.importe)} del ${c.fecha.split('-').reverse().join('/')}`).join(', ')}) y no tiene el débito ${config.movDebito}.` });
         }
         const pend = (pendPorClave.get(`${o.moncod}|${o.comprobante}`) || [])[0];
