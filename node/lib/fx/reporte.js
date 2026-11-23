@@ -22,7 +22,6 @@ const dmy = (iso) => {
   return m ? `${m[3]}/${m[2]}/${m[1]}` : '';
 };
 const hora = (s) => String(s || '').slice(11, 19);
-const peor = (...cs) => (cs.includes('err') ? 'err' : cs.includes('warn') ? 'warn' : cs.every((c) => c === 'ok') ? 'ok' : '');
 
 function generarReporte({ datos, dia, usuario, ahora = new Date() }) {
   const pdf = new Pdf();
@@ -134,7 +133,8 @@ function generarReporte({ datos, dia, usuario, ahora = new Date() }) {
   for (const a of datos.avisos || []) parrafo(`Aviso: ${a}`, 8, '#b54708');
 
   for (const { l, ind, sem } of lados) {
-    const { bs, ibs, colores } = ind;
+    const { bs, ibs } = ind;
+    const est = calculo.estados(ind, l);
     const dif = bs.incompletas + bs.sinRegistro;
     titulo(l.titulo, sem);
     grilla([
@@ -143,12 +143,19 @@ function generarReporte({ datos, dia, usuario, ahora = new Date() }) {
       ['Importe en USD', dinero('USD', bs.usd), ''],
       ['Tipo de cambio promedio', bs.usd ? dinero('ARS', Math.round((bs.ars / bs.usd) * 100)) : '—', 'pesos / USD'],
     ]);
-    grilla(l.movs.map((m) => [`${m.cod} ${m.nombre}`, fmtNum(ibs[m.cod].n), dinero(m.moneda, ibs[m.cod].importe), peor(colores[m.cod].n, colores[m.cod].importe)]), 6);
+    grilla(l.movs.map((m) => [`${m.cod} ${m.nombre}`, fmtNum(ibs[m.cod].n), dinero(m.moneda, ibs[m.cod].importe), est.movs[m.cod]]), 6);
     grilla([
-      ['Órdenes completas en IBS', fmtNum(bs.completas), `de ${fmtNum(bs.completadas)} COMPLETED`, bs.completas === bs.completadas ? 'ok' : ''],
-      ['Órdenes con débito pendiente', fmtNum(bs.pendientes), `${dinero('ARS', bs.pendArs)} · ${dinero('USD', bs.pendUsd)}`, bs.pendientes ? 'warn' : 'ok'],
-      ['Órdenes con movimientos faltantes', fmtNum(dif), `${fmtNum(bs.incompletas)} incompletas · ${fmtNum(bs.sinRegistro)} sin registro${bs.porContabilizar ? ` · ${fmtNum(bs.porContabilizar)} por contabilizar` : ''}`, dif ? 'err' : bs.porContabilizar ? 'warn' : 'ok'],
-      ['FAILED o en revisión con movimientos en IBS', fmtNum(bs.noCompletadasEnIbs), `de ${fmtNum(bs.failed + bs.revision)} no COMPLETED`, bs.noCompletadasEnIbs ? 'err' : 'ok'],
+      ['Órdenes completas en IBS', fmtNum(bs.completas), `de ${fmtNum(bs.completadas)} COMPLETED`, est.completas],
+      ['Órdenes con débito pendiente', fmtNum(bs.pendientes), `${dinero('ARS', bs.pendArs)} · ${dinero('USD', bs.pendUsd)}`, est.conPendiente],
+      ['Órdenes con movimientos faltantes', fmtNum(dif), `${fmtNum(bs.incompletas)} incompletas · ${fmtNum(bs.sinRegistro)} sin registro${bs.porContabilizar ? ` · ${fmtNum(bs.porContabilizar)} por contabilizar` : ''}`, est.faltantes],
+      ['FAILED o en revisión con movimientos en IBS', fmtNum(bs.noCompletadasEnIbs), `de ${fmtNum(bs.failed + bs.revision)} no COMPLETED`, est.noCompletadas],
+    ]);
+    const pd = ind.pendDia;
+    grilla([
+      ['Débitos pendientes del día en pesos', fmtNum(pd.ARS.n), dinero('ARS', pd.ARS.importe), est.pendArs],
+      ['Débitos pendientes del día en USD', fmtNum(pd.USD.n), dinero('USD', pd.USD.importe), est.pendUsd],
+      ['Débitos pendientes del día', fmtNum(pd.ARS.n + pd.USD.n), `${dinero('ARS', pd.ARS.importe)} · ${dinero('USD', pd.USD.importe)}`, est.pendDia],
+      ['Movimientos manuales', fmtNum(ind.manuales), 'usuarios que no son de proceso'],
     ]);
   }
 
