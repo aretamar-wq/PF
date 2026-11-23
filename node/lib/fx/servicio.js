@@ -87,7 +87,7 @@ async function obtenerDatos({ rootDir, querySybase, desde, hasta, ahora, feriado
   // Órdenes del día (con margen: las de un sábado, domingo o feriado van al próximo día
   // hábil) y, de cualquier fecha, las de los comprobantes que aparecen en IBS o en pendientes.
   const filas = await db().query(rootDir, `SELECT ${COLS} FROM fx_ordenes WHERE fecha_operacion >= ? AND fecha_operacion < ?`, [sumarDias(desde, -10), hasta]);
-  const vistos = new Set(filas.map((f) => String(f.comprobante || '')));
+  const vistos = new Set(filas.map((f) => String(f.comprobante || '').replace(/^0+(?=\d)/, '')));
   const conMovimiento = new Set([...mov.movimientos.map((m) => m.comprobante), ...pend.pendientes.map((p) => p.comprobante)]);
   const faltan = [...conMovimiento].filter((c) => c && !vistos.has(c));
   for (let i = 0; i < faltan.length; i += 500) {
@@ -95,6 +95,24 @@ async function obtenerDatos({ rootDir, querySybase, desde, hasta, ahora, feriado
     filas.push(...(await db().query(rootDir, `SELECT ${COLS} FROM fx_ordenes WHERE comprobante IN (${lote.map(() => '?').join(', ')})`, lote)));
   }
   const ordenes = aDiaHabil(bankservice.ordenesDesdeFilas(filas), feriados).filter((o) => (o.fecha >= desde && o.fecha < hasta) || conMovimiento.has(o.comprobante));
+  // Movimientos de IBS sin orden: se verifica de nuevo en MariaDB, de cualquier fecha y sin
+  // ceros a la izquierda. Si la orden está, se concilia con ella (se desestima como
+  // "sin operación"); si no está, queda como diferencia.
+  const conOrden = new Set(ordenes.map((o) => o.comprobante));
+  const sinOrden = [...new Set(mov.movimientos.map((m) => m.comprobante))].filter((c) => c && !conOrden.has(c));
+  if (sinOrden.length > 0) {
+    const encontradas = [];
+    for (let i = 0; i < sinOrden.length; i += 500) {
+      const lote = sinOrden.slice(i, i + 500);
+      encontradas.push(...(await db().query(rootDir, `SELECT ${COLS} FROM fx_ordenes WHERE TRIM(LEADING '0' FROM comprobante) IN (${lote.map(() => '?').join(', ')})`, lote)));
+    }
+    const nuevas = aDiaHabil(bankservice.ordenesDesdeFilas(encontradas), feriados).filter((o) => !conOrden.has(o.comprobante));
+    ordenes.push(...nuevas);
+    const halladas = new Set(nuevas.map((o) => o.comprobante));
+    const noFiguran = sinOrden.filter((c) => !halladas.has(c));
+    avisos.push(`IBS: ${sinOrden.length} comprobante(s) con movimientos sin orden se verificaron en la base de BankService FX: ` +
+      `${halladas.size} figuran (se concilian con su orden) y ${noFiguran.length} no figuran (quedan como diferencia${noFiguran.length ? `: ${noFiguran.slice(0, 20).join(', ')}${noFiguran.length > 20 ? '…' : ''}` : ''}).`);
+  }
   if (ordenes.length === 0) avisos.push('No hay órdenes de BankService FX en la base para ese día: cargá el archivo.');
 
   // Movimientos imputados después: órdenes COMPLETED del día a las que les falta algún

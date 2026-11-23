@@ -42,7 +42,14 @@
     for (const m of ladoDef.movs) ibs[m.cod] = { n: 0, importe: 0 };
     let manuales = 0;
     let posteriores = 0;
+    // Movimientos de IBS cuyo comprobante no figura en BankService FX: diferencia.
+    const sinOrden = { comprobantes: new Set(), n: 0, ARS: 0, USD: 0 };
     for (const m of datos.movimientos) {
+      if (m.lado === lado && !m.conOperacion && ok(m.fechaFiltro || m.fecha)) {
+        sinOrden.comprobantes.add(m.comprobante);
+        sinOrden.n++;
+        sinOrden[m.monedaEsperada === 'USD' ? 'USD' : 'ARS'] += m.importe;
+      }
       // Manuales: todos los del lado en el día (tengan o no orden en BankService).
       if (m.lado === lado && m.manual && ok(m.fechaFiltro || m.fecha)) manuales++;
       if (m.lado !== lado || !m.completada || !ok(m.fechaFiltro || m.fecha) || !ibs[m.movcod]) continue;
@@ -66,7 +73,7 @@
       pendDia[mon].n++;
       pendDia[mon].importe += p.importe;
     }
-    return { lado, bs, ibs, esperado, colores, pendientes, pendDia, manuales, posteriores, excepciones };
+    return { lado, bs, ibs, esperado, colores, pendientes, pendDia, manuales, posteriores, sinOrden: { ...sinOrden, comprobantes: sinOrden.comprobantes.size }, excepciones };
   }
 
   const peor = (...cs) => (cs.includes('err') ? 'err' : cs.includes('warn') ? 'warn' : cs.every((c) => c === 'ok') ? 'ok' : '');
@@ -82,6 +89,7 @@
       conPendiente: bs.pendientes ? 'warn' : 'ok',
       faltantes: dif ? 'err' : bs.porContabilizar ? 'warn' : 'ok',
       noCompletadas: bs.noCompletadasEnIbs ? 'err' : 'ok',
+      sinOrden: ind.sinOrden.comprobantes ? 'err' : 'ok',
       pendArs: pendDia.ARS.n ? 'warn' : 'ok',
       pendUsd: pendDia.USD.n ? 'warn' : 'ok',
       pendDia: nPend ? 'warn' : 'ok',
@@ -100,6 +108,7 @@
     }
     if (e.faltantes === 'err') rojos.push(`${bs.incompletas + bs.sinRegistro} orden(es) con movimientos faltantes`);
     else if (e.faltantes === 'warn') amarillos.push(`${bs.porContabilizar} orden(es) por contabilizar`);
+    if (e.sinOrden === 'err') rojos.push(`${ind.sinOrden.comprobantes} comprobante(s) de IBS que no figuran en BankService FX`);
     if (e.noCompletadas === 'err') rojos.push(`${bs.noCompletadasEnIbs} orden(es) FAILED o en revisión con movimientos en IBS`);
     if (e.conPendiente === 'warn') amarillos.push(`${bs.pendientes} orden(es) con débito pendiente`);
     if (e.pendDia === 'warn') amarillos.push(`${pendDia.ARS.n + pendDia.USD.n} débito(s) pendiente(s) del día`);
