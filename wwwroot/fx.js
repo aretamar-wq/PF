@@ -205,7 +205,7 @@
       tile('Débitos pendientes del día en pesos', fmtNum(pendIbs.ARS.n), dinero('ARS', pendIbs.ARS.importe), est.pendArs) +
       tile('Débitos pendientes del día en USD', fmtNum(pendIbs.USD.n), dinero('USD', pendIbs.USD.importe), est.pendUsd) +
       tile('Débitos pendientes del día', fmtNum(pendIbs.ARS.n + pendIbs.USD.n), `${dinero('ARS', pendIbs.ARS.importe)} · ${dinero('USD', pendIbs.USD.importe)}`, est.pendDia, 'Débitos pendientes de IBS de las órdenes del día conciliado (el detalle de todas las fechas está en Saldo de débitos pendientes por día)') +
-      tile('Movimientos manuales', fmtNum(ind.manuales), 'cargados por usuarios que no son de proceso') +
+      tile('Movimientos manuales', fmtNum(ind.manuales), 'de usuarios que no son de proceso, sin orden en BankService') +
       `</div>` +
       (ind.posteriores ? `<p class="tcc-suave">Incluye ${fmtNum(ind.posteriores)} movimiento(s) imputados en fechas posteriores, sumados en el día de su orden.</p>` : '');
   }
