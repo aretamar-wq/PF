@@ -156,7 +156,7 @@ function generarReporte({ datos, dia, usuario, ahora = new Date() }) {
       ['Débitos pendientes del día en pesos', fmtNum(pd.ARS.n), dinero('ARS', pd.ARS.importe), est.pendArs],
       ['Débitos pendientes del día en USD', fmtNum(pd.USD.n), dinero('USD', pd.USD.importe), est.pendUsd],
       ['Débitos pendientes del día', fmtNum(pd.ARS.n + pd.USD.n), `${dinero('ARS', pd.ARS.importe)} · ${dinero('USD', pd.USD.importe)}`, est.pendDia],
-      ['Movimientos manuales', fmtNum(ind.manuales), 'usuarios que no son de proceso'],
+      ['Movimientos manuales', fmtNum(ind.manuales), 'de usuarios que no son de proceso, sin orden en BankService'],
     ]);
   }
 

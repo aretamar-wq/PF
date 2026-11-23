@@ -50,8 +50,8 @@
         sinOrden.n++;
         sinOrden[m.monedaEsperada === 'USD' ? 'USD' : 'ARS'] += m.importe;
       }
-      // Manuales: todos los del lado en el día (tengan o no orden en BankService).
-      if (m.lado === lado && m.manual && ok(m.fechaFiltro || m.fecha)) manuales++;
+      // Manuales: los del lado en el día cuyo comprobante no está en BankService FX.
+      if (m.lado === lado && m.manual && !m.conOperacion && ok(m.fechaFiltro || m.fecha)) manuales++;
       if (m.lado !== lado || !m.completada || !ok(m.fechaFiltro || m.fecha) || !ibs[m.movcod]) continue;
       ibs[m.movcod].n++;
       ibs[m.movcod].importe += m.importe;

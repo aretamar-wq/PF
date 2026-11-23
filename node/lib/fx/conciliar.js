@@ -131,13 +131,14 @@ function conciliar({ movimientos, pendientes, ordenes, config }) {
     return r;
   });
 
-  // Movimientos de IBS sin orden en BankService (uno por comprobante) y manuales.
+  // Movimientos de IBS sin orden en BankService (uno por comprobante) y manuales: un
+  // movimiento manual se informa solo si su comprobante no está en BankService FX.
   for (const [comprobante, lista] of movsPorComp) {
     const m0 = lista[0];
     if (!ops.has(comprobante)) {
       exc(TIPOS.SIN_OPERACION, { comprobante, lado: m0.lado, cuenta: m0.cuecod, moneda: m0.monedaEsperada, fecha: m0.fecha, importe: m0.importe, usuario: m0.usuario, detalle: `El comprobante no figura en la base de BankService FX (MariaDB) e IBS tiene ${lista.length} movimiento(s): ${lista.map((m) => `${m.movcod} ${dinero(m.monedaEsperada, m.importe)} (cuenta ${m.cuecod})`).join(', ')}.` });
     }
-    const manuales = lista.filter((m) => m.manual);
+    const manuales = ops.has(comprobante) ? [] : lista.filter((m) => m.manual);
     if (manuales.length > 0) {
       const o = ops.get(comprobante);
       exc(TIPOS.MANUAL, { comprobante, lado: m0.lado, cuit: o ? o.cuit : '', cuenta: manuales[0].cuecod, moneda: manuales[0].monedaEsperada, fecha: m0.fechaFiltro, importe: manuales[0].importe, usuario: manuales[0].usuario, estadoBs: o ? o.status : '', detalle: `${manuales.length} movimiento(s) cargado(s) por el usuario ${manuales[0].usuario} (no es de proceso): ${manuales.map((m) => m.movcod).join(', ')}. Informativo.` });

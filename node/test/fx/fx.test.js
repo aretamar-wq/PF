@@ -138,3 +138,13 @@ test('movimientos de IBS sin orden en BankService: diferencia (rojo)', () => {
 test('ordenesDesdeFilas: el comprobante va sin ceros a la izquierda', () => {
   assert.strictEqual(bs.ordenesDesdeFilas([{ id: 'x', comprobante: '005204', status: 'COMPLETED', side: 'BUY', ars: '1.00', usd: '0.01', fecha_operacion: '2026-11-04' }])[0].comprobante, '5204');
 });
+
+test('movimiento manual: solo si el comprobante no está en BankService', () => {
+  const r = conciliar({
+    movimientos: [...movsDe('10', 'BUY', 1600000, 1000, { usuario: '29318967' }), ...movsDe('20', 'BUY', 100, 1, { usuario: '29318967' })],
+    pendientes: [], ordenes: [o('10')], config,
+  });
+  assert.deepStrictEqual(r.excepciones.filter((e) => e.tipo === TIPOS.MANUAL).map((e) => e.comprobante), ['20']);
+  const ind = calculo.indicadores({ ...r, lados: config.lados }, '2026-11-04', config.lados[0]);
+  assert.strictEqual(ind.manuales, 6);
+});
