@@ -100,3 +100,20 @@ test('reporte PDF del día', () => {
   assert.match(pdf.nombre, /^conciliacion-fx-2026-11-04-/);
   assert.match(pdf.sha256, /^[0-9a-f]{64}$/);
 });
+
+test('semáforo: toma el color del peor indicador, no el de las excepciones', () => {
+  // Orden con débito pendiente (amarillo) + un movimiento sin orden (excepción roja, sin indicador).
+  const r = conciliar({
+    movimientos: [...movsDe('11', 'BUY', 1600000, 1000, { menos: ['25003'] }), ...movsDe('20', 'BUY', 100, 1)],
+    pendientes: [{ moncod: '0', cuecod: '5000', comprobante: '11', movcod: '25003', importe: 1600000, fechaOrigen: '2026-11-04', motivo: 'x' }],
+    ordenes: [o('11')],
+    config,
+  });
+  const compra = config.lados[0];
+  const ind = calculo.indicadores({ ...r, lados: config.lados }, '2026-11-04', compra);
+  assert.ok(ind.excepciones.some((e) => e.tipo === TIPOS.SIN_OPERACION));
+  assert.strictEqual(calculo.estados(ind, compra).movs['25003'], 'warn');
+  const sem = calculo.semaforo(ind, compra);
+  assert.strictEqual(sem.color, 'amarillo');
+  assert.ok(sem.motivos.some((m) => /débito pendiente/.test(m)));
+});
