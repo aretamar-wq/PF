@@ -188,12 +188,6 @@
       pendIbs[mon].n++;
       pendIbs[mon].importe += p.importe;
     }
-    const saldo = { ARS: { n: 0, importe: 0 }, USD: { n: 0, importe: 0 } };
-    for (const p of estado.datos.pendientes.filter((x) => x.lado === l.lado)) {
-      const mon = monedaDe.get(p.movcod) || 'ARS';
-      saldo[mon].n++;
-      saldo[mon].importe += p.importe;
-    }
     const diferencias = bs.incompletas + bs.sinRegistro;
     return `<div class="tcc-grilla">` +
       tile('Órdenes COMPLETED en BankService', fmtNum(bs.completadas), `FAILED ${fmtNum(bs.failed)}${bs.revision ? ` · en revisión ${fmtNum(bs.revision)}` : ''}`) +
@@ -215,7 +209,7 @@
       `</div><div class="tcc-grilla" style="margin-top: 10px;">` +
       tile('Débitos pendientes del día en pesos', fmtNum(pendIbs.ARS.n), dinero('ARS', pendIbs.ARS.importe), pendIbs.ARS.n ? 'warn' : 'ok') +
       tile('Débitos pendientes del día en USD', fmtNum(pendIbs.USD.n), dinero('USD', pendIbs.USD.importe), pendIbs.USD.n ? 'warn' : 'ok') +
-      tile('Saldo total de débitos pendientes', fmtNum(saldo.ARS.n + saldo.USD.n), `${dinero('ARS', saldo.ARS.importe)} · ${dinero('USD', saldo.USD.importe)}`, '', 'Todos los débitos pendientes de IBS de esta operación, de cualquier fecha') +
+      tile('Débitos pendientes del día', fmtNum(pendIbs.ARS.n + pendIbs.USD.n), `${dinero('ARS', pendIbs.ARS.importe)} · ${dinero('USD', pendIbs.USD.importe)}`, pendIbs.ARS.n + pendIbs.USD.n ? 'warn' : 'ok', 'Débitos pendientes de IBS de las órdenes del día conciliado (el detalle de todas las fechas está en Saldo de débitos pendientes por día)') +
       tile('Movimientos manuales', fmtNum(ind.manuales), 'cargados por usuarios que no son de proceso') +
       `</div>` +
       (ind.posteriores ? `<p class="tcc-suave">Incluye ${fmtNum(ind.posteriores)} movimiento(s) imputados en fechas posteriores, sumados en el día de su orden.</p>` : '');
