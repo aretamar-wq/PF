@@ -246,7 +246,7 @@
       $('fxPerAviso').textContent = desde && hasta ? 'Desde es posterior a Hasta.' : 'Elegí Desde y Hasta.';
       $('fxGrafico').innerHTML = '<p class="tcc-suave">Revisá el período.</p>';
       $('fxGraficoImporte').innerHTML = '';
-      $('fxSaldo').innerHTML = '';
+      pintarSaldo();
       return;
     }
     $('fxPerAviso').textContent = '';
@@ -286,7 +286,7 @@
     if (dias.length === 0) {
       $('fxGrafico').innerHTML = '<p class="tcc-suave">No hay días conciliados en el período.</p>';
       $('fxGraficoImporte').innerHTML = '';
-      $('fxSaldo').innerHTML = '<p class="tcc-suave">No hay días conciliados en el período.</p>';
+      pintarSaldo();
       return;
     }
     const solo = $('fxSoloProblemas').checked;
@@ -298,21 +298,46 @@
       grafico($('fxGrafico'), diasGrafico, SERIES_ORDENES, (v) => fmtNum(v), 'Órdenes por fecha');
       grafico($('fxGraficoImporte'), diasGrafico.map((d) => ({ ...d, compraUsd: (d.lados.BUY || {}).importeUsd || 0, ventaUsd: (d.lados.SELL || {}).importeUsd || 0 })), SERIES_IMPORTE, (v) => fmtNum(Math.round(v / 100)), 'Importe operado por fecha en USD');
     }
-    const conPend = dias.filter((d) => d.pendArs || d.pendUsd);
-    if (conPend.length === 0) {
-      $('fxSaldo').innerHTML = '<p class="tcc-suave">No hay débitos pendientes en el período.</p>';
+    pintarSaldo();
+  }
+
+  // Saldo de débitos pendientes: los que IBS tiene hoy en débitos pendientes (de
+  // cualquier fecha), traídos en la última conciliación, agrupados por la fecha de su
+  // orden en BankService (o la de origen del pendiente si no tiene orden COMPLETED).
+  function pintarSaldo() {
+    const d = estado.datos;
+    if (!d) {
+      $('fxSaldo').innerHTML = '<p class="tcc-suave">Conciliá un día para ver los débitos pendientes de IBS.</p>';
+      return;
+    }
+    const lado = $('fxGraficoLado').value;
+    const porFecha = new Map();
+    for (const p of d.pendientes || []) {
+      if (lado && p.lado !== lado) continue;
+      const fecha = p.fecha || p.fechaOrigen || '';
+      if (!porFecha.has(fecha)) porFecha.set(fecha, { fecha, BUY: 0, SELL: 0, ARS: 0, USD: 0, sinOrden: 0 });
+      const f = porFecha.get(fecha);
+      if (p.lado === 'BUY' || p.lado === 'SELL') f[p.lado]++;
+      f[String(p.moncod) === '2' ? 'USD' : 'ARS'] += p.importe;
+      if (!p.conOperacion) f.sinOrden++;
+    }
+    const filas = [...porFecha.values()].sort((a, b) => a.fecha.localeCompare(b.fecha));
+    if (filas.length === 0) {
+      $('fxSaldo').innerHTML = `<p class="tcc-suave">IBS no tiene débitos pendientes de FX (al ${esc(dmy(d.generado))} ${esc(String(d.generado).slice(11, 16))}).</p>`;
       return;
     }
     const acum = { ARS: 0, USD: 0 };
-    $('fxSaldo').innerHTML = `<table><thead><tr><th>Fecha</th><th class="num">Órdenes con débito pendiente</th><th class="num">Pesos</th><th class="num">Acumulado en pesos</th><th class="num">USD</th><th class="num">Acumulado en USD</th><th>Conciliado</th></tr></thead><tbody>` +
-      conPend.map((d) => {
-        acum.ARS += d.pendArs;
-        acum.USD += d.pendUsd;
-        return `<tr class="${d.fecha === estado.dia ? 'resaltado' : ''}"><td>${dmy(d.fecha)}</td><td class="num">${fmtNum(d.pendientes)}</td>
-        <td class="num">${dinero('ARS', d.pendArs)}</td><td class="num">${dinero('ARS', acum.ARS)}</td>
-        <td class="num">${dinero('USD', d.pendUsd)}</td><td class="num">${dinero('USD', acum.USD)}</td>
-        <td class="tcc-suave">${esc(dmy(d.generadoEn))} ${esc(String(d.generadoEn).slice(11, 16))}</td></tr>`;
-      }).join('') + '</tbody></table>';
+    const tot = filas.reduce((t, f) => ({ BUY: t.BUY + f.BUY, SELL: t.SELL + f.SELL, sinOrden: t.sinOrden + f.sinOrden }), { BUY: 0, SELL: 0, sinOrden: 0 });
+    $('fxSaldo').innerHTML = `<p class="tcc-suave">Débitos pendientes de IBS al ${esc(dmy(d.generado))} ${esc(String(d.generado).slice(11, 16))}, por fecha de la orden en BankService.</p>` +
+      `<table><thead><tr><th>Fecha</th><th class="num">Compra de USD</th><th class="num">Venta de USD</th><th class="num">Pesos</th><th class="num">Acumulado en pesos</th><th class="num">USD</th><th class="num">Acumulado en USD</th><th class="num">Sin orden COMPLETED</th></tr></thead><tbody>` +
+      filas.map((f) => {
+        acum.ARS += f.ARS;
+        acum.USD += f.USD;
+        return `<tr class="${f.fecha === estado.dia ? 'resaltado' : ''}"><td>${f.fecha ? dmy(f.fecha) : '—'}</td><td class="num">${fmtNum(f.BUY)}</td><td class="num">${fmtNum(f.SELL)}</td>
+        <td class="num">${dinero('ARS', f.ARS)}</td><td class="num">${dinero('ARS', acum.ARS)}</td>
+        <td class="num">${dinero('USD', f.USD)}</td><td class="num">${dinero('USD', acum.USD)}</td><td class="num">${fmtNum(f.sinOrden)}</td></tr>`;
+      }).join('') +
+      `<tr><td><b>Total</b></td><td class="num"><b>${fmtNum(tot.BUY)}</b></td><td class="num"><b>${fmtNum(tot.SELL)}</b></td><td class="num"><b>${dinero('ARS', acum.ARS)}</b></td><td></td><td class="num"><b>${dinero('USD', acum.USD)}</b></td><td></td><td class="num"><b>${fmtNum(tot.sinOrden)}</b></td></tr></tbody></table>`;
   }
 
   const SERIES_ORDENES = [
