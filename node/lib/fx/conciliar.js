@@ -135,7 +135,7 @@ function conciliar({ movimientos, pendientes, ordenes, config }) {
   for (const [comprobante, lista] of movsPorComp) {
     const m0 = lista[0];
     if (!ops.has(comprobante)) {
-      exc(TIPOS.SIN_OPERACION, { comprobante, lado: m0.lado, cuenta: m0.cuecod, moneda: m0.monedaEsperada, fecha: m0.fecha, importe: m0.importe, usuario: m0.usuario, detalle: `IBS tiene ${lista.length} movimiento(s) sin orden en BankService FX: ${lista.map((m) => `${m.movcod} ${dinero(m.monedaEsperada, m.importe)} (cuenta ${m.cuecod})`).join(', ')}.` });
+      exc(TIPOS.SIN_OPERACION, { comprobante, lado: m0.lado, cuenta: m0.cuecod, moneda: m0.monedaEsperada, fecha: m0.fecha, importe: m0.importe, usuario: m0.usuario, detalle: `El comprobante no figura en la base de BankService FX (MariaDB) e IBS tiene ${lista.length} movimiento(s): ${lista.map((m) => `${m.movcod} ${dinero(m.monedaEsperada, m.importe)} (cuenta ${m.cuecod})`).join(', ')}.` });
     }
     const manuales = lista.filter((m) => m.manual);
     if (manuales.length > 0) {

@@ -167,7 +167,7 @@ async function cargarArchivo(conn, archivo, usuario, ahora, config) {
 function ordenesDesdeFilas(filas) {
   return filas.map((f) => ({
     id: String(f.id),
-    comprobante: String(f.comprobante || ''),
+    comprobante: String(f.comprobante || '').replace(/^0+(?=\d)/, ''), // IBS no tiene ceros a la izquierda
     status: f.status,
     side: f.side,
     ars: Math.round(Number(f.ars) * 100),

@@ -102,18 +102,39 @@ test('reporte PDF del día', () => {
 });
 
 test('semáforo: toma el color del peor indicador, no el de las excepciones', () => {
-  // Orden con débito pendiente (amarillo) + un movimiento sin orden (excepción roja, sin indicador).
+  // Orden con débito pendiente (amarillo) + un pendiente sin orden del día anterior (excepción roja, sin indicador).
   const r = conciliar({
-    movimientos: [...movsDe('11', 'BUY', 1600000, 1000, { menos: ['25003'] }), ...movsDe('20', 'BUY', 100, 1)],
-    pendientes: [{ moncod: '0', cuecod: '5000', comprobante: '11', movcod: '25003', importe: 1600000, fechaOrigen: '2026-11-04', motivo: 'x' }],
+    movimientos: movsDe('11', 'BUY', 1600000, 1000, { menos: ['25003'] }),
+    pendientes: [{ moncod: '0', cuecod: '5000', comprobante: '11', movcod: '25003', importe: 1600000, fechaOrigen: '2026-11-04', motivo: 'x' },
+      { moncod: '0', cuecod: '6000', comprobante: '77', movcod: '25003', importe: 500, fechaOrigen: '2026-11-04', motivo: 'x' }],
     ordenes: [o('11')],
     config,
   });
   const compra = config.lados[0];
   const ind = calculo.indicadores({ ...r, lados: config.lados }, '2026-11-04', compra);
-  assert.ok(ind.excepciones.some((e) => e.tipo === TIPOS.SIN_OPERACION));
+  assert.ok(ind.excepciones.some((e) => e.tipo === TIPOS.PEND_SIN_OPERACION));
   assert.strictEqual(calculo.estados(ind, compra).movs['25003'], 'warn');
   const sem = calculo.semaforo(ind, compra);
   assert.strictEqual(sem.color, 'amarillo');
   assert.ok(sem.motivos.some((m) => /débito pendiente/.test(m)));
+});
+
+test('movimientos de IBS sin orden en BankService: diferencia (rojo)', () => {
+  const r = conciliar({ movimientos: [...movsDe('10', 'BUY', 1600000, 1000), ...movsDe('20', 'BUY', 100, 1)], pendientes: [], ordenes: [o('10')], config });
+  const compra = config.lados[0];
+  const ind = calculo.indicadores({ ...r, lados: config.lados }, '2026-11-04', compra);
+  assert.deepStrictEqual([ind.sinOrden.comprobantes, ind.sinOrden.n, ind.sinOrden.ARS, ind.sinOrden.USD], [1, 6, 300, 3]);
+  assert.strictEqual(calculo.estados(ind, compra).sinOrden, 'err');
+  const sem = calculo.semaforo(ind, compra);
+  assert.strictEqual(sem.color, 'rojo');
+  assert.ok(sem.motivos.some((m) => /no figuran en BankService FX/.test(m)));
+  // Con la orden en la base (el servidor la encuentra en MariaDB), deja de ser diferencia.
+  const r2 = conciliar({ movimientos: [...movsDe('10', 'BUY', 1600000, 1000), ...movsDe('20', 'BUY', 100, 1)], pendientes: [], ordenes: [o('10'), o('20', { ars: 100, usd: 1, fecha: '2026-10-30' })], config });
+  const ind2 = calculo.indicadores({ ...r2, lados: config.lados }, '2026-11-04', compra);
+  assert.strictEqual(ind2.sinOrden.comprobantes, 0);
+  assert.ok(!r2.excepciones.some((e) => e.tipo === TIPOS.SIN_OPERACION));
+});
+
+test('ordenesDesdeFilas: el comprobante va sin ceros a la izquierda', () => {
+  assert.strictEqual(bs.ordenesDesdeFilas([{ id: 'x', comprobante: '005204', status: 'COMPLETED', side: 'BUY', ars: '1.00', usd: '0.01', fecha_operacion: '2026-11-04' }])[0].comprobante, '5204');
 });
