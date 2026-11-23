@@ -25,7 +25,6 @@
   };
   const esc = (v) => escapeHtml(v == null ? '' : String(v));
   const NOMBRE_LADO = { BUY: 'Compra de USD', SELL: 'Venta de USD' };
-  const peor = (...cs) => (cs.includes('err') ? 'err' : cs.includes('warn') ? 'warn' : cs.every((c) => c === 'ok') ? 'ok' : '');
 
   const tile = (titulo, valor, detalle, clase, tooltip) =>
     `<div class="tcc-tile ${clase || ''}"${tooltip ? ` title="${esc(tooltip)}"` : ''}><div class="t">${esc(titulo)}</div><div class="v">${valor}</div>${detalle ? `<div class="d">${detalle}</div>` : ''}</div>`;
@@ -181,13 +180,8 @@
   function htmlLado(l, ind) {
     const { bs, ibs, esperado, colores } = ind;
     const tc = bs.usd ? Math.round((bs.ars / bs.usd) * 100) : 0;
-    const pendIbs = { ARS: { n: 0, importe: 0 }, USD: { n: 0, importe: 0 } };
-    const monedaDe = new Map(l.movs.map((m) => [m.cod, m.moneda]));
-    for (const p of ind.pendientes) {
-      const mon = monedaDe.get(p.movcod) || 'ARS';
-      pendIbs[mon].n++;
-      pendIbs[mon].importe += p.importe;
-    }
+    const pendIbs = ind.pendDia;
+    const est = C.estados(ind, l);
     const diferencias = bs.incompletas + bs.sinRegistro;
     return `<div class="tcc-grilla">` +
       tile('Órdenes COMPLETED en BankService', fmtNum(bs.completadas), `FAILED ${fmtNum(bs.failed)}${bs.revision ? ` · en revisión ${fmtNum(bs.revision)}` : ''}`) +
@@ -199,17 +193,17 @@
         const c = colores[m.cod];
         const e = esperado[m.cod];
         const tip = `BankService espera ${fmtNum(e.n)} movimiento(s) por ${dinero(m.moneda, e.importe)}` + (e.nExplicado ? `; ${fmtNum(e.nExplicado)} por ${dinero(m.moneda, e.importeExplicado)} están en débitos pendientes o por contabilizar` : '');
-        return tile(`${m.cod} ${m.nombre}`, fmtNum(ibs[m.cod].n), dinero(m.moneda, ibs[m.cod].importe), peor(c.n, c.importe), tip);
+        return tile(`${m.cod} ${m.nombre}`, fmtNum(ibs[m.cod].n), dinero(m.moneda, ibs[m.cod].importe), est.movs[m.cod], tip);
       }).join('') +
       `</div><div class="tcc-grilla" style="margin-top: 10px;">` +
-      tile('Órdenes completas en IBS', fmtNum(bs.completas), `de ${fmtNum(bs.completadas)} COMPLETED`, bs.completas === bs.completadas ? 'ok' : '') +
-      tile('Órdenes con débito pendiente', fmtNum(bs.pendientes), `${dinero('ARS', bs.pendArs)} · ${dinero('USD', bs.pendUsd)}`, bs.pendientes ? 'warn' : 'ok') +
-      tile('Órdenes con movimientos faltantes', fmtNum(diferencias), `${fmtNum(bs.incompletas)} incompletas · ${fmtNum(bs.sinRegistro)} sin registro en IBS${bs.porContabilizar ? ` · ${fmtNum(bs.porContabilizar)} por contabilizar` : ''}`, diferencias ? 'err' : bs.porContabilizar ? 'warn' : 'ok') +
-      tile('FAILED o en revisión con movimientos en IBS', fmtNum(bs.noCompletadasEnIbs), `de ${fmtNum(bs.failed + bs.revision)} no COMPLETED`, bs.noCompletadasEnIbs ? 'err' : 'ok') +
+      tile('Órdenes completas en IBS', fmtNum(bs.completas), `de ${fmtNum(bs.completadas)} COMPLETED`, est.completas) +
+      tile('Órdenes con débito pendiente', fmtNum(bs.pendientes), `${dinero('ARS', bs.pendArs)} · ${dinero('USD', bs.pendUsd)}`, est.conPendiente) +
+      tile('Órdenes con movimientos faltantes', fmtNum(diferencias), `${fmtNum(bs.incompletas)} incompletas · ${fmtNum(bs.sinRegistro)} sin registro en IBS${bs.porContabilizar ? ` · ${fmtNum(bs.porContabilizar)} por contabilizar` : ''}`, est.faltantes) +
+      tile('FAILED o en revisión con movimientos en IBS', fmtNum(bs.noCompletadasEnIbs), `de ${fmtNum(bs.failed + bs.revision)} no COMPLETED`, est.noCompletadas) +
       `</div><div class="tcc-grilla" style="margin-top: 10px;">` +
-      tile('Débitos pendientes del día en pesos', fmtNum(pendIbs.ARS.n), dinero('ARS', pendIbs.ARS.importe), pendIbs.ARS.n ? 'warn' : 'ok') +
-      tile('Débitos pendientes del día en USD', fmtNum(pendIbs.USD.n), dinero('USD', pendIbs.USD.importe), pendIbs.USD.n ? 'warn' : 'ok') +
-      tile('Débitos pendientes del día', fmtNum(pendIbs.ARS.n + pendIbs.USD.n), `${dinero('ARS', pendIbs.ARS.importe)} · ${dinero('USD', pendIbs.USD.importe)}`, pendIbs.ARS.n + pendIbs.USD.n ? 'warn' : 'ok', 'Débitos pendientes de IBS de las órdenes del día conciliado (el detalle de todas las fechas está en Saldo de débitos pendientes por día)') +
+      tile('Débitos pendientes del día en pesos', fmtNum(pendIbs.ARS.n), dinero('ARS', pendIbs.ARS.importe), est.pendArs) +
+      tile('Débitos pendientes del día en USD', fmtNum(pendIbs.USD.n), dinero('USD', pendIbs.USD.importe), est.pendUsd) +
+      tile('Débitos pendientes del día', fmtNum(pendIbs.ARS.n + pendIbs.USD.n), `${dinero('ARS', pendIbs.ARS.importe)} · ${dinero('USD', pendIbs.USD.importe)}`, est.pendDia, 'Débitos pendientes de IBS de las órdenes del día conciliado (el detalle de todas las fechas está en Saldo de débitos pendientes por día)') +
       tile('Movimientos manuales', fmtNum(ind.manuales), 'cargados por usuarios que no son de proceso') +
       `</div>` +
       (ind.posteriores ? `<p class="tcc-suave">Incluye ${fmtNum(ind.posteriores)} movimiento(s) imputados en fechas posteriores, sumados en el día de su orden.</p>` : '');

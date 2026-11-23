@@ -58,25 +58,56 @@
       colores[m.cod] = { n: comparar(ibs[m.cod].n, e.n, e.nExplicado), importe: comparar(ibs[m.cod].importe, e.importe, e.importeExplicado) };
     }
     const excepciones = datos.excepciones.filter((x) => x.lado === lado && ok(x.fecha));
-    return { lado, bs, ibs, esperado, colores, pendientes, manuales, posteriores, excepciones };
+    // Débitos pendientes del día por moneda (la del movimiento).
+    const monedaDe = new Map(ladoDef.movs.map((m) => [m.cod, m.moneda]));
+    const pendDia = { ARS: { n: 0, importe: 0 }, USD: { n: 0, importe: 0 } };
+    for (const p of pendientes) {
+      const mon = monedaDe.get(p.movcod) || 'ARS';
+      pendDia[mon].n++;
+      pendDia[mon].importe += p.importe;
+    }
+    return { lado, bs, ibs, esperado, colores, pendientes, pendDia, manuales, posteriores, excepciones };
   }
 
-  // Semáforo de un lado: el más crítico entre excepciones e indicadores.
+  const peor = (...cs) => (cs.includes('err') ? 'err' : cs.includes('warn') ? 'warn' : cs.every((c) => c === 'ok') ? 'ok' : '');
+
+  // Color de cada indicador con color (ok / warn / err); los mismos que pinta la pantalla.
+  function estados(ind, ladoDef) {
+    const { bs, colores, pendDia } = ind;
+    const dif = bs.incompletas + bs.sinRegistro;
+    const nPend = pendDia.ARS.n + pendDia.USD.n;
+    return {
+      movs: Object.fromEntries(ladoDef.movs.map((m) => [m.cod, peor(colores[m.cod].n, colores[m.cod].importe)])),
+      completas: bs.completas === bs.completadas ? 'ok' : '',
+      conPendiente: bs.pendientes ? 'warn' : 'ok',
+      faltantes: dif ? 'err' : bs.porContabilizar ? 'warn' : 'ok',
+      noCompletadas: bs.noCompletadasEnIbs ? 'err' : 'ok',
+      pendArs: pendDia.ARS.n ? 'warn' : 'ok',
+      pendUsd: pendDia.USD.n ? 'warn' : 'ok',
+      pendDia: nPend ? 'warn' : 'ok',
+    };
+  }
+
+  // Semáforo de un lado: el color del peor indicador (rojo > amarillo > verde).
   function semaforo(ind, ladoDef) {
-    const cuenta = {};
-    for (const e of ind.excepciones) cuenta[e.tipo] = (cuenta[e.tipo] || 0) + 1;
-    const rojos = Object.entries(cuenta).filter(([t]) => ROJAS.includes(t)).map(([t, n]) => `${n} ${t}`);
-    const amarillos = Object.entries(cuenta).filter(([t]) => AMARILLAS.includes(t)).map(([t, n]) => `${n} ${t}`);
+    const e = estados(ind, ladoDef);
+    const { bs, pendDia } = ind;
+    const rojos = [];
+    const amarillos = [];
     for (const m of ladoDef.movs) {
-      const c = ind.colores[m.cod];
-      if (c.n === 'err' || c.importe === 'err') rojos.push(`${m.cod} (${m.nombre}) no coincide con BankService`);
-      else if (c.n === 'warn' || c.importe === 'warn') amarillos.push(`${m.cod} (${m.nombre}): la diferencia son pendientes`);
+      if (e.movs[m.cod] === 'err') rojos.push(`${m.cod} (${m.nombre}) no coincide con BankService`);
+      else if (e.movs[m.cod] === 'warn') amarillos.push(`${m.cod} (${m.nombre}): la diferencia son pendientes o por contabilizar`);
     }
+    if (e.faltantes === 'err') rojos.push(`${bs.incompletas + bs.sinRegistro} orden(es) con movimientos faltantes`);
+    else if (e.faltantes === 'warn') amarillos.push(`${bs.porContabilizar} orden(es) por contabilizar`);
+    if (e.noCompletadas === 'err') rojos.push(`${bs.noCompletadasEnIbs} orden(es) FAILED o en revisión con movimientos en IBS`);
+    if (e.conPendiente === 'warn') amarillos.push(`${bs.pendientes} orden(es) con débito pendiente`);
+    if (e.pendDia === 'warn') amarillos.push(`${pendDia.ARS.n + pendDia.USD.n} débito(s) pendiente(s) del día`);
     const color = rojos.length ? 'rojo' : amarillos.length ? 'amarillo' : 'verde';
     return { color, motivos: rojos.length || amarillos.length ? [...rojos, ...amarillos] : ['Todo OK'] };
   }
 
-  const api = { indicadores, semaforo, ROJAS, AMARILLAS };
+  const api = { indicadores, estados, semaforo, ROJAS, AMARILLAS };
   if (typeof module !== 'undefined' && module.exports) module.exports = api;
   else raiz.FxCalculo = api;
 })(typeof window !== 'undefined' ? window : globalThis);
