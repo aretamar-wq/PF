@@ -240,13 +240,14 @@
 
   // --- Historia -------------------------------------------------------------------
   async function pintarPeriodo() {
+    // El saldo de pendientes no depende del historial: se pinta siempre.
+    pintarSaldo();
     const desde = $('fxPerDesde').value;
     const hasta = $('fxPerHasta').value;
     if (!desde || !hasta || desde > hasta) {
       $('fxPerAviso').textContent = desde && hasta ? 'Desde es posterior a Hasta.' : 'Elegí Desde y Hasta.';
       $('fxGrafico').innerHTML = '<p class="tcc-suave">Revisá el período.</p>';
       $('fxGraficoImporte').innerHTML = '';
-      pintarSaldo();
       return;
     }
     $('fxPerAviso').textContent = '';
@@ -286,7 +287,6 @@
     if (dias.length === 0) {
       $('fxGrafico').innerHTML = '<p class="tcc-suave">No hay días conciliados en el período.</p>';
       $('fxGraficoImporte').innerHTML = '';
-      pintarSaldo();
       return;
     }
     const solo = $('fxSoloProblemas').checked;
@@ -298,7 +298,6 @@
       grafico($('fxGrafico'), diasGrafico, SERIES_ORDENES, (v) => fmtNum(v), 'Órdenes por fecha');
       grafico($('fxGraficoImporte'), diasGrafico.map((d) => ({ ...d, compraUsd: (d.lados.BUY || {}).importeUsd || 0, ventaUsd: (d.lados.SELL || {}).importeUsd || 0 })), SERIES_IMPORTE, (v) => fmtNum(Math.round(v / 100)), 'Importe operado por fecha en USD');
     }
-    pintarSaldo();
   }
 
   // Saldo de débitos pendientes: los que IBS tiene hoy en débitos pendientes (de
