@@ -9,6 +9,8 @@
 const TIPOS = {
   FALTAN: 'Faltan movimientos en IBS',
   PENDIENTE: 'Débito pendiente',
+  PENDIENTE_CON_SALDO: 'Débito pendiente con saldo',
+  PENDIENTE_SIN_SALDO: 'Débito pendiente sin saldo',
   DUPLICADO: 'Movimiento duplicado',
   IMPORTE: 'Importe distinto',
   SIN_REGISTRO: 'COMPLETED sin registro en IBS',
@@ -23,7 +25,7 @@ const TIPOS = {
 };
 // Rojas (diferencias) y amarillas (pendientes / a revisar); el resto es informativo.
 const ROJAS = [TIPOS.FALTAN, TIPOS.DUPLICADO, TIPOS.IMPORTE, TIPOS.SIN_REGISTRO, TIPOS.OTRO_LADO, TIPOS.FAILED_CON_MOV, TIPOS.REVISION_CON_MOV, TIPOS.SIN_OPERACION, TIPOS.PEND_SIN_OPERACION];
-const AMARILLAS = [TIPOS.PENDIENTE, TIPOS.POR_CONTABILIZAR, TIPOS.REVISION];
+const AMARILLAS = [TIPOS.PENDIENTE, TIPOS.PENDIENTE_CON_SALDO, TIPOS.PENDIENTE_SIN_SALDO, TIPOS.POR_CONTABILIZAR, TIPOS.REVISION];
 
 const pesos = (c) => (c / 100).toLocaleString('es-AR', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 const dinero = (moneda, c) => `${moneda === 'USD' ? 'US$' : '$'} ${pesos(c)}`;
@@ -95,7 +97,7 @@ function conciliar({ movimientos, pendientes, ordenes, config }) {
       const lista = propios.filter((m) => m.movcod === def.cod);
       if (lista.length === 0) {
         const pend = pends.find((p) => p.movcod === def.cod);
-        if (pend) r.pendientesMov.push({ cod: def.cod, moneda: def.moneda, importe: pend.importe, motivo: pend.motivo, fechaOrigen: pend.fechaOrigen, cuecod: pend.cuecod });
+        if (pend) r.pendientesMov.push({ cod: def.cod, moneda: def.moneda, importe: pend.importe, motivo: pend.motivo, fechaOrigen: pend.fechaOrigen, cuecod: pend.cuecod, saldo: pend.saldo || null });
         else r.faltan.push(def.cod);
         continue;
       }
@@ -106,7 +108,9 @@ function conciliar({ movimientos, pendientes, ordenes, config }) {
     }
     const conMovs = propios.some((m) => m.lado === o.side);
     for (const p of r.pendientesMov) {
-      exc(TIPOS.PENDIENTE, { ...base, cuenta: p.cuecod || base.cuenta, moneda: p.moneda, importe: p.importe, detalle: `Falta el ${p.cod} en IBS: está en débitos pendientes desde el ${dmy(p.fechaOrigen) || 'sin fecha'} por ${dinero(p.moneda, p.importe)} (${p.motivo || 'sin motivo'}).` });
+      // Con el saldo de la cuenta consultado: pendiente con saldo (se puede debitar) o sin saldo.
+      const tipoPend = p.saldo ? (p.saldo.conSaldo ? TIPOS.PENDIENTE_CON_SALDO : TIPOS.PENDIENTE_SIN_SALDO) : TIPOS.PENDIENTE;
+      exc(tipoPend, { ...base, cuenta: p.cuecod || base.cuenta, moneda: p.moneda, importe: p.importe, detalle: `Falta el ${p.cod} en IBS: está en débitos pendientes desde el ${dmy(p.fechaOrigen) || 'sin fecha'} por ${dinero(p.moneda, p.importe)} (${p.motivo || 'sin motivo'}).${p.saldo ? ` ${p.saldo.texto}` : ''}` });
     }
     if (!conMovs && r.pendientesMov.length === 0) {
       if ((Number(o.comprobante) || 0) < mayorComprobante || (ultimoDiaIbs && o.fecha < ultimoDiaIbs)) {

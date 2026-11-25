@@ -1,5 +1,7 @@
 'use strict';
 
+const saldosCuentas = require('./saldosCuentas');
+
 // Conciliación de las altas de Plazo Fijo de ApiCore (operaciones_procesadas
 // de un día, ver getAltasDelDia) contra el extracto de movimientos de IBS
 // (sistcod,moncod,cuecod,Fecha_Mov,comnro,movcod,signo,accimp,Importe).
@@ -886,7 +888,16 @@ function conciliarTransferencias(apiRows, ibsLines, opciones) {
     (pendientesPorComprobante.get(comprobante) || []).find(
       (p) => !p.usado && (!cuentaEsperada || cuentaNumero(p.cuecod) === cuentaNumero(cuentaEsperada))
     ) || null;
-  const detallePendiente = (p, moneda) => `IBS tiene un débito pendiente por ${dineroMoneda(moneda, p.cents)} (cuenta ${p.cuecod}, ${p.fechaOrigen || 'sin fecha'}): ${p.motivo || 'sin motivo'}.`;
+  // Saldo disponible (sdodiaope) de la cuenta del débito pendiente: alcanza o no
+  // para hacer el débito. Sin la consulta de saldos (opciones.saldos) no se sabe.
+  const saldos = opciones.saldos || null;
+  const saldoPendiente = (p) => saldosCuentas.evaluarPendiente(saldos, p);
+  const detallePendiente = (p, moneda) => {
+    const sd = saldoPendiente(p);
+    return `IBS tiene un débito pendiente por ${dineroMoneda(moneda, p.cents)} (cuenta ${p.cuecod}, ${p.fechaOrigen || 'sin fecha'}): ${p.motivo || 'sin motivo'}.${sd ? ` ${sd.texto}` : ''}`;
+  };
+  let pendientesConSaldo = 0;
+  let pendientesSinSaldo = 0;
   const hastaEsperado = proximoDiaHabil(hasta, feriados);
   const { grupos, filasOtraFecha, movimientos } = leerIbsTransferencias(ibsLines, desde, hastaEsperado);
   // Débitos imputados después del período (Map comprobante -> grupo, como
@@ -1034,8 +1045,13 @@ function conciliarTransferencias(apiRows, ibsLines, opciones) {
     if (j === 0) {
       if (pendIbs) {
         pendIbs.usado = true;
+        const sd = saldoPendiente(pendIbs);
+        if (sd) {
+          if (sd.conSaldo) pendientesConSaldo++;
+          else pendientesSinSaldo++;
+        }
         errores.push({
-          tipo: 'Débito pendiente en IBS',
+          tipo: sd ? (sd.conSaldo ? 'Débito pendiente con saldo' : 'Débito pendiente sin saldo') : 'Débito pendiente en IBS',
           detalle: `Realizada y ${estadoDescripcion(primero) || 'sin estado'}, pero IBS todavía no la debitó. ${detallePendiente(pendIbs, monedaDe(primero))}` +
             (pendIbs.cents !== toCents(primero.importe) ? ` El importe pendiente no coincide con el de ApiCore (${dinero(toCents(primero.importe))}).` : ''),
         });
@@ -1251,6 +1267,8 @@ function conciliarTransferencias(apiRows, ibsLines, opciones) {
       rechazadasApicore: rechazadas,
       rechazadasRevertidas,
       debitosPendientesIbs: debitosPendientes.filter((p) => p.usado).length,
+      debitosPendientesConSaldo: pendientesConSaldo,
+      debitosPendientesSinSaldo: pendientesSinSaldo,
       debitosPosteriores,
       debitosPendientesLeidos: debitosPendientes.length,
       ...resumenRechazados(rechazados),
