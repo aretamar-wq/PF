@@ -108,7 +108,7 @@ const soloConciliaciones = () => !!(state.currentUser && state.currentUser.soloC
 function aplicarSoloConciliaciones() {
   const solo = soloConciliaciones();
   const ocultar = (el) => { if (el) el.style.display = solo ? 'none' : ''; };
-  ocultar(document.querySelector('main > aside'));
+  ocultar(document.getElementById('flowsGrupo'));
   for (const id of ['outputFilesBtn', 'dashboardBtn']) ocultar(document.getElementById(id).closest('li'));
   for (const id of ['closeConciliacionIbsBtn', 'tccCerrarBtn', 'fxCerrarBtn']) ocultar(document.getElementById(id));
   if (solo) {
@@ -173,6 +173,9 @@ const MAIN_SECTION_IDS = ['flowDetail', 'outputFilesSection', 'dashboardSection'
 function showMainSection(id) {
   // El rol 'conciliador' no tiene la vista de flows: se queda en la conciliación.
   if (id === 'flowDetail' && soloConciliaciones()) return;
+  // Panel izquierdo: marca la conciliación abierta; al salir de flows, desmarca el flow.
+  for (const li of document.querySelectorAll('#conciliacionesList li')) li.classList.toggle('selected', li.dataset.seccion === id);
+  if (id !== 'flowDetail') for (const li of document.querySelectorAll('#flowList li')) li.classList.remove('selected');
   for (const sectionId of MAIN_SECTION_IDS) {
     document.getElementById(sectionId).style.display = sectionId === id ? '' : 'none';
   }
