@@ -1982,6 +1982,12 @@ async function handleRequest(req, res) {
       writeJsonResponse(res, 401, { error: 'Sesión inválida o expirada. Iniciá sesión de nuevo.' });
       return;
     }
+    // Rol 'conciliador': solo las rutas de las conciliaciones (ver securityStore).
+    if (session && !securityStore.testRoleCanAccessApi(session.role, method, pathname)) {
+      securityStore.writeSecurityLog(logsDir, `ACCESO DENEGADO usuario='${session.username}' rol='${session.role}' ${method} ${pathname}`);
+      writeJsonResponse(res, 403, { error: `Tu rol ('${session.role}') solo puede usar las conciliaciones.` });
+      return;
+    }
 
     if (method === 'POST' && pathname === '/api/login') return void (await handleLogin(req, res));
     if (method === 'POST' && pathname === '/api/logout') {
@@ -1996,6 +2002,7 @@ async function handleRequest(req, res) {
         displayName: session.displayName,
         canManageUsers: securityStore.testRoleCanManageUsers(session.role),
         canManageParametria: securityStore.testRoleCanManageParametria(session.role),
+        soloConciliaciones: securityStore.testRoleSoloConciliaciones(session.role),
       });
       return;
     }
