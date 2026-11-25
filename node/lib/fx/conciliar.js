@@ -115,7 +115,7 @@ function conciliar({ movimientos, pendientes, ordenes, config }) {
     if (!conMovs && r.pendientesMov.length === 0) {
       if ((Number(o.comprobante) || 0) < mayorComprobante || (ultimoDiaIbs && o.fecha < ultimoDiaIbs)) {
         r.clase = 'sinRegistro';
-        exc(TIPOS.SIN_REGISTRO, { ...base, detalle: `IBS no tiene ninguno de sus movimientos ni débitos pendientes (orden ${o.side} por ${dinero('ARS', o.ars)} / ${dinero('USD', o.usd)}).` });
+        exc(TIPOS.SIN_REGISTRO, { ...base, detalle: `IBS no tiene ninguno de sus movimientos ni débitos pendientes. Faltan: ${lado.movs.map((m) => `${m.cod} ${m.nombre} ${dinero(m.moneda, esperado(m.moneda))}`).join(', ')}.` });
       } else {
         r.clase = 'porContabilizar';
         exc(TIPOS.POR_CONTABILIZAR, { ...base, detalle: `Faltan sus movimientos en IBS: el comprobante es posterior al mayor de IBS (${mayorComprobante}), todavía puede contabilizarse.` });
@@ -124,7 +124,21 @@ function conciliar({ movimientos, pendientes, ordenes, config }) {
     }
     if (r.faltan.length > 0) {
       r.clase = 'incompleta';
-      exc(TIPOS.FALTAN, { ...base, usuario: (propios[0] || {}).usuario || '', detalle: `Faltan ${r.faltan.map((c) => `${c} (${defMov.get(c).nombre})`).join(', ')}${r.pendientesMov.length ? `; en pendientes: ${r.pendientesMov.map((p) => p.cod).join(', ')}` : ''}.` });
+      // Una excepción por cada movimiento que falta, con su moneda, el importe que
+      // corresponde según la orden y la cuenta (la del cliente, si es de cliente).
+      const presentes = propios.filter((m) => m.lado === o.side).map((m) => m.movcod);
+      for (const cod of r.faltan) {
+        const def = defMov.get(cod);
+        exc(TIPOS.FALTAN, {
+          ...base,
+          cuenta: /cliente/.test(def.nombre) ? base.cuenta : '',
+          moneda: def.moneda,
+          importe: esperado(def.moneda),
+          usuario: (propios[0] || {}).usuario || '',
+          detalle: `Falta el ${cod} (${def.nombre}) por ${dinero(def.moneda, esperado(def.moneda))}. IBS tiene ${[...new Set(presentes)].sort().join(', ') || 'ninguno'}` +
+            `${r.pendientesMov.length ? `; en pendientes: ${r.pendientesMov.map((p) => p.cod).join(', ')}` : ''}.`,
+        });
+      }
     } else if (r.pendientesMov.length > 0) {
       r.clase = 'pendiente';
       r.pendienteArs = r.pendientesMov.filter((p) => p.moneda === 'ARS').reduce((s, p) => s + p.importe, 0);
