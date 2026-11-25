@@ -16,6 +16,7 @@
     const esperado = {};
     for (const m of ladoDef.movs) esperado[m.cod] = { n: 0, importe: 0, nExplicado: 0, importeExplicado: 0 };
     for (const o of ordenes) {
+      if (o.clase === 'ignorada') continue; // ABANDONED sin movimientos: no se tiene en cuenta
       if (o.status === 'FAILED') bs.failed++;
       else if (o.status !== 'COMPLETED') bs.revision++;
       if (o.clase === 'noCompletadaEnIbs') bs.noCompletadasEnIbs++;

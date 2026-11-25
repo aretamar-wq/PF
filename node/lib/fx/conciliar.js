@@ -80,6 +80,11 @@ function conciliar({ movimientos, pendientes, ordenes, config }) {
     const deCliente = propios.find((m) => defMov.has(m.movcod) && /cliente/.test(defMov.get(m.movcod).nombre));
     const base = { comprobante: o.comprobante || o.id, lado: o.side, cuit: o.cuit, cuenta: deCliente ? deCliente.cuecod : '', fecha: o.fecha, estadoBs: o.status, importe: o.ars, moneda: 'ARS' };
     const pends = (pendPorComp.get(o.comprobante) || []);
+    const ignorada = (config.estadosIgnorados || []).includes(o.status);
+    if (ignorada && propios.length === 0) {
+      r.clase = 'ignorada'; // ABANDONED: no se tiene en cuenta
+      return r;
+    }
     if (o.status !== 'COMPLETED') {
       if (propios.length > 0) {
         r.clase = 'noCompletadaEnIbs';
