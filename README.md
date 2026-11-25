@@ -512,6 +512,15 @@ usuario habilitado, su nombre de cuenta de AD y qué **rol** tiene acá adentro.
 | `lectura` | **No** (ve flows y perfiles, pero el botón "Ejecutar flow" queda deshabilitado y el servidor rechaza `/api/run` con 403 igual si se lo llama directo) | No | **No** |
 | `conciliador` | **No** (no ve flows ni perfiles) | No | **No** |
 
+**Perfiles de conexión** (ver y elegir el perfil, crear, editar, eliminar y
+"Probar token"): solo `admin` (`GET`/`POST`/`DELETE /api/profiles` y
+`POST /api/test-token` responden 403 a los demás). El admin marca un perfil como
+**predeterminado** (casilla en el formulario del perfil); `operador` ejecuta los
+flows siempre con ese perfil, sin verlo ni elegirlo — el servidor lo fuerza
+aunque se mande otro nombre. Si no hay ninguno marcado y hay un solo perfil, se
+usa ese. Para bases ya creadas:
+`ALTER TABLE perfiles ADD COLUMN IF NOT EXISTS predeterminado TINYINT(1) NOT NULL DEFAULT 0;`.
+
 El rol `conciliador` solo usa las conciliaciones: **Conciliación con IBS**,
 **Conciliación Loop** y **Conciliación FX** (conciliar, cargar los archivos de
 BankService, exportar excepciones, bajar el PDF y generar el archivo

@@ -93,6 +93,12 @@ async function loadMe() {
   const isReadOnly = state.currentUser.role === 'lectura';
   document.getElementById('readOnlyNotice').style.display = isReadOnly ? '' : 'none';
   aplicarSoloConciliaciones();
+  // Perfiles de conexión (ver, elegir, editar y Probar token): solo admin. Los demás
+  // ejecutan con el perfil predeterminado que fija el servidor.
+  const perfiles = !!state.currentUser.canManageProfiles;
+  for (const el of [document.getElementById('profileSelect'), document.querySelector('label[for="profileSelect"]'), document.querySelector('#mainMenuList .main-menu-group')]) {
+    if (el) el.style.display = perfiles ? '' : 'none';
+  }
 }
 
 // Rol 'conciliador': solo ve las conciliaciones (con IBS, Loop y FX). Se ocultan la
@@ -103,9 +109,6 @@ function aplicarSoloConciliaciones() {
   const solo = soloConciliaciones();
   const ocultar = (el) => { if (el) el.style.display = solo ? 'none' : ''; };
   ocultar(document.querySelector('main > aside'));
-  ocultar(document.getElementById('profileSelect'));
-  ocultar(document.querySelector('label[for="profileSelect"]'));
-  ocultar(document.querySelector('#mainMenuList .main-menu-group'));
   for (const id of ['outputFilesBtn', 'dashboardBtn']) ocultar(document.getElementById(id).closest('li'));
   for (const id of ['closeConciliacionIbsBtn', 'tccCerrarBtn', 'fxCerrarBtn']) ocultar(document.getElementById(id));
   if (solo) {
@@ -127,7 +130,7 @@ async function loadProfiles() {
   for (const p of state.profiles) {
     const opt = document.createElement('option');
     opt.value = p.name;
-    opt.textContent = p.name;
+    opt.textContent = p.predeterminado ? `${p.name} (predeterminado)` : p.name;
     select.appendChild(opt);
   }
 
@@ -2493,6 +2496,7 @@ function openProfileSection(existing) {
     profileForm.elements.tokenUrl.value = existing.tokenUrl || '';
     profileForm.elements.clientId.value = existing.clientId || '';
     profileForm.elements.clientCertPfxPath.value = existing.clientCertPfxPath || '';
+    profileForm.elements.predeterminado.checked = !!existing.predeterminado;
   } else {
     profileForm.elements.name.readOnly = false;
     profileForm.elements.authType.value = 'Bearer';
@@ -2526,6 +2530,7 @@ profileForm.addEventListener('submit', async (event) => {
   formData.forEach((value, key) => {
     payload[key] = value;
   });
+  payload.predeterminado = profileForm.elements.predeterminado.checked;
 
   await apiFetch('/api/profiles', {
     method: 'POST',
@@ -3741,7 +3746,8 @@ async function startApp() {
     document.getElementById('tccBtn').click();
     return;
   }
-  await loadProfiles();
+  if (state.currentUser.canManageProfiles) await loadProfiles();
+  else state.profiles = [];
   await loadFlows();
 }
 
