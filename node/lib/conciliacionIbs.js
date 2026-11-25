@@ -1115,9 +1115,10 @@ function conciliarTransferencias(apiRows, ibsLines, opciones) {
       ok++;
     }
 
-    // Totales: lo que ApiCore espera debitado (sin las pendientes de débito ni
-    // las acreditaciones con error) contra lo que IBS tiene vigente.
-    if (!pendiente) {
+    // Totales: lo que ApiCore espera debitado (sin las pendientes de su día hábil,
+    // las que están en débitos pendientes de IBS, las acreditaciones con error ni
+    // las debitadas y revertidas en IBS, que netean cero) contra lo que IBS tiene vigente.
+    if (!pendiente && !pendIbs && !(j === 0 && hayReversa)) {
       for (const e of g.envios) if (!esError(e)) sumar(totApi, `${monedaDe(e)}|${tipo}`, toCents(e.importe));
     }
     for (const m of vigentes) sumar(totIbs, claveIbs(m), m.cents);
@@ -1126,6 +1127,7 @@ function conciliarTransferencias(apiRows, ibsLines, opciones) {
   // Rechazos del archivo de error que nunca llegaron a dbn_consulta (CBU
   // inválido, error de comunicación): tampoco tendrían que figurar en IBS.
   const archivoPorComp = new Map();
+  const archivoFilas = new Map(); // comprobante -> filas de rechazados del archivo que "figuran"
   for (const r of rechazadosArchivo) {
     const c = String(r.id_comprobante || '').trim();
     const g = c ? apiGrupos.get(c) : null;
@@ -1139,10 +1141,13 @@ function conciliarTransferencias(apiRows, ibsLines, opciones) {
     const detalle = estado === 'figura'
       ? `IBS tiene ${vigentes.length} débito(s) sin revertir por ${dineroMoneda(monedaDe(r), vigentes[0].cents)} (${vigentes[0].fecha}).`
       : estado === 'revertida' ? 'IBS la debitó y la revirtió (neto cero).' : '';
-    rechazados.push(filaRechazada(r, { estado, detalle }));
+    const fila = filaRechazada(r, { estado, detalle });
+    rechazados.push(fila);
     if (estado === 'figura') {
       if (!archivoPorComp.has(c)) archivoPorComp.set(c, []);
       archivoPorComp.get(c).push(r);
+      if (!archivoFilas.has(c)) archivoFilas.set(c, []);
+      archivoFilas.get(c).push(fila);
     }
   }
 
@@ -1166,6 +1171,12 @@ function conciliarTransferencias(apiRows, ibsLines, opciones) {
     const monedaEtiqueta = MONEDA_IBS_ETIQUETA[Number(m.moncod)] || m.moncod;
     if (otras.some((r) => r.realizado === 's')) {
       const r = otras.find((x) => x.realizado === 's');
+      // El rechazo del archivo se volvió a procesar otro día: el débito es de esa
+      // transferencia, el rechazo no "figura" en IBS.
+      for (const f of archivoFilas.get(comprobante) || []) {
+        f.estado = 'reintentada';
+        f.detalle = `Se volvió a procesar el ${String(r.ejecutado_en).slice(0, 10)} y quedó realizada (IBS la debitó el ${m.fecha}).`;
+      }
       explicadas.push({
         numeroComprobante: comprobante,
         fecha: r.ejecutado_en,

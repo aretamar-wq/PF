@@ -3424,9 +3424,24 @@ function renderConciliacionIbs(data) {
   estado.className = 'conciliacion-estado ' + (conDiferencias ? 'error' : 'ok');
   let texto;
   if (esTransferencias) {
-    texto = conDiferencias
-      ? `Hay diferencias: ${r.transferenciasConDiferencias} transferencia(s) con diferencias entre ApiCore e IBS (de ${r.realizadasApicore} realizadas).`
-      : `Concilia: las ${r.realizadasApicore} transferencias realizadas del ${data.fecha} al ${data.hasta} están debitadas en IBS (o pendientes de su día hábil) y no hay débitos de más.`;
+    // Semáforo: el peor indicador. Rojo: diferencias que no son débitos pendientes,
+    // débitos solo en IBS, rechazadas que figuran en IBS o totales que no coinciden.
+    // Amarillo: solo débitos pendientes en IBS. Verde: nada de lo anterior.
+    const esPend = (d) => /pendiente/i.test(d.tipo);
+    const rojas = data.diferencias.filter((d) => !esPend(d));
+    const amarillas = data.diferencias.filter(esPend);
+    const totalesDistintos = (data.totales || []).filter((t) => t.apicore.cantidad !== t.ibs.cantidad || Math.round(t.apicore.importe * 100) !== Math.round(t.ibs.importe * 100));
+    const motivosRojos = [];
+    if (rojas.length) motivosRojos.push(`${new Set(rojas.map((d) => d.numeroComprobante)).size} transferencia(s) con diferencias`);
+    if (r.soloEnIbs) motivosRojos.push(`${r.soloEnIbs} débito(s) solo en IBS`);
+    if (r.rechazadosEnIbs) motivosRojos.push(`${r.rechazadosEnIbs} rechazada(s) que figuran en IBS`);
+    if (totalesDistintos.length) motivosRojos.push(`los totales de ApiCore e IBS no coinciden en ${totalesDistintos.map((t) => t.concepto).join(', ')}`);
+    const motivosAmarillos = [];
+    if (amarillas.length || r.debitosPendientesIbs) motivosAmarillos.push(`${new Set(amarillas.map((d) => d.numeroComprobante)).size || r.debitosPendientesIbs} transferencia(s) con débito pendiente en IBS`);
+    estado.className = 'conciliacion-estado ' + (motivosRojos.length ? 'error' : motivosAmarillos.length ? 'warn' : 'ok');
+    texto = motivosRojos.length || motivosAmarillos.length
+      ? `Hay diferencias: ${[...motivosRojos, ...motivosAmarillos].join('; ')} (de ${r.realizadasApicore} realizadas).`
+      : `Concilia: las ${r.realizadasApicore} transferencias realizadas del ${data.fecha} al ${data.hasta} están debitadas en IBS (o pendientes de su día hábil), no hay débitos de más y los totales coinciden.`;
   } else if (esPagos) {
     texto = conDiferencias
       ? `Hay diferencias: ${r.pagosConDiferencias} pago(s) de ApiCore con diferencias, ${r.pagadosEnIbsNoApicore} pago(s) que IBS tiene y ApiCore no marcó como pagados, y ${r.soloEnIbs} movimiento(s) de IBS sin su plazo fijo en ApiCore.`
