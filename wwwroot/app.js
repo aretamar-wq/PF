@@ -92,6 +92,29 @@ async function loadMe() {
 
   const isReadOnly = state.currentUser.role === 'lectura';
   document.getElementById('readOnlyNotice').style.display = isReadOnly ? '' : 'none';
+  aplicarSoloConciliaciones();
+}
+
+// Rol 'conciliador': solo ve las conciliaciones (con IBS, Loop y FX). Se ocultan la
+// lista de flows, los perfiles y las demás opciones del menú; el servidor igual
+// rechaza con 403 cualquier otra ruta de la API.
+const soloConciliaciones = () => !!(state.currentUser && state.currentUser.soloConciliaciones);
+function aplicarSoloConciliaciones() {
+  const solo = soloConciliaciones();
+  const ocultar = (el) => { if (el) el.style.display = solo ? 'none' : ''; };
+  ocultar(document.querySelector('main > aside'));
+  ocultar(document.getElementById('profileSelect'));
+  ocultar(document.querySelector('label[for="profileSelect"]'));
+  ocultar(document.querySelector('#mainMenuList .main-menu-group'));
+  for (const id of ['outputFilesBtn', 'dashboardBtn']) ocultar(document.getElementById(id).closest('li'));
+  for (const id of ['closeConciliacionIbsBtn', 'tccCerrarBtn', 'fxCerrarBtn']) ocultar(document.getElementById(id));
+  if (solo) {
+    document.getElementById('parametriaBtn').closest('li').style.display = 'none';
+    document.getElementById('usersBtn').closest('li').style.display = 'none';
+  } else {
+    document.getElementById('parametriaBtn').closest('li').style.display = '';
+    document.getElementById('usersBtn').closest('li').style.display = '';
+  }
 }
 
 async function loadProfiles() {
@@ -145,6 +168,8 @@ function isCsvFlow(flow) {
 const MAIN_SECTION_IDS = ['flowDetail', 'outputFilesSection', 'dashboardSection', 'conciliacionIbsSection', 'transfCaCcSection', 'fxSection', 'profileSection', 'parametriaSection', 'usersSection'];
 
 function showMainSection(id) {
+  // El rol 'conciliador' no tiene la vista de flows: se queda en la conciliación.
+  if (id === 'flowDetail' && soloConciliaciones()) return;
   for (const sectionId of MAIN_SECTION_IDS) {
     document.getElementById(sectionId).style.display = sectionId === id ? '' : 'none';
   }
@@ -3494,7 +3519,8 @@ function renderConciliacionIbs(data) {
   // Transferencias "Sin estado de acreditación": botón para consultar el estado de todas.
   const sinEstado = conciliacionIbsSinEstado(data);
   const consultarBtn = document.getElementById('conciliacionIbsConsultarEstadosBtn');
-  consultarBtn.style.display = data.tipo === 'transferencias' && sinEstado.length > 0 ? '' : 'none';
+  // La consulta de estados ejecuta el flow "Consulta DEBIN": no para el rol 'conciliador'.
+  consultarBtn.style.display = data.tipo === 'transferencias' && sinEstado.length > 0 && !soloConciliaciones() ? '' : 'none';
   consultarBtn.disabled = false;
   consultarBtn.textContent = `Consultar estado de ${sinEstado.length} sin estado`;
 }
@@ -3711,6 +3737,10 @@ document.addEventListener('keydown', (event) => {
 async function startApp() {
   await loadMe();
   showAppShell();
+  if (soloConciliaciones()) {
+    document.getElementById('tccBtn').click();
+    return;
+  }
   await loadProfiles();
   await loadFlows();
 }
