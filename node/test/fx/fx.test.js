@@ -167,3 +167,15 @@ test('faltan movimientos: una excepción por movimiento, con moneda, importe y c
   assert.deepStrictEqual(faltan.map((e) => [e.moneda, e.importe, e.cuenta]), [['ARS', 1600000, '5000'], ['USD', 1000, '']]);
   assert.match(faltan[0].detalle, /^Falta el 25003 \(Débito pesos cliente\) por \$ 16\.000,00\. IBS tiene 25001, 25002, 25004, 25005\./);
 });
+
+test('faltan movimientos: no incluye ni menciona los que están en débitos pendientes', () => {
+  const r = conciliar({
+    movimientos: movsDe('12', 'BUY', 1600000, 1000, { menos: ['25003', '25006'] }),
+    pendientes: [{ moncod: '0', cuecod: '5000', comprobante: '12', movcod: '25003', importe: 1600000, fechaOrigen: '2026-11-04', motivo: 'x' }],
+    ordenes: [o('12')],
+    config,
+  });
+  const faltan = r.excepciones.filter((e) => e.tipo === TIPOS.FALTAN);
+  assert.deepStrictEqual(faltan.map((e) => e.detalle), ['Falta el 25006 (Puente USD) por US$ 10,00. IBS tiene 25001, 25002, 25004, 25005.']);
+  assert.ok(r.excepciones.some((e) => e.tipo === TIPOS.PENDIENTE));
+});
