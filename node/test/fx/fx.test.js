@@ -148,3 +148,15 @@ test('movimiento manual: solo si el comprobante no está en BankService', () => 
   const ind = calculo.indicadores({ ...r, lados: config.lados }, '2026-11-04', config.lados[0]);
   assert.strictEqual(ind.manuales, 6);
 });
+
+test('órdenes con débito pendiente: cantidad por moneda', () => {
+  const pend = (comp, cod, importe) => ({ moncod: cod === '25005' ? '2' : '0', cuecod: '5000', comprobante: comp, movcod: cod, importe, fechaOrigen: '2026-11-04', motivo: 'x' });
+  const r = conciliar({
+    movimientos: [...movsDe('11', 'BUY', 1600000, 1000, { menos: ['25003'] }), ...movsDe('12', 'BUY', 1600000, 1000, { menos: ['25005'] }), ...movsDe('13', 'BUY', 1600000, 1000, { menos: ['25003'] })],
+    pendientes: [pend('11', '25003', 1600000), pend('12', '25005', 1000), pend('13', '25003', 1600000)],
+    ordenes: [o('11'), o('12'), o('13')],
+    config,
+  });
+  const ind = calculo.indicadores({ ...r, lados: config.lados }, '2026-11-04', config.lados[0]);
+  assert.deepStrictEqual([ind.bs.pendientes, ind.bs.pendArsN, ind.bs.pendUsdN, ind.bs.pendArs, ind.bs.pendUsd], [3, 2, 1, 3200000, 1000]);
+});
