@@ -64,3 +64,12 @@ test('Loop y FX: el tipo del pendiente según el saldo', () => {
   });
   assert.ok(fx.excepciones.some((e) => e.tipo === TF.PENDIENTE_CON_SALDO), JSON.stringify(fx.excepciones.map((e) => e.tipo)));
 });
+
+test('consultarSaldos: una sola consulta para todas las cuentas', async () => {
+  const consultas = [];
+  const pendientes = Array.from({ length: 450 }, (_, i) => ({ cuecod: String(1000 + (i % 400)) }));
+  await sc.consultarSaldos(async (q) => { consultas.push(q); return []; }, pendientes);
+  assert.strictEqual(consultas.length, 1);
+  assert.strictEqual((consultas[0].match(/c\.cuecod in \(([^)]*)\)/)[1].split(',')).length, 400);
+  assert.strictEqual((await sc.consultarSaldos(async () => { throw new Error('no'); }, [])).size, 0);
+});
