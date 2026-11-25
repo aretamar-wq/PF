@@ -179,3 +179,15 @@ test('faltan movimientos: no incluye ni menciona los que están en débitos pend
   assert.deepStrictEqual(faltan.map((e) => e.detalle), ['Falta el 25006 (Puente USD) por US$ 10,00. IBS tiene 25001, 25002, 25004, 25005.']);
   assert.ok(r.excepciones.some((e) => e.tipo === TIPOS.PENDIENTE));
 });
+
+test('órdenes ABANDONED: no se tienen en cuenta (salvo que IBS tenga movimientos)', () => {
+  const r = conciliar({ movimientos: movsDe('10', 'BUY', 1600000, 1000), pendientes: [], ordenes: [o('10'), o('', { id: 'fxo_ab', status: 'ABANDONED' }), o('31', { status: 'ABANDONED' })], config });
+  assert.deepStrictEqual(r.excepciones, []);
+  const ind = calculo.indicadores({ ...r, lados: config.lados }, '2026-11-04', config.lados[0]);
+  assert.deepStrictEqual([ind.bs.completadas, ind.bs.revision, ind.bs.failed], [1, 0, 0]);
+  assert.strictEqual(calculo.semaforo(ind, config.lados[0]).color, 'verde');
+  // Con movimientos en IBS de su comprobante sí se informa.
+  const r2 = conciliar({ movimientos: movsDe('31', 'BUY', 1600000, 1000), pendientes: [], ordenes: [o('31', { status: 'ABANDONED' })], config });
+  assert.deepStrictEqual(r2.excepciones.map((e) => e.tipo), [TIPOS.REVISION_CON_MOV]);
+  assert.match(r2.excepciones[0].detalle, /ABANDONED/);
+});
