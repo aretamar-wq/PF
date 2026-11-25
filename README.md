@@ -1787,6 +1787,14 @@ indicador: rojo si hay diferencias (salvo débitos pendientes), débitos solo en
 IBS, rechazadas que figuran en IBS o totales que no coinciden; amarillo si solo
 hay débitos pendientes en IBS.
 
+**Débitos pendientes con o sin saldo.** En las tres conciliaciones con débitos
+pendientes (transferencias con IBS, Loop y FX), para cada pendiente se consulta en
+Sybase el saldo disponible de la cuenta del día de proceso (`sdodiaope` de
+`tgl_saldodia_oper`, `node/lib/saldosCuentas.js`): si alcanza para el importe
+pendiente queda como **"Débito pendiente con saldo"**; si no alcanza o la cuenta
+no tiene saldo del día, **"Débito pendiente sin saldo"**. Se compara cada
+pendiente por separado. Si la consulta falla se avisa y queda "Débito pendiente".
+
 ### Prevención de operaciones duplicadas
 
 Antes de procesar ninguna fila de un CSV, la UI manda al servidor las

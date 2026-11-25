@@ -4,6 +4,7 @@
 // dos consultas de IBS, lee BankService de la base (nunca del archivo), guarda la
 // foto diaria de los pendientes y arma lo que consume el dashboard.
 
+const saldosCuentas = require('../saldosCuentas');
 const config = require('./config');
 const ibs = require('./ibs');
 const bankservice = require('./bankservice');
@@ -89,6 +90,18 @@ function aDiaHabil(operaciones, feriados = new Set()) {
   });
 }
 
+// Saldo disponible de las cuentas con débitos pendientes: a cada pendiente se le
+// agrega saldo = { conSaldo, sdodiaope, texto } (pendiente con o sin saldo).
+async function agregarSaldos(querySybase, pendientes, avisos) {
+  if (!pendientes.length) return;
+  try {
+    const saldos = await saldosCuentas.consultarSaldos(querySybase, pendientes);
+    for (const p of pendientes) p.saldo = saldosCuentas.evaluarPendiente(saldos, { ...p, cents: p.importe });
+  } catch (err) {
+    avisos.push(`No se pudo consultar el saldo de las cuentas con débitos pendientes: ${err.message}`);
+  }
+}
+
 async function obtenerDatos({ rootDir, querySybase, desde, hasta, ahora, feriados }) {
   const avisos = [];
   const movFilas = await querySybase(ibs.consultaMovimientos(desde, hasta, config));
@@ -96,6 +109,7 @@ async function obtenerDatos({ rootDir, querySybase, desde, hasta, ahora, feriado
   const mov = ibs.normalizarMovimientos(movFilas, config);
   const pend = ibs.normalizarPendientes(pendFilas, config);
   avisos.push(...mov.avisos, ...pend.avisos);
+  await agregarSaldos(querySybase, pend.pendientes, avisos);
   try {
     await guardarFotoPendientes(rootDir, pend.pendientes, ahora);
   } catch (err) {
@@ -276,4 +290,4 @@ async function historia(rootDir, desde, hasta) {
   }));
 }
 
-module.exports = { aDiaHabil, resumenPorDia, guardarDias, historia, obtenerDatos, cargarBankService, historialCargas, detalleCarga, ultimaCarga, sumarDias, config };
+module.exports = { agregarSaldos, aDiaHabil, resumenPorDia, guardarDias, historia, obtenerDatos, cargarBankService, historialCargas, detalleCarga, ultimaCarga, sumarDias, config };

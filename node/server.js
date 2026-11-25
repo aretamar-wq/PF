@@ -25,6 +25,7 @@ const securityStore = require('./lib/securityStore');
 const processedOperationsStore = require('./lib/processedOperationsStore');
 const debinOutputStore = require('./lib/debinOutputStore');
 const conciliacionIbs = require('./lib/conciliacionIbs');
+const saldosCuentas = require('./lib/saldosCuentas');
 const sybaseClient = require('./lib/sybaseClient');
 const crypto = require('crypto');
 const transfCaCc = require('./lib/transfCaCc/servicio');
@@ -1545,6 +1546,15 @@ async function handleConciliacionTransferencias(res, session, payload, desde, co
       avisosPendientes.push(`No se pudieron consultar los débitos pendientes de IBS (${err.message}): una transferencia realizada sin débito puede estar pendiente.`);
     }
   }
+  // Saldo disponible de las cuentas con débitos pendientes: pendiente con o sin saldo.
+  let saldosPendientes = null;
+  if (debitosPendientes.length > 0) {
+    try {
+      saldosPendientes = await saldosCuentas.consultarSaldos((q) => sybaseClient.querySybase(parametria.sybase, q), debitosPendientes);
+    } catch (err) {
+      avisosPendientes.push(`No se pudo consultar el saldo de las cuentas con débitos pendientes (${err.message}): no se sabe si tienen saldo.`);
+    }
+  }
 
   const apiRows = await debinOutputStore.getConsultaRowsEntre(rootDir, desde, hasta);
 
@@ -1585,6 +1595,7 @@ async function handleConciliacionTransferencias(res, session, payload, desde, co
       otrasFechas,
       rechazadosArchivo: readTransferenciasRechazadasArchivo(desde, hasta, apiRows),
       debitosPendientes,
+      saldos: saldosPendientes,
       movimientosPosteriores,
       avisos: avisosPendientes,
     });

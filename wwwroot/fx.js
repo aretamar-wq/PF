@@ -337,13 +337,14 @@
     const filas = (d.pendientes || []).filter((p) => !lado || p.lado === lado)
       .sort((a, b) => String(a.fechaOrigen).localeCompare(String(b.fechaOrigen)) || (Number(a.comprobante) || 0) - (Number(b.comprobante) || 0));
     return `<h4>Detalle de los débitos pendientes (${fmtNum(filas.length)})</h4>` +
-      `<table><thead><tr><th>Fecha origen</th><th class="num">Comprobante</th><th>Operación</th><th>Movimiento</th><th class="num">Cuenta</th><th>Moneda</th><th class="num">Importe</th><th>Fecha orden BS</th><th>Estado BankService</th><th>CUIT</th><th>Motivo</th></tr></thead><tbody>` +
+      `<table><thead><tr><th>Fecha origen</th><th class="num">Comprobante</th><th>Operación</th><th>Movimiento</th><th class="num">Cuenta</th><th>Moneda</th><th class="num">Importe</th><th>Fecha orden BS</th><th>Estado BankService</th><th>CUIT</th><th>Saldo de la cuenta</th><th>Motivo</th></tr></thead><tbody>` +
       filas.map((p) => {
         const o = ordenDe.get(p.comprobante);
         const moneda = String(p.moncod) === '2' ? 'USD' : 'ARS';
         return `<tr class="${o && o.fecha === estado.dia ? 'resaltado' : ''}"><td>${esc(dmy(p.fechaOrigen) || '—')}</td><td class="num">${esc(p.comprobante)}</td><td>${esc(NOMBRE_LADO[p.lado] || '—')}</td>
         <td>${esc(p.movcod)} ${esc(nombreMov.get(p.movcod) || '')}</td><td class="num">${esc(p.cuecod)}</td><td>${moneda}</td><td class="num">${esc(dinero(moneda, p.importe))}</td>
-        <td>${o ? esc(dmy(o.fecha)) : '—'}</td><td>${o ? esc(o.status) : 'Sin orden'}</td><td class="mono">${o ? esc(o.cuit || '—') : '—'}</td><td class="detalle">${esc(p.motivo || '—')}</td></tr>`;
+        <td>${o ? esc(dmy(o.fecha)) : '—'}</td><td>${o ? esc(o.status) : 'Sin orden'}</td><td class="mono">${o ? esc(o.cuit || '—') : '—'}</td>
+        <td>${p.saldo ? `${p.saldo.conSaldo ? 'Con saldo' : 'Sin saldo'}${p.saldo.sdodiaope != null ? ` (${esc(dinero(moneda, p.saldo.sdodiaope))})` : ''}` : '—'}</td><td class="detalle">${esc(p.motivo || '—')}</td></tr>`;
       }).join('') + '</tbody></table>';
   }
 

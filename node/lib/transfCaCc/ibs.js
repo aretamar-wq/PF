@@ -110,6 +110,7 @@ function normalizarPendientes(filas, config) {
     const importe = centavos(txt(f.importedeb).replace(',', '.'));
     if (importe == null || !entero(f.comnro)) continue;
     pendientes.push({
+      sistcod: entero(f.sistcod),
       moncod: entero(f.moncod),
       cuecod: entero(f.cuecod),
       comprobante: entero(f.comnro),
