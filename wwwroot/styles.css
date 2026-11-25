@@ -274,7 +274,7 @@ fieldset legend { color: var(--navy); font-weight: 600; padding: 0 6px; }
 /* Ningún panel del menú (perfil, parametría, usuarios, archivos de salida)
    es un <dialog> flotante: todos ocupan el mismo lugar que flowDetail dentro
    de <main> (ver showMainSection en app.js) — mismo criterio de layout. */
-#outputFilesSection, #dashboardSection, #conciliacionIbsSection, #profileSection, #parametriaSection, #usersSection { flex: 1; min-width: 0; }
+#outputFilesSection, #dashboardSection, #conciliacionIbsSection, #transfCaCcSection, #fxSection, #informePendientesSection, #profileSection, #parametriaSection, #usersSection { flex: 1; min-width: 0; }
 .section-head {
   display: flex;
   justify-content: space-between;

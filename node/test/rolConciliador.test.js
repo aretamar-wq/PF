@@ -17,11 +17,11 @@ test("rol 'conciliador': solo las rutas de las conciliaciones", () => {
   const puede = (m, p) => sec.testRoleCanAccessApi('conciliador', m, p);
   for (const [m, p] of [['GET', '/api/me'], ['POST', '/api/logout'], ['POST', '/api/conciliacion/ibs'], ['GET', '/api/dbn-consulta-dia'],
     ['POST', '/api/transf-ca-cc/bankservice'], ['GET', '/api/transf-ca-cc/datos'], ['GET', '/api/transf-ca-cc/reporte'],
-    ['POST', '/api/fx/bankservice'], ['GET', '/api/fx/datos'], ['GET', '/api/fx/historia'], ['GET', '/api/fx/reporte'], ['GET', '/api/fx/cargas']]) {
+    ['POST', '/api/fx/bankservice'], ['GET', '/api/fx/datos'], ['GET', '/api/fx/historia'], ['GET', '/api/fx/reporte'], ['GET', '/api/fx/cargas'], ['GET', '/api/informe-pendientes']]) {
     assert.ok(puede(m, p), `${m} ${p}`);
   }
   for (const [m, p] of [['POST', '/api/run'], ['GET', '/api/flows'], ['GET', '/api/profiles'], ['POST', '/api/profiles'], ['GET', '/api/parametria'],
-    ['GET', '/api/users'], ['GET', '/api/output-files'], ['GET', '/api/dashboard'], ['POST', '/api/dbn-consulta-estado'], ['GET', '/api/fx/bankservice']]) {
+    ['GET', '/api/users'], ['GET', '/api/output-files'], ['GET', '/api/dashboard'], ['POST', '/api/dbn-consulta-estado'], ['GET', '/api/fx/bankservice'], ['POST', '/api/informe-pendientes/movimientos'], ['GET', '/api/informe-pendientes/movimientos']]) {
     assert.ok(!puede(m, p), `${m} ${p}`);
   }
   assert.ok(!sec.testRoleCanRunFlow('conciliador'));

@@ -26,6 +26,7 @@ const processedOperationsStore = require('./lib/processedOperationsStore');
 const debinOutputStore = require('./lib/debinOutputStore');
 const conciliacionIbs = require('./lib/conciliacionIbs');
 const saldosCuentas = require('./lib/saldosCuentas');
+const informePendientes = require('./lib/informePendientes');
 const sybaseClient = require('./lib/sybaseClient');
 const crypto = require('crypto');
 const transfCaCc = require('./lib/transfCaCc/servicio');
@@ -1407,6 +1408,55 @@ async function handleFxDatosGet(parsedUrl, res, session) {
   }
 }
 
+// --- Informe de movimientos pendientes --------------------------------------------
+
+// GET /api/informe-pendientes: débitos pendientes de IBS de los códigos de
+// movimiento de Parametría, con el documento del cliente y si la cuenta tiene saldo.
+async function handleInformePendientesGet(res, session) {
+  let movimientos;
+  try {
+    movimientos = await informePendientes.getMovimientos(rootDir);
+  } catch (err) {
+    writeJsonResponse(res, 500, { error: `No se pudieron leer los códigos de movimiento (¿se creó la tabla informe_pendientes_movimientos?): ${err.message}` });
+    return;
+  }
+  const parametria = await parametriaStore.getParametria(rootDir);
+  try {
+    const datos = await informePendientes.generar({
+      rootDir,
+      querySybase: (sql) => sybaseClient.querySybase(parametria.sybase, sql),
+      ahora: formatLocal(new Date()),
+      movimientos,
+    });
+    const r = datos.resumen;
+    securityStore.writeSecurityLog(logsDir, `INFORME PENDIENTES por '${session.username}': ${r.total.n} pendientes (${r.conSaldo.n} con saldo, ${r.sinSaldo.n} sin saldo)`);
+    writeJsonResponse(res, 200, datos);
+  } catch (err) {
+    writeJsonResponse(res, 502, { error: `No se pudo generar el informe: ${err.message}` });
+  }
+}
+
+// GET / POST /api/informe-pendientes/movimientos: códigos de movimiento del informe
+// (Parametría, solo admin). POST { movimientos: [{ movcod, descripcion }] } reemplaza la lista.
+async function handleInformePendientesMovimientos(req, res, session, method) {
+  if (!securityStore.testRoleCanManageParametria(session.role)) {
+    writeJsonResponse(res, 403, { error: 'No tenés permiso para editar la parametría.' });
+    return;
+  }
+  try {
+    if (method === 'GET') {
+      writeJsonResponse(res, 200, { movimientos: await informePendientes.getMovimientos(rootDir) });
+      return;
+    }
+    const payload = await readJsonBody(req);
+    const movimientos = await informePendientes.saveMovimientos(rootDir, payload.movimientos, session.username, formatLocal(new Date()));
+    securityStore.writeSecurityLog(logsDir, `PARAMETRIA informe de pendientes modificada por '${session.username}': ${movimientos.map((m) => m.movcod).join(', ')}`);
+    writeJsonResponse(res, 200, { movimientos });
+  } catch (err) {
+    writeJsonResponse(res, /inválido|repetido|Formato/.test(err.message) ? 400 : 500, { error: err.message });
+  }
+}
+
 // POST /api/conciliacion/ibs { fecha: yyyy-MM-dd, tipo?: 'altas' | 'pagos',
 // contenido?: <CSV del extracto de IBS> } — cruza las altas (o los pagos) de
 // Plazo Fijo de ese día contra los movimientos de IBS (ver conciliacionIbs.js)
@@ -2090,6 +2140,8 @@ async function handleRequest(req, res) {
     if (method === 'GET' && pathname === '/api/fx/reporte') return void (await handleFxReporteGet(parsedUrl, res, session));
     if (method === 'GET' && pathname === '/api/fx/historia') return void (await handleFxHistoriaGet(parsedUrl, res));
     if (method === 'GET' && pathname === '/api/fx/datos') return void (await handleFxDatosGet(parsedUrl, res, session));
+    if (method === 'GET' && pathname === '/api/informe-pendientes') return void (await handleInformePendientesGet(res, session));
+    if ((method === 'GET' || method === 'POST') && pathname === '/api/informe-pendientes/movimientos') return void (await handleInformePendientesMovimientos(req, res, session, method));
     if (method === 'GET' && pathname === '/api/http-logs/content') return void handleHttpLogContentGet(parsedUrl, res, session);
     if (method === 'GET' && pathname === '/api/certs-browse') return void handleCertsBrowseGet(parsedUrl, res, session);
     if (method === 'POST' && pathname === '/api/check-operations') return void (await handleCheckOperations(req, res, session));

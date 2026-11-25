@@ -520,3 +520,20 @@ CREATE TABLE IF NOT EXISTS fx_dias (
   generado_por VARCHAR(255) NOT NULL DEFAULT '',
   PRIMARY KEY (fecha, lado)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- --- Informe de movimientos pendientes ------------------------------------------
+-- Códigos de movimiento (movcod) de los débitos pendientes de IBS que muestra el
+-- informe, con una descripción. Se administran desde Parametría (solo admin).
+CREATE TABLE IF NOT EXISTS informe_pendientes_movimientos (
+  movcod VARCHAR(10) NOT NULL,
+  descripcion VARCHAR(255) NOT NULL DEFAULT '',
+  actualizado_por VARCHAR(255) NOT NULL DEFAULT '',
+  actualizado_en DATETIME NULL,
+  PRIMARY KEY (movcod)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+INSERT IGNORE INTO informe_pendientes_movimientos (movcod, descripcion) VALUES
+  ('25030', 'Transferencias CA -> CC (débito)'),
+  ('25031', 'Transferencias CA -> CC (crédito)'),
+  ('25032', 'Pago de Servicios (débito)'),
+  ('25033', 'Pago de Servicios (crédito)');
