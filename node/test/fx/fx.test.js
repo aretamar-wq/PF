@@ -160,3 +160,10 @@ test('órdenes con débito pendiente: cantidad por moneda', () => {
   const ind = calculo.indicadores({ ...r, lados: config.lados }, '2026-11-04', config.lados[0]);
   assert.deepStrictEqual([ind.bs.pendientes, ind.bs.pendArsN, ind.bs.pendUsdN, ind.bs.pendArs, ind.bs.pendUsd], [3, 2, 1, 3200000, 1000]);
 });
+
+test('faltan movimientos: una excepción por movimiento, con moneda, importe y cuenta', () => {
+  const r = conciliar({ movimientos: movsDe('12', 'BUY', 1600000, 1000, { menos: ['25003', '25006'] }), pendientes: [], ordenes: [o('12')], config });
+  const faltan = r.excepciones.filter((e) => e.tipo === TIPOS.FALTAN);
+  assert.deepStrictEqual(faltan.map((e) => [e.moneda, e.importe, e.cuenta]), [['ARS', 1600000, '5000'], ['USD', 1000, '']]);
+  assert.match(faltan[0].detalle, /^Falta el 25003 \(Débito pesos cliente\) por \$ 16\.000,00\. IBS tiene 25001, 25002, 25004, 25005\./);
+});
