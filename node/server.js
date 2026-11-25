@@ -133,6 +133,7 @@ function getMaskedProfile(profileObj) {
     tokenUrl: profileObj.tokenUrl,
     clientId: profileObj.clientId,
     hasClientSecret: !!profileObj.clientSecret,
+    predeterminado: !!profileObj.predeterminado,
     // TLS mutuo (ver "Transferencia DEBIN" / Nova-Link en el README): ruta al
     // .pfx en el disco del servidor, no un secreto en sí — se muestra
     // completa. La contraseña del .pfx sí se enmascara, mismo criterio que
@@ -286,7 +287,22 @@ async function handleSecurityConfigPost(req, res, session) {
   writeJsonResponse(res, 200, { ok: true });
 }
 
-async function handleProfilesPost(req, res) {
+// Perfiles y "Probar token": solo admin (los demás roles usan el perfil predeterminado).
+function rechazarSinPermisoPerfiles(res, session, accion) {
+  if (securityStore.testRoleCanManageProfiles(session.role)) return false;
+  securityStore.writeSecurityLog(logsDir, `PERFILES DENEGADO usuario='${session.username}' rol='${session.role}' (${accion})`);
+  writeJsonResponse(res, 403, { error: 'Solo el administrador puede ver o modificar los perfiles de conexión.' });
+  return true;
+}
+
+// Perfil con el que ejecutan los flows los roles que no son admin: el marcado como
+// predeterminado o, si hay uno solo, ese.
+function perfilPredeterminado(profiles) {
+  return profiles.find((p) => p.predeterminado) || (profiles.length === 1 ? profiles[0] : null);
+}
+
+async function handleProfilesPost(req, res, session) {
+  if (rechazarSinPermisoPerfiles(res, session, 'guardar perfil')) return;
   const incoming = await readJsonBody(req);
   const profiles = await profileStore.getProfiles(rootDir);
   const existingIndex = profiles.findIndex((p) => p.name === incoming.name);
@@ -303,7 +319,10 @@ async function handleProfilesPost(req, res) {
     clientSecret: incoming.clientSecret,
     clientCertPfxPath: incoming.clientCertPfxPath,
     clientCertPassphrase: incoming.clientCertPassphrase,
+    predeterminado: incoming.predeterminado === true || incoming.predeterminado === 'true' || incoming.predeterminado === 'on',
   };
+  // Un solo perfil predeterminado.
+  if (updated.predeterminado) for (const p of profiles) p.predeterminado = false;
 
   if (existingIndex >= 0) {
     // Si el form no mandó un secreto nuevo, conservar el que ya había guardado.
@@ -319,7 +338,8 @@ async function handleProfilesPost(req, res) {
   writeJsonResponse(res, 200, { ok: true });
 }
 
-async function handleProfilesDelete(parsedUrl, res) {
+async function handleProfilesDelete(parsedUrl, res, session) {
+  if (rechazarSinPermisoPerfiles(res, session, 'eliminar perfil')) return;
   const name = parsedUrl.searchParams.get('name') || '';
   const profiles = (await profileStore.getProfiles(rootDir)).filter((p) => p.name !== name);
   await profileStore.saveProfiles(rootDir, profiles);
@@ -349,13 +369,18 @@ async function handleRun(req, res, session) {
   const payload = await readJsonBody(req);
 
   const profiles = await profileStore.getProfiles(rootDir);
-  const selectedProfile = profiles.find((p) => p.name === payload.profileName) || null;
+  // El admin elige el perfil; los demás roles ejecutan siempre con el predeterminado
+  // (aunque manden otro nombre).
+  const eligePerfil = securityStore.testRoleCanManageProfiles(session.role);
+  const selectedProfile = eligePerfil ? profiles.find((p) => p.name === payload.profileName) || null : perfilPredeterminado(profiles);
 
   const flows = flowStore.getFlows(flowsDir);
   const selectedFlow = flows.find((f) => f.name === payload.flowName) || null;
 
   if (!selectedProfile) {
-    writeJsonResponse(res, 400, { error: `Perfil '${payload.profileName}' no encontrado.` });
+    writeJsonResponse(res, 400, {
+      error: eligePerfil ? `Perfil '${payload.profileName}' no encontrado.` : 'No hay un perfil de conexión predeterminado: pedile al administrador que marque uno.',
+    });
     return;
   }
   if (!selectedFlow) {
@@ -1929,7 +1954,8 @@ async function handleTestSybase(req, res, session) {
   writeJsonResponse(res, 200, result);
 }
 
-async function handleTestToken(req, res) {
+async function handleTestToken(req, res, session) {
+  if (rechazarSinPermisoPerfiles(res, session, 'probar token')) return;
   const payload = await readJsonBody(req);
   const profiles = await profileStore.getProfiles(rootDir);
   const selectedProfile = profiles.find((p) => p.name === payload.profileName) || null;
@@ -2003,6 +2029,7 @@ async function handleRequest(req, res) {
         canManageUsers: securityStore.testRoleCanManageUsers(session.role),
         canManageParametria: securityStore.testRoleCanManageParametria(session.role),
         soloConciliaciones: securityStore.testRoleSoloConciliaciones(session.role),
+        canManageProfiles: securityStore.testRoleCanManageProfiles(session.role),
       });
       return;
     }
@@ -2026,11 +2053,12 @@ async function handleRequest(req, res) {
     }
     if (method === 'POST' && pathname === '/api/security-config') return void (await handleSecurityConfigPost(req, res, session));
     if (method === 'GET' && pathname === '/api/profiles') {
+      if (rechazarSinPermisoPerfiles(res, session, 'ver perfiles')) return;
       writeJsonResponse(res, 200, (await profileStore.getProfiles(rootDir)).map(getMaskedProfile));
       return;
     }
-    if (method === 'POST' && pathname === '/api/profiles') return void (await handleProfilesPost(req, res));
-    if (method === 'DELETE' && pathname === '/api/profiles') return void (await handleProfilesDelete(parsedUrl, res));
+    if (method === 'POST' && pathname === '/api/profiles') return void (await handleProfilesPost(req, res, session));
+    if (method === 'DELETE' && pathname === '/api/profiles') return void (await handleProfilesDelete(parsedUrl, res, session));
     if (method === 'GET' && pathname === '/api/flows') return void handleFlowsGet(res);
     if (method === 'POST' && pathname === '/api/run') return void (await handleRun(req, res, session));
     if (method === 'POST' && pathname === '/api/save-output') return void (await handleSaveOutput(req, res, session));
@@ -2064,7 +2092,7 @@ async function handleRequest(req, res) {
     if (method === 'GET' && pathname === '/api/parametria') return void (await handleParametriaGet(res, session));
     if (method === 'POST' && pathname === '/api/parametria') return void (await handleParametriaPost(req, res, session));
     if (method === 'POST' && pathname === '/api/test-sybase') return void (await handleTestSybase(req, res, session));
-    if (method === 'POST' && pathname === '/api/test-token') return void (await handleTestToken(req, res));
+    if (method === 'POST' && pathname === '/api/test-token') return void (await handleTestToken(req, res, session));
 
     if (method === 'GET') {
       serveStatic(pathname, res);

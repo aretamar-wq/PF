@@ -186,6 +186,10 @@ CREATE TABLE IF NOT EXISTS perfiles (
   UNIQUE KEY uk_perfiles_name (name)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
+-- Perfil predeterminado: con el que ejecutan los flows los roles que no son admin
+-- (solo el admin ve y elige perfiles). Uno solo marcado; lo marca el admin.
+ALTER TABLE perfiles ADD COLUMN IF NOT EXISTS predeterminado TINYINT(1) NOT NULL DEFAULT 0;
+
 -- Registro de operaciones (cuit + numeroComprobante) ya ejecutadas, para
 -- bloquear un reintento antes de llamar a ningún endpoint del banco. La
 -- UNIQUE KEY (cuit, numero_comprobante) hace de índice de deduplicación
