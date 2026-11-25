@@ -50,14 +50,13 @@ function leerSaldosCuentas(rows) {
   return saldos;
 }
 
-// Consulta los saldos de las cuentas de los pendientes ({ cuecod }), en lotes.
+// Consulta los saldos de las cuentas de todos los pendientes ({ cuecod }) en UNA
+// sola consulta (c.cuecod in (...) con todas las cuentas, sin repetir), no una
+// por comprobante.
 async function consultarSaldos(querySybase, pendientes) {
   const cuentas = [...new Set((pendientes || []).map((p) => String(p.cuecod || '').trim()).filter((c) => /^\d+$/.test(c)))];
-  const saldos = new Map();
-  for (let i = 0; i < cuentas.length; i += 300) {
-    for (const [k, v] of leerSaldosCuentas(await querySybase(buildSaldosCuentasQuery(cuentas.slice(i, i + 300))))) saldos.set(k, v);
-  }
-  return saldos;
+  if (cuentas.length === 0) return new Map();
+  return leerSaldosCuentas(await querySybase(buildSaldosCuentasQuery(cuentas)));
 }
 
 // ¿Alcanza el saldo para el débito pendiente? { sistcod, moncod, cuecod, cents }.
