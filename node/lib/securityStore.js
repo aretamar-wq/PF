@@ -144,6 +144,7 @@ const RUTAS_CONCILIADOR = [
   'GET /api/fx/datos',
   'GET /api/fx/historia',
   'GET /api/fx/reporte',
+  'GET /api/informe-pendientes',
 ];
 
 function testRoleSoloConciliaciones(role) {
