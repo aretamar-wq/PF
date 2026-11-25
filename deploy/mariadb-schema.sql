@@ -17,9 +17,9 @@ CREATE TABLE IF NOT EXISTS rol (
   UNIQUE KEY uk_rol_nombre (nombre)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
--- Los 3 roles válidos de la app (ver VALID_ROLES en securityStore.js) — fila
--- fija, no se administran desde la UI.
-INSERT INTO rol (nombre) VALUES ('admin'), ('operador'), ('lectura')
+-- Los roles válidos de la app (ver VALID_ROLES en securityStore.js) — fila
+-- fija, no se administran desde la UI. 'conciliador' solo usa las conciliaciones.
+INSERT INTO rol (nombre) VALUES ('admin'), ('operador'), ('lectura'), ('conciliador')
   ON DUPLICATE KEY UPDATE nombre = VALUES(nombre);
 
 CREATE TABLE IF NOT EXISTS usuarios (

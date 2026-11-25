@@ -28,7 +28,7 @@ const { Client: LdapClient } = require('ldapts');
 const { formatLocal } = require('./dateUtil');
 const db = require('./mariadbClient');
 
-const VALID_ROLES = ['admin', 'operador', 'lectura'];
+const VALID_ROLES = ['admin', 'operador', 'lectura', 'conciliador'];
 
 // --- Configuración de Active Directory ----------------------------------------
 
@@ -115,6 +115,39 @@ function testRoleCanRunFlow(role) {
   // 'lectura' es solo consulta: puede ver flows/perfiles/logs pero no ejecutar
   // nada. admin/operador pueden correr cualquier flow.
   return role === 'admin' || role === 'operador';
+}
+
+// 'conciliador' solo puede usar las conciliaciones (con IBS, Loop y FX): no ve
+// flows ni perfiles, no ejecuta flows y no entra a Parametría, Usuarios, Archivos
+// de salida ni Dashboard. El servidor rechaza con 403 cualquier /api/ que no esté
+// en esta lista (no alcanza con ocultar los botones).
+const RUTAS_CONCILIADOR = [
+  'POST /api/logout',
+  'GET /api/me',
+  'GET /api/conciliacion',
+  'POST /api/conciliacion/ibs',
+  'GET /api/dbn-consulta-dia',
+  'POST /api/transf-ca-cc/bankservice',
+  'GET /api/transf-ca-cc/cargas',
+  'GET /api/transf-ca-cc/datos',
+  'GET /api/transf-ca-cc/historia',
+  'GET /api/transf-ca-cc/reporte',
+  'POST /api/fx/bankservice',
+  'GET /api/fx/cargas',
+  'GET /api/fx/datos',
+  'GET /api/fx/historia',
+  'GET /api/fx/reporte',
+];
+
+function testRoleSoloConciliaciones(role) {
+  return role === 'conciliador';
+}
+
+// ¿Puede el rol llamar a esta ruta de la API? Solo restringe a 'conciliador'; los
+// demás roles siguen con sus chequeos propios en cada handler.
+function testRoleCanAccessApi(role, method, pathname) {
+  if (!testRoleSoloConciliaciones(role)) return true;
+  return RUTAS_CONCILIADOR.includes(`${method} ${pathname}`);
 }
 
 // --- Usuarios --------------------------------------------------------------
@@ -262,6 +295,8 @@ module.exports = {
   testRoleCanManageUsers,
   testRoleCanManageParametria,
   testRoleCanRunFlow,
+  testRoleSoloConciliaciones,
+  testRoleCanAccessApi,
   getSecurityUsers,
   findSecurityUser,
   testIsLastEnabledAdmin,

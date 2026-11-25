@@ -671,6 +671,17 @@ usuario habilitado, su nombre de cuenta de AD y qué **rol** tiene acá adentro.
 | `admin` | Sí | Sí | Sí |
 | `operador` | Sí | No | **No** |
 | `lectura` | **No** (ve flows y perfiles, pero el botón "Ejecutar flow" queda deshabilitado y el servidor rechaza `/api/run` con 403 igual si se lo llama directo) | No | **No** |
+| `conciliador` | **No** (no ve flows ni perfiles) | No | **No** |
+
+El rol `conciliador` solo usa las conciliaciones: **Conciliación con IBS**,
+**Conciliación Loop** y **Conciliación FX** (conciliar, cargar los archivos de
+BankService, exportar excepciones, bajar el PDF y generar el archivo
+dbnconsulta). Al entrar abre la Conciliación Loop; el menú muestra solo las
+conciliaciones y "Cerrar sesión". No puede consultar en masa el estado de los
+DEBIN "sin estado" (eso ejecuta el flow "Consulta DEBIN"). El servidor rechaza
+con 403 cualquier otra ruta de la API y lo deja en el log de seguridad
+(`RUTAS_CONCILIADOR` en `node/lib/securityStore.js`). Para bases ya creadas:
+`INSERT IGNORE INTO rol (nombre) VALUES ('conciliador');`. Solo backend Node.js.
 
 Parametría (botón "Parametría..." en el header, `GET`/`POST /api/parametria`
 y `POST /api/test-sybase`) es **exclusiva de `admin`** — trae valores de
