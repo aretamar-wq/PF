@@ -30,3 +30,8 @@ test("rol 'conciliador': solo las rutas de las conciliaciones", () => {
   // Los demás roles no cambian.
   for (const r of ['admin', 'operador', 'lectura']) assert.ok(sec.testRoleCanAccessApi(r, 'GET', '/api/flows'));
 });
+
+test('perfiles de conexión y Probar token: solo admin', () => {
+  assert.ok(sec.testRoleCanManageProfiles('admin'));
+  for (const r of ['operador', 'lectura', 'conciliador']) assert.ok(!sec.testRoleCanManageProfiles(r), r);
+});

@@ -51,6 +51,8 @@ function mapProfileRow(row, rootDir) {
     clientSecret: row.client_secret,
     clientCertPfxPath: row.client_cert_pfx_path,
     clientCertPassphrase: row.client_cert_passphrase,
+    // Perfil con el que ejecutan los flows los roles que no son admin.
+    predeterminado: Number(row.predeterminado || 0) === 1,
   };
   if (row.token_extra_json) {
     const extra = typeof row.token_extra_json === 'string' ? JSON.parse(row.token_extra_json) : row.token_extra_json;
@@ -100,8 +102,8 @@ async function saveProfiles(rootDir, profiles) {
         `INSERT INTO perfiles (
            name, base_url, nova_base_url, auth_type, api_key_header_name, api_key_or_token,
            token_url, client_id, client_secret, client_cert_pfx_path, client_cert_passphrase,
-           token_extra_json
-         ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+           token_extra_json, predeterminado
+         ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
         [
           profile.name,
           profile.baseUrl || '',
@@ -115,6 +117,7 @@ async function saveProfiles(rootDir, profiles) {
           profile.clientCertPfxPath || '',
           profile.clientCertPassphrase ? encrypt(profile.clientCertPassphrase, key) : '',
           Object.keys(tokenExtra).length > 0 ? JSON.stringify(tokenExtra) : null,
+          profile.predeterminado ? 1 : 0,
         ]
       );
     }

@@ -111,6 +111,13 @@ function testRoleCanManageParametria(role) {
   return role === 'admin';
 }
 
+// Perfiles de conexión (ver, elegir, crear, editar, eliminar y probar el token
+// OAuth2): solo admin. Los demás roles que ejecutan flows usan el perfil
+// predeterminado que marca el admin (ver handleRun en server.js).
+function testRoleCanManageProfiles(role) {
+  return role === 'admin';
+}
+
 function testRoleCanRunFlow(role) {
   // 'lectura' es solo consulta: puede ver flows/perfiles/logs pero no ejecutar
   // nada. admin/operador pueden correr cualquier flow.
@@ -295,6 +302,7 @@ module.exports = {
   testRoleCanManageUsers,
   testRoleCanManageParametria,
   testRoleCanRunFlow,
+  testRoleCanManageProfiles,
   testRoleSoloConciliaciones,
   testRoleCanAccessApi,
   getSecurityUsers,
