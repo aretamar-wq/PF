@@ -25,6 +25,8 @@ const TIPOS = {
   DEBITO_MANUAL: 'Débito manual',
   SIN_EJECUTAR: 'Transfer sin ejecutar',
   DEBITO_PENDIENTE: 'Débito pendiente',
+  DEBITO_PENDIENTE_CON_SALDO: 'Débito pendiente con saldo',
+  DEBITO_PENDIENTE_SIN_SALDO: 'Débito pendiente sin saldo',
   DEBITO_POR_CONTABILIZAR: 'Débito por contabilizar',
   CREDITO_FALTANTE: 'Falta el crédito 25031',
   CREDITO_FALTANTE_PENDIENTE: 'Falta el crédito 25031 (débito pendiente)',
@@ -146,7 +148,9 @@ function conciliar({ movimientos, pendientes, operaciones, config }) {
           r.subclase = o.fecha === ultimoDiaIbs ? 'ultimoDia' : 'anterior';
           r.pendiente = pend.importe;
           if (pend.importe !== o.monto) exc(TIPOS.PEND_IMPORTE, { ...base, detalle: `El débito pendiente es de ${dinero(o.moncod, pend.importe)} y la operación de ${dinero(o.moncod, o.monto)}.` });
-          exc(TIPOS.DEBITO_PENDIENTE, { ...base, cuenta: pend.cuecod || o.cuecod, importe: pend.importe, detalle: `Falta el débito en IBS: está en débitos pendientes desde el ${(pend.fechaOrigen || '').split('-').reverse().join('/') || 'sin fecha'} por ${dinero(o.moncod, pend.importe)} (${pend.motivo || 'sin motivo'}).` });
+          // Con el saldo de la cuenta consultado: pendiente con saldo (se puede debitar) o sin saldo.
+          const tipoPend = pend.saldo ? (pend.saldo.conSaldo ? TIPOS.DEBITO_PENDIENTE_CON_SALDO : TIPOS.DEBITO_PENDIENTE_SIN_SALDO) : TIPOS.DEBITO_PENDIENTE;
+          exc(tipoPend, { ...base, cuenta: pend.cuecod || o.cuecod, importe: pend.importe, detalle: `Falta el débito en IBS: está en débitos pendientes desde el ${(pend.fechaOrigen || '').split('-').reverse().join('/') || 'sin fecha'} por ${dinero(o.moncod, pend.importe)} (${pend.motivo || 'sin motivo'}).${pend.saldo ? ` ${pend.saldo.texto}` : ''}` });
           // Tampoco tiene el crédito: se informa aparte (amarillo, como el pendiente).
           if (creditos.length === 0) {
             exc(TIPOS.CREDITO_FALTANTE_PENDIENTE, { ...base, detalle: `Falta el crédito ${config.movCredito} de ${dinero(o.moncod, o.monto)}: el débito está en débitos pendientes y el crédito todavía no se hizo.` });

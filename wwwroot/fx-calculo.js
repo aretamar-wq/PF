@@ -4,7 +4,7 @@
 // (node/lib/fx/conciliar.js). Corre en el navegador y en Node. Importes en centavos.
 (function (raiz) {
   const ROJAS = ['Faltan movimientos en IBS', 'Movimiento duplicado', 'Importe distinto', 'COMPLETED sin registro en IBS', 'Movimiento de otro tipo de operación', 'Operación FAILED con movimientos en IBS', 'Operación en revisión manual con movimientos en IBS', 'Movimiento sin operación en BankService', 'Pendiente sin operación COMPLETED'];
-  const AMARILLAS = ['Débito pendiente', 'Por contabilizar', 'Operación en revisión manual'];
+  const AMARILLAS = ['Débito pendiente', 'Débito pendiente con saldo', 'Débito pendiente sin saldo', 'Por contabilizar', 'Operación en revisión manual'];
 
   // Indicadores de un lado (BUY / SELL) para el día (fecha de la orden en BankService).
   function indicadores(datos, dia, ladoDef) {

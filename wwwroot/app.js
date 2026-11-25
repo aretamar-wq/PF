@@ -3284,6 +3284,8 @@ function renderConciliacionIbsTiles(tipo, resumen) {
       tile('Pendientes de débito (día hábil)', resumen.pendientes) +
       tile('Débito imputado en fecha posterior', resumen.debitosPosteriores || 0, 'ok') +
       tile('Con débito pendiente en IBS', resumen.debitosPendientesIbs, resumen.debitosPendientesIbs > 0 ? 'warn' : 'ok') +
+      tile('Pendientes con saldo', resumen.debitosPendientesConSaldo || 0, resumen.debitosPendientesConSaldo > 0 ? 'warn' : 'ok') +
+      tile('Pendientes sin saldo', resumen.debitosPendientesSinSaldo || 0, resumen.debitosPendientesSinSaldo > 0 ? 'warn' : 'ok') +
       tile('Débitos solo en IBS', resumen.soloEnIbs, malo(resumen.soloEnIbs)) +
       tile('Rechazadas en ApiCore', resumen.rechazadosApicore) +
       tile('Rechazadas que figuran en IBS', resumen.rechazadosEnIbs, malo(resumen.rechazadosEnIbs))

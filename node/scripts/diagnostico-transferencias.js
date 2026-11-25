@@ -21,6 +21,7 @@
 const fs = require('fs');
 const path = require('path');
 const ci = require('../lib/conciliacionIbs');
+const saldosCuentas = require('../lib/saldosCuentas');
 const parametriaStore = require('../lib/parametriaStore');
 const sybaseClient = require('../lib/sybaseClient');
 const debinOutputStore = require('../lib/debinOutputStore');
@@ -72,6 +73,7 @@ async function main() {
   const qPend = ci.buildIbsDebitosPendientesQuery();
   const ibsLines = ci.ibsRowsToLines(await sql(qMov), { conConcod: true });
   const debitosPendientes = ci.leerDebitosPendientes(await sql(qPend));
+  const saldos = debitosPendientes.length ? await saldosCuentas.consultarSaldos(sql, debitosPendientes) : null;
   const apiRows = await debinOutputStore.getConsultaRowsEntre(rootDir, desde, hasta);
 
   let qPost = '';
@@ -92,7 +94,7 @@ async function main() {
     otrasFechas.get(c).push(r);
   }
   const res = ci.conciliarTransferencias(apiRows, ibsLines, {
-    desde, hasta, hoy, feriados, feriadosInvalidos: invalidos, otrasFechas, debitosPendientes, movimientosPosteriores,
+    desde, hasta, hoy, feriados, feriadosInvalidos: invalidos, otrasFechas, debitosPendientes, saldos, movimientosPosteriores,
   });
 
   titulo(`Conciliación de transferencias ${desde} a ${hasta} (IBS hasta ${hastaEsperado}, hoy ${hoy})`);
@@ -166,7 +168,10 @@ async function main() {
       ibsDebitos: vigentes.length,
       reversas: g && g.hayReversa ? 'sí' : '',
       movimientos: g ? g.movs.map((m) => `${m.fecha} ${m.movcod} ${m.signo < 0 ? 'D' : 'C'}${m.concod ? `(${m.concod})` : ''} cta ${m.cuecod} ${fmt(m.cents)}`).join(' | ') : '',
-      pendienteIbs: pend.map((p) => `${fmt(p.cents)} cta ${p.cuecod} ${p.motivo}`).join(' | '),
+      pendienteIbs: pend.map((p) => {
+        const sd = saldosCuentas.evaluarPendiente(saldos, p);
+        return `${fmt(p.cents)} cta ${p.cuecod} ${p.motivo}${sd ? ` · ${sd.conSaldo ? 'CON' : 'SIN'} saldo${sd.sdodiaope != null ? ` (disponible ${fmt(sd.sdodiaope)})` : ''}` : ''}`;
+      }).join(' | '),
       clasificacion: extra.length ? extra.join(' || ') : realizadas.length ? 'OK' : api.length ? 'Rechazada' : '',
     };
   });

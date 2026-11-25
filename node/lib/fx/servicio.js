@@ -9,7 +9,7 @@ const ibs = require('../transfCaCc/ibs');
 const bankservice = require('./bankservice');
 const { conciliar } = require('./conciliar');
 const calculo = require('../../../wwwroot/fx-calculo');
-const { aDiaHabil } = require('../transfCaCc/servicio');
+const { aDiaHabil, agregarSaldos } = require('../transfCaCc/servicio');
 
 const db = () => require('../mariadbClient');
 
@@ -83,6 +83,7 @@ async function obtenerDatos({ rootDir, querySybase, desde, hasta, ahora, feriado
   const mov = ibs.normalizarMovimientos(await querySybase(ibs.consultaMovimientos(desde, hasta, config)), config);
   const pend = ibs.normalizarPendientes(await querySybase(ibs.consultaPendientes(config)), config);
   avisos.push(...mov.avisos, ...pend.avisos);
+  await agregarSaldos(querySybase, pend.pendientes, avisos);
 
   // Órdenes del día (con margen: las de un sábado, domingo o feriado van al próximo día
   // hábil) y, de cualquier fecha, las de los comprobantes que aparecen en IBS o en pendientes.
