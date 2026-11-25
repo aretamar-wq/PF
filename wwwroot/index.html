@@ -62,6 +62,7 @@
           <li data-seccion="conciliacionIbsSection"><button type="button" id="conciliacionIbsBtn">Conciliación con IBS</button></li>
           <li data-seccion="transfCaCcSection"><button type="button" id="tccBtn">Conciliación Loop</button></li>
           <li data-seccion="fxSection"><button type="button" id="fxBtn">Conciliación FX</button></li>
+          <li data-seccion="informePendientesSection"><button type="button" id="ipBtn">Informe de movimientos pendientes</button></li>
         </ul>
       </aside>
 
@@ -371,6 +372,35 @@
         </div>
       </section>
 
+      <section id="informePendientesSection" class="tcc" style="display: none;">
+        <div class="section-head">
+          <h2>Informe de movimientos pendientes</h2>
+        </div>
+        <p class="tcc-suave">Débitos pendientes de IBS de los códigos de movimiento configurados en Parametría, con el documento del cliente y el saldo disponible de la cuenta (sdodiaope): <b>con saldo</b> si alcanza para el débito, <b>sin saldo</b> si no.</p>
+        <div class="tcc-barra">
+          <button type="button" id="ipGenerarBtn">Generar informe</button>
+          <span id="ipEstado" class="tcc-suave"></span>
+        </div>
+        <div id="ipAvisos"></div>
+        <div id="ipContenido" style="display: none;">
+          <div id="ipTiles"></div>
+          <p id="ipMovimientos" class="tcc-suave"></p>
+          <div class="tcc-barra">
+            <label>Saldo <select id="ipFiltroSaldo"><option value="">Todos</option><option value="con">Con saldo</option><option value="sin">Sin saldo</option></select></label>
+            <label>Moneda <select id="ipFiltroMoneda"><option value="">Todas</option><option value="ARS">Pesos</option><option value="USD">Dólares</option></select></label>
+            <label>Movimiento <select id="ipFiltroMov"><option value="">Todos</option></select></label>
+            <label>Buscar <input type="search" id="ipBuscar" placeholder="cuenta, documento, comprobante" /></label>
+            <button type="button" id="ipCsvBtn">Exportar CSV</button>
+            <span id="ipCuenta" class="tcc-suave"></span>
+          </div>
+          <div class="tcc-scroll-v"><table id="ipTabla"><thead><tr>
+            <th>Fecha origen</th><th>Sistema</th><th>Moneda</th><th class="num">Cuenta</th><th>Documento</th>
+            <th>Movimiento</th><th>Descripción IBS</th><th class="num">Comprobante</th><th class="num">Importe</th>
+            <th class="num">Saldo disponible</th><th>Saldo</th>
+          </tr></thead><tbody></tbody></table></div>
+        </div>
+      </section>
+
       <section id="dashboardSection" style="display: none;">
         <div class="section-head">
           <h2>Dashboard</h2>
@@ -546,6 +576,16 @@
             </label>
           </fieldset>
           <fieldset>
+            <legend>Informe de movimientos pendientes</legend>
+            <p class="muted">Códigos de movimiento (movcod) de los débitos pendientes de IBS que muestra el informe, con su descripción. Se guardan con su propio botón.</p>
+            <table id="ipParamTabla"><thead><tr><th>Código</th><th>Descripción</th><th></th></tr></thead><tbody></tbody></table>
+            <div class="dialog-actions">
+              <button type="button" id="ipParamAgregarBtn">Agregar código</button>
+              <button type="button" id="ipParamGuardarBtn">Guardar códigos</button>
+              <span id="ipParamEstado" class="muted"></span>
+            </div>
+          </fieldset>
+          <fieldset>
             <legend>Token del perfil</legend>
             <p class="muted">Prueba la obtención de token OAuth2 client_credentials del perfil elegido arriba a la izquierda (solo aplica si su tipo de autenticación es OAuth2ClientCredentials).</p>
             <div class="dialog-actions">
@@ -653,5 +693,6 @@
   <script src="/transf-ca-cc.js"></script>
   <script src="/fx-calculo.js"></script>
   <script src="/fx.js"></script>
+  <script src="/informe-pendientes.js"></script>
 </body>
 </html>

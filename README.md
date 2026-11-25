@@ -1616,6 +1616,21 @@ pendiente queda como **"Débito pendiente con saldo"**; si no alcanza o la cuent
 no tiene saldo del día, **"Débito pendiente sin saldo"**. Se compara cada
 pendiente por separado. Si la consulta falla se avisa y queda "Débito pendiente".
 
+### Informe de movimientos pendientes
+
+Panel izquierdo, grupo **Conciliaciones** → **Informe de movimientos pendientes**.
+"Generar informe" consulta en IBS los débitos pendientes (`tgl_deb_pendientes`) de
+los códigos de movimiento configurados en **Parametría → Informe de movimientos
+pendientes** (tabla `informe_pendientes_movimientos`: código y descripción; solo
+admin), con el documento del cliente (`tcl_VinculoCli_Cue`; si la cuenta tiene
+cotitulares, los documentos quedan juntos en una fila). Para cada pendiente se
+consulta el saldo disponible de la cuenta (una sola consulta para todas): **con
+saldo** si `sdodiaope` alcanza para el importe, **sin saldo** si no. Indicadores
+(total, con saldo, sin saldo, por moneda), filtros por saldo, moneda y movimiento,
+y "Exportar CSV" de lo que muestra la tabla. API: `GET /api/informe-pendientes`
+(también para el rol conciliador) y `GET`/`POST /api/informe-pendientes/movimientos`
+(solo admin).
+
 ### Prevención de operaciones duplicadas
 
 Antes de procesar ninguna fila de un CSV, la UI manda al servidor las
