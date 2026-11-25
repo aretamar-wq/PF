@@ -126,6 +126,7 @@ function conciliar({ movimientos, pendientes, ordenes, config }) {
       r.clase = 'incompleta';
       // Una excepción por cada movimiento que falta, con su moneda, el importe que
       // corresponde según la orden y la cuenta (la del cliente, si es de cliente).
+      // Los que están en débitos pendientes no se cuentan acá (tienen su propia excepción).
       const presentes = propios.filter((m) => m.lado === o.side).map((m) => m.movcod);
       for (const cod of r.faltan) {
         const def = defMov.get(cod);
@@ -135,8 +136,7 @@ function conciliar({ movimientos, pendientes, ordenes, config }) {
           moneda: def.moneda,
           importe: esperado(def.moneda),
           usuario: (propios[0] || {}).usuario || '',
-          detalle: `Falta el ${cod} (${def.nombre}) por ${dinero(def.moneda, esperado(def.moneda))}. IBS tiene ${[...new Set(presentes)].sort().join(', ') || 'ninguno'}` +
-            `${r.pendientesMov.length ? `; en pendientes: ${r.pendientesMov.map((p) => p.cod).join(', ')}` : ''}.`,
+          detalle: `Falta el ${cod} (${def.nombre}) por ${dinero(def.moneda, esperado(def.moneda))}. IBS tiene ${[...new Set(presentes)].sort().join(', ') || 'ninguno'}.`,
         });
       }
     } else if (r.pendientesMov.length > 0) {
