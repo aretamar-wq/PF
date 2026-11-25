@@ -180,7 +180,6 @@
   function htmlLado(l, ind) {
     const { bs, ibs, esperado, colores } = ind;
     const tc = bs.usd ? Math.round((bs.ars / bs.usd) * 100) : 0;
-    const pendIbs = ind.pendDia;
     const est = C.estados(ind, l);
     const diferencias = bs.incompletas + bs.sinRegistro;
     return `<div class="tcc-grilla">` +
@@ -201,10 +200,6 @@
       tile('Órdenes con movimientos faltantes', fmtNum(diferencias), `${fmtNum(bs.incompletas)} incompletas · ${fmtNum(bs.sinRegistro)} sin registro en IBS${bs.porContabilizar ? ` · ${fmtNum(bs.porContabilizar)} por contabilizar` : ''}`, est.faltantes) +
       tile('FAILED o en revisión con movimientos en IBS', fmtNum(bs.noCompletadasEnIbs), `de ${fmtNum(bs.failed + bs.revision)} no COMPLETED`, est.noCompletadas) +
       tile('Movimientos de IBS sin orden en BankService', fmtNum(ind.sinOrden.comprobantes), `${fmtNum(ind.sinOrden.n)} movimiento(s) · ${dinero('ARS', ind.sinOrden.ARS)} · ${dinero('USD', ind.sinOrden.USD)}`, est.sinOrden, 'Comprobantes de IBS que no figuran en la base de BankService FX (MariaDB), buscados en todas las fechas') +
-      `</div><div class="tcc-grilla" style="margin-top: 10px;">` +
-      tile('Débitos pendientes del día en pesos', fmtNum(pendIbs.ARS.n), dinero('ARS', pendIbs.ARS.importe), est.pendArs) +
-      tile('Débitos pendientes del día en USD', fmtNum(pendIbs.USD.n), dinero('USD', pendIbs.USD.importe), est.pendUsd) +
-      tile('Débitos pendientes del día', fmtNum(pendIbs.ARS.n + pendIbs.USD.n), `${dinero('ARS', pendIbs.ARS.importe)} · ${dinero('USD', pendIbs.USD.importe)}`, est.pendDia, 'Débitos pendientes de IBS de las órdenes del día conciliado (el detalle de todas las fechas está en Saldo de débitos pendientes por día)') +
       tile('Movimientos manuales', fmtNum(ind.manuales), 'de usuarios que no son de proceso, sin orden en BankService') +
       `</div>` +
       (ind.posteriores ? `<p class="tcc-suave">Incluye ${fmtNum(ind.posteriores)} movimiento(s) imputados en fechas posteriores, sumados en el día de su orden.</p>` : '');

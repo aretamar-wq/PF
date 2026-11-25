@@ -150,14 +150,8 @@ function generarReporte({ datos, dia, usuario, ahora = new Date() }) {
       ['Órdenes con movimientos faltantes', fmtNum(dif), `${fmtNum(bs.incompletas)} incompletas · ${fmtNum(bs.sinRegistro)} sin registro${bs.porContabilizar ? ` · ${fmtNum(bs.porContabilizar)} por contabilizar` : ''}`, est.faltantes],
       ['FAILED o en revisión con movimientos en IBS', fmtNum(bs.noCompletadasEnIbs), `de ${fmtNum(bs.failed + bs.revision)} no COMPLETED`, est.noCompletadas],
       ['Movimientos de IBS sin orden en BankService', fmtNum(ind.sinOrden.comprobantes), `${fmtNum(ind.sinOrden.n)} movimiento(s) · ${dinero('ARS', ind.sinOrden.ARS)} · ${dinero('USD', ind.sinOrden.USD)}`, est.sinOrden],
-    ], 5);
-    const pd = ind.pendDia;
-    grilla([
-      ['Débitos pendientes del día en pesos', fmtNum(pd.ARS.n), dinero('ARS', pd.ARS.importe), est.pendArs],
-      ['Débitos pendientes del día en USD', fmtNum(pd.USD.n), dinero('USD', pd.USD.importe), est.pendUsd],
-      ['Débitos pendientes del día', fmtNum(pd.ARS.n + pd.USD.n), `${dinero('ARS', pd.ARS.importe)} · ${dinero('USD', pd.USD.importe)}`, est.pendDia],
       ['Movimientos manuales', fmtNum(ind.manuales), 'de usuarios que no son de proceso, sin orden en BankService'],
-    ]);
+    ], 3);
   }
 
   const excepciones = lados.flatMap(({ ind }) => ind.excepciones);
