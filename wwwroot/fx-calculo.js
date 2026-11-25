@@ -88,9 +88,8 @@
 
   // Color de cada indicador con color (ok / warn / err); los mismos que pinta la pantalla.
   function estados(ind, ladoDef) {
-    const { bs, colores, pendDia } = ind;
+    const { bs, colores } = ind;
     const dif = bs.incompletas + bs.sinRegistro;
-    const nPend = pendDia.ARS.n + pendDia.USD.n;
     return {
       movs: Object.fromEntries(ladoDef.movs.map((m) => [m.cod, peor(colores[m.cod].n, colores[m.cod].importe)])),
       completas: bs.completas === bs.completadas ? 'ok' : '',
@@ -98,16 +97,13 @@
       faltantes: dif ? 'err' : bs.porContabilizar ? 'warn' : 'ok',
       noCompletadas: bs.noCompletadasEnIbs ? 'err' : 'ok',
       sinOrden: ind.sinOrden.comprobantes ? 'err' : 'ok',
-      pendArs: pendDia.ARS.n ? 'warn' : 'ok',
-      pendUsd: pendDia.USD.n ? 'warn' : 'ok',
-      pendDia: nPend ? 'warn' : 'ok',
     };
   }
 
   // Semáforo de un lado: el color del peor indicador (rojo > amarillo > verde).
   function semaforo(ind, ladoDef) {
     const e = estados(ind, ladoDef);
-    const { bs, pendDia } = ind;
+    const { bs } = ind;
     const rojos = [];
     const amarillos = [];
     for (const m of ladoDef.movs) {
@@ -119,7 +115,6 @@
     if (e.sinOrden === 'err') rojos.push(`${ind.sinOrden.comprobantes} comprobante(s) de IBS que no figuran en BankService FX`);
     if (e.noCompletadas === 'err') rojos.push(`${bs.noCompletadasEnIbs} orden(es) FAILED o en revisión con movimientos en IBS`);
     if (e.conPendiente === 'warn') amarillos.push(`${bs.pendientes} orden(es) con débito pendiente`);
-    if (e.pendDia === 'warn') amarillos.push(`${pendDia.ARS.n + pendDia.USD.n} débito(s) pendiente(s) del día`);
     const color = rojos.length ? 'rojo' : amarillos.length ? 'amarillo' : 'verde';
     return { color, motivos: rojos.length || amarillos.length ? [...rojos, ...amarillos] : ['Todo OK'] };
   }
