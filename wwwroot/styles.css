@@ -136,6 +136,20 @@ aside li {
 }
 aside li.selected { border-color: var(--accent); background: var(--accent-tint); color: var(--navy); font-weight: 600; }
 
+/* Conciliaciones en el panel de flows: mismo aspecto que un flow de la lista. */
+aside h2.aside-grupo { margin-top: 18px; }
+#flowsGrupo[style*="none"] + h2.aside-grupo { margin-top: 0; }
+#conciliacionesList li { padding: 0; }
+#conciliacionesList li button {
+  all: unset;
+  display: block;
+  box-sizing: border-box;
+  width: 100%;
+  padding: 8px 10px;
+  cursor: pointer;
+}
+#conciliacionesList li button:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; border-radius: 8px; }
+
 #flowDetail { flex: 1; min-width: 0; }
 
 .muted { color: var(--muted-fg); font-style: italic; }

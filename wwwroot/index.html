@@ -45,9 +45,6 @@
             <li><button type="button" id="usersBtn" style="display: none;">Usuarios</button></li>
             <li><button type="button" id="outputFilesBtn">Archivos de salida</button></li>
             <li><button type="button" id="dashboardBtn">Dashboard</button></li>
-            <li><button type="button" id="conciliacionIbsBtn">Conciliación con IBS</button></li>
-            <li><button type="button" id="tccBtn">Conciliación Loop</button></li>
-            <li><button type="button" id="fxBtn">Conciliación FX</button></li>
             <li><button type="button" id="logoutBtn">Cerrar sesión</button></li>
           </ul>
         </div>
@@ -56,8 +53,16 @@
 
     <main>
       <aside>
-        <h2>Flows</h2>
-        <ul id="flowList"></ul>
+        <div id="flowsGrupo">
+          <h2>Flows</h2>
+          <ul id="flowList"></ul>
+        </div>
+        <h2 class="aside-grupo">Conciliaciones</h2>
+        <ul id="conciliacionesList">
+          <li data-seccion="conciliacionIbsSection"><button type="button" id="conciliacionIbsBtn">Conciliación con IBS</button></li>
+          <li data-seccion="transfCaCcSection"><button type="button" id="tccBtn">Conciliación Loop</button></li>
+          <li data-seccion="fxSection"><button type="button" id="fxBtn">Conciliación FX</button></li>
+        </ul>
       </aside>
 
       <section id="flowDetail">

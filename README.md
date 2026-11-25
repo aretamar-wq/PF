@@ -524,8 +524,8 @@ usa ese. Para bases ya creadas:
 El rol `conciliador` solo usa las conciliaciones: **Conciliación con IBS**,
 **Conciliación Loop** y **Conciliación FX** (conciliar, cargar los archivos de
 BankService, exportar excepciones, bajar el PDF y generar el archivo
-dbnconsulta). Al entrar abre la Conciliación Loop; el menú muestra solo las
-conciliaciones y "Cerrar sesión". No puede consultar en masa el estado de los
+dbnconsulta). Al entrar abre la Conciliación Loop; el panel izquierdo muestra
+solo las conciliaciones y el menú solo "Cerrar sesión". No puede consultar en masa el estado de los
 DEBIN "sin estado" (eso ejecuta el flow "Consulta DEBIN"). El servidor rechaza
 con 403 cualquier otra ruta de la API y lo deja en el log de seguridad
 (`RUTAS_CONCILIADOR` en `node/lib/securityStore.js`). Para bases ya creadas:
@@ -1265,7 +1265,7 @@ cortada antes de consultar su estado queda con `realizado` = `SI` y
 
 ### Conciliación Loop (transferencias CA -> CC y pago de servicios contra BankService)
 
-Menú **Conciliación Loop**. Concilia las transferencias QNET de **un
+Panel izquierdo, grupo **Conciliaciones** → **Conciliación Loop**. Concilia las transferencias QNET de **un
 día** (campo "Fecha a conciliar"; no acepta sábados, domingos ni feriados) entre los movimientos de IBS (débitos 25030 y créditos 25031 de cualquier `sistcod`), los
 débitos pendientes y BankService.
 
@@ -1343,7 +1343,7 @@ por tipo y el saldo de pendientes por día, y deja el JSON que consume el dashbo
 
 ### Conciliación FX (compra y venta de dólares contra BankService)
 
-Menú **Conciliación FX**. Concilia las órdenes de FX de BankService
+Panel izquierdo, grupo **Conciliaciones** → **Conciliación FX**. Concilia las órdenes de FX de BankService
 (`fx-orders-settlement-*.csv`) de **un día hábil** (por defecto, el anterior a hoy)
 contra los movimientos 25001 a 25012 de IBS y los débitos pendientes.
 
