@@ -342,6 +342,7 @@ fieldset legend { color: var(--navy); font-weight: 600; padding: 0 6px; }
 }
 .conciliacion-estado.ok { background: #e7f6ec; color: var(--success); }
 .conciliacion-estado.error { background: #fdecec; color: var(--error); }
+.conciliacion-estado.warn { background: #fff4e5; color: #b54708; }
 .conciliacion-aviso { background: #fff1e8; color: #9a3412; border-radius: 10px; padding: 8px 14px; }
 #conciliacionIbsTotales td.num, #conciliacionIbsDiferencias td.num, #conciliacionIbsPendientes td.num { text-align: right; font-variant-numeric: tabular-nums; white-space: nowrap; }
 .conciliacion-table-wrap { overflow-x: auto; }
