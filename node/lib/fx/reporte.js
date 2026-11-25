@@ -146,7 +146,7 @@ function generarReporte({ datos, dia, usuario, ahora = new Date() }) {
     grilla(l.movs.map((m) => [`${m.cod} ${m.nombre}`, fmtNum(ibs[m.cod].n), dinero(m.moneda, ibs[m.cod].importe), est.movs[m.cod]]), 6);
     grilla([
       ['Órdenes completas en IBS', fmtNum(bs.completas), `de ${fmtNum(bs.completadas)} COMPLETED`, est.completas],
-      ['Órdenes con débito pendiente', fmtNum(bs.pendientes), `${dinero('ARS', bs.pendArs)} · ${dinero('USD', bs.pendUsd)}`, est.conPendiente],
+      ['Órdenes con débito pendiente', fmtNum(bs.pendientes), `Pesos ${fmtNum(bs.pendArsN)}: ${dinero('ARS', bs.pendArs)} · USD ${fmtNum(bs.pendUsdN)}: ${dinero('USD', bs.pendUsd)}`, est.conPendiente],
       ['Órdenes con movimientos faltantes', fmtNum(dif), `${fmtNum(bs.incompletas)} incompletas · ${fmtNum(bs.sinRegistro)} sin registro${bs.porContabilizar ? ` · ${fmtNum(bs.porContabilizar)} por contabilizar` : ''}`, est.faltantes],
       ['FAILED o en revisión con movimientos en IBS', fmtNum(bs.noCompletadasEnIbs), `de ${fmtNum(bs.failed + bs.revision)} no COMPLETED`, est.noCompletadas],
       ['Movimientos de IBS sin orden en BankService', fmtNum(ind.sinOrden.comprobantes), `${fmtNum(ind.sinOrden.n)} movimiento(s) · ${dinero('ARS', ind.sinOrden.ARS)} · ${dinero('USD', ind.sinOrden.USD)}`, est.sinOrden],

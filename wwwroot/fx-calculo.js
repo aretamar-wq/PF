@@ -11,7 +11,7 @@
     const lado = ladoDef.lado;
     const ok = (f) => !dia || f === dia;
     const ordenes = datos.ordenes.filter((o) => o.side === lado && ok(o.fecha));
-    const bs = { completadas: 0, ars: 0, usd: 0, completas: 0, pendientes: 0, incompletas: 0, sinRegistro: 0, porContabilizar: 0, failed: 0, revision: 0, noCompletadasEnIbs: 0, pendArs: 0, pendUsd: 0 };
+    const bs = { completadas: 0, ars: 0, usd: 0, completas: 0, pendientes: 0, incompletas: 0, sinRegistro: 0, porContabilizar: 0, failed: 0, revision: 0, noCompletadasEnIbs: 0, pendArs: 0, pendUsd: 0, pendArsN: 0, pendUsdN: 0 };
     // Por movimiento: lo que BankService espera y lo que falta "con explicación" (pendiente o por contabilizar).
     const esperado = {};
     for (const m of ladoDef.movs) esperado[m.cod] = { n: 0, importe: 0, nExplicado: 0, importeExplicado: 0 };
@@ -24,7 +24,14 @@
       bs.ars += o.ars;
       bs.usd += o.usd;
       if (o.clase === 'completa') bs.completas++;
-      else if (o.clase === 'pendiente') { bs.pendientes++; bs.pendArs += o.pendienteArs || 0; bs.pendUsd += o.pendienteUsd || 0; }
+      else if (o.clase === 'pendiente') {
+        bs.pendientes++;
+        bs.pendArs += o.pendienteArs || 0;
+        bs.pendUsd += o.pendienteUsd || 0;
+        // Cantidad de órdenes con algún débito pendiente en cada moneda.
+        if ((o.pendientesMov || []).some((p) => p.moneda === 'ARS')) bs.pendArsN++;
+        if ((o.pendientesMov || []).some((p) => p.moneda === 'USD')) bs.pendUsdN++;
+      }
       else if (o.clase === 'incompleta') bs.incompletas++;
       else if (o.clase === 'sinRegistro') bs.sinRegistro++;
       else if (o.clase === 'porContabilizar') bs.porContabilizar++;
