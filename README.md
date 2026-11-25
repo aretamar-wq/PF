@@ -1770,6 +1770,23 @@ transferencias no aparece (las transferencias se registran fila por fila, ver
 "Prevención de operaciones duplicadas"); las anteriores a esa mejora y a que
 `dbn_consulta` funcionara (2/11) pueden no estar.
 
+**Diagnóstico de transferencias.** Para investigar un día puntual (en el
+servidor, carpeta `node/`):
+
+```
+node scripts/diagnostico-transferencias.js --desde 2026-11-12 [--hasta 2026-11-12] \
+     [--comprobante 30680] [--csv diagnostico.csv]
+```
+
+Corre la misma conciliación que la pantalla (solo lectura) y muestra las
+consultas de Sybase que ejecutó, los totales ApiCore vs IBS, un cuadro por día de
+la transferencia, los comprobantes donde lo que ApiCore espera debitado no
+coincide con IBS (aunque no figuren en Diferencias) y, con `--csv`, el detalle de
+cada comprobante con su clasificación. El semáforo de transferencias toma el peor
+indicador: rojo si hay diferencias (salvo débitos pendientes), débitos solo en
+IBS, rechazadas que figuran en IBS o totales que no coinciden; amarillo si solo
+hay débitos pendientes en IBS.
+
 ### Prevención de operaciones duplicadas
 
 Antes de procesar ninguna fila de un CSV, la UI manda al servidor las

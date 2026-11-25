@@ -51,3 +51,32 @@ test('enviada dos veces con los 2 débitos en IBS no es diferencia', () => {
   const r1 = ci.conciliarTransferencias(dos, ibs1, { desde: '2026-11-04', hasta: '2026-11-04', hoy: '2026-11-17' });
   assert.ok(r1.diferencias.some((d) => d.tipo === 'Enviada más de una vez'));
 });
+
+const cuadran = (r) => r.totales.every((t) => t.apicore.cantidad === t.ibs.cantidad && t.apicore.importe === t.ibs.importe);
+const movIbs = (extra) => ({ sistcod: 5, moncod: 0, cuecod: '75848', Fecha_Mov: '04/11/2026', comnro: '16319', movcod: '28600', concod: '', signo: -1, accimp: '1000.00', Importe: '-1000.00', ...extra });
+
+test('debitada y revertida en IBS sin estado de acreditación: OK y los totales cuadran', () => {
+  const sinEstado = [{ ...api[0], estado_codigo: '', estado_descripcion: '' }];
+  const ibs = ci.ibsRowsToLines([movIbs({ concod: 'M' }), movIbs({ concod: 'C', signo: 1, Importe: '1000.00' })], { conConcod: true });
+  const r = ci.conciliarTransferencias(sinEstado, ibs, { desde: '2026-11-04', hasta: '2026-11-04', hoy: '2026-11-17' });
+  assert.deepStrictEqual(r.diferencias, []);
+  assert.strictEqual(r.resumen.revertidasOk, 1);
+  assert.ok(cuadran(r), JSON.stringify(r.totales));
+});
+
+test('con débito pendiente en IBS: no suma en los totales de ApiCore', () => {
+  const pend = [{ comnro: '16319', cuecod: '75848', cents: 100000, motivo: 'Sin saldo', fechaOrigen: '04/11/2026' }];
+  const r = ci.conciliarTransferencias(api, ibsPeriodo, { desde: '2026-11-04', hasta: '2026-11-04', hoy: '2026-11-17', debitosPendientes: pend });
+  assert.deepStrictEqual(r.diferencias.map((d) => d.tipo), ['Débito pendiente en IBS']);
+  assert.ok(cuadran(r), JSON.stringify(r.totales));
+});
+
+test('rechazo del archivo reprocesado otro día: queda "reintentada", no "figura"', () => {
+  const rechazo = [{ id_comprobante: '16319', realizado: 'n', ejecutado_en: '2026-11-04 09:00:00', moneda: '032', importe: '1000.00', debito_cuit: '20111111112', estado_descripcion: 'Error de comunicación' }];
+  const ibs = ci.ibsRowsToLines([movIbs({})], { conConcod: true });
+  const otrasFechas = new Map([['16319', [{ ...api[0], ejecutado_en: '2026-11-03 18:00:00' }]]]);
+  const r = ci.conciliarTransferencias([], ibs, { desde: '2026-11-04', hasta: '2026-11-04', hoy: '2026-11-17', otrasFechas, rechazadosArchivo: rechazo });
+  assert.deepStrictEqual(r.diferencias, []);
+  assert.strictEqual(r.resumen.rechazadosEnIbs, 0);
+  assert.strictEqual(r.rechazados[0].estado, 'reintentada');
+});
