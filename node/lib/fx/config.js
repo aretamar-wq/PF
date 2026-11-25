@@ -41,4 +41,7 @@ module.exports = {
   monedas: { ARS: '0', USD: '2' },
   usuariosProceso: ['123123123', '36077255'],
   estadosFinales: ['COMPLETED', 'FAILED'],
+  // Órdenes que no se tienen en cuenta en la conciliación (ni en los indicadores ni
+  // en excepciones), salvo que IBS tenga movimientos de su comprobante.
+  estadosIgnorados: ['ABANDONED'],
 };
