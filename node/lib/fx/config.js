@@ -16,12 +16,12 @@ module.exports = {
       clave: 'compra',
       titulo: 'IBS - FX Compra de USD (25001 - 25006)',
       movs: [
-        { cod: '25001', moneda: 'ARS', titular: 'cliente', nombre: 'Cliente · pesos', cuentaFija: '11000524' },
-        { cod: '25002', moneda: 'ARS', titular: 'cocos', nombre: 'Cocos Capital S.A. · pesos' },
-        { cod: '25003', moneda: 'ARS', titular: 'cliente', nombre: 'Cliente · pesos' },
-        { cod: '25004', moneda: 'USD', titular: 'cliente', nombre: 'Cliente · USD' },
-        { cod: '25005', moneda: 'USD', titular: 'cocos', nombre: 'Cocos Capital S.A. · USD' },
-        { cod: '25006', moneda: 'USD', titular: 'cliente', nombre: 'Cliente · USD', cuentaFija: '11000525' },
+        { cod: '25001', moneda: 'ARS', titular: 'cocos', nombre: 'Cuenta Corriente 11000524 · pesos', cuentaFija: '11000524' },
+        { cod: '25002', moneda: 'ARS', titular: 'cliente', nombre: 'Caja de Ahorro del cliente · pesos' },
+        { cod: '25003', moneda: 'ARS', titular: 'cliente', nombre: 'Caja de Ahorro del cliente · pesos' },
+        { cod: '25004', moneda: 'USD', titular: 'cliente', nombre: 'Caja de Ahorro del cliente · USD' },
+        { cod: '25005', moneda: 'USD', titular: 'cliente', nombre: 'Caja de Ahorro del cliente · USD' },
+        { cod: '25006', moneda: 'USD', titular: 'cocos', nombre: 'Cuenta Corriente 11000525 · USD', cuentaFija: '11000525' },
       ],
     },
     {
@@ -29,19 +29,22 @@ module.exports = {
       clave: 'venta',
       titulo: 'IBS - FX Venta de USD (25007 - 25012)',
       movs: [
-        { cod: '25007', moneda: 'USD', titular: 'cliente', nombre: 'Cliente · USD', cuentaFija: '11000525' },
-        { cod: '25008', moneda: 'USD', titular: 'cocos', nombre: 'Cocos Capital S.A. · USD' },
-        { cod: '25009', moneda: 'USD', titular: 'cliente', nombre: 'Cliente · USD' },
-        { cod: '25010', moneda: 'ARS', titular: 'cliente', nombre: 'Cliente · pesos' },
-        { cod: '25011', moneda: 'ARS', titular: 'cocos', nombre: 'Cocos Capital S.A. · pesos' },
-        { cod: '25012', moneda: 'ARS', titular: 'cliente', nombre: 'Cliente · pesos', cuentaFija: '11000524' },
+        { cod: '25007', moneda: 'USD', titular: 'cocos', nombre: 'Cuenta Corriente 11000525 · USD', cuentaFija: '11000525' },
+        { cod: '25008', moneda: 'USD', titular: 'cliente', nombre: 'Caja de Ahorro del cliente · USD' },
+        { cod: '25009', moneda: 'USD', titular: 'cliente', nombre: 'Caja de Ahorro del cliente · USD' },
+        { cod: '25010', moneda: 'ARS', titular: 'cliente', nombre: 'Caja de Ahorro del cliente · pesos' },
+        { cod: '25011', moneda: 'ARS', titular: 'cliente', nombre: 'Caja de Ahorro del cliente · pesos' },
+        { cod: '25012', moneda: 'ARS', titular: 'cocos', nombre: 'Cuenta Corriente 11000524 · pesos', cuentaFija: '11000524' },
       ],
     },
   ],
-  // cuentaFija: la cuenta en la que siempre va ese movimiento (11000524 en pesos y
-  // 11000525 en dólares para 25001, 25012, 25006 y 25007).
-  // Titular de la cuenta de cada movimiento (titular de cada mov de lados): el cliente
-  // de la orden (en las excepciones va su nombre, customerFullName) o Cocos Capital S.A.
+  // Según IBS: 25001/25012 van en la Cuenta Corriente 11000524 (pesos) y 25006/25007
+  // en la 11000525 (dólares), siempre las mismas (cuentaFija); 25002 a 25005 y 25008 a
+  // 25011 van en las Cajas de Ahorro del cliente, en pesos y en dólares (el crédito y
+  // el débito de cada moneda en la misma cuenta).
+  // Titular de la cuenta de cada movimiento: el cliente de la orden (en las
+  // excepciones va su nombre, customerFullName) o Cocos Capital S.A. (las Cuentas
+  // Corrientes fijas).
   titulares: { cliente: 'Cliente', cocos: 'Cocos Capital S.A.' },
   // CUIT de los titulares fijos (el del cliente viene en cada orden de BankService).
   cuitTitulares: { cocos: '30708424478' },
