@@ -21,7 +21,7 @@ const TIPOS = {
   SIN_EJECUTAR_CON_MOVIMIENTOS: 'Operación sin ejecutar con movimientos en IBS',
   PEND_DEBITADO: 'Pendiente sobre comprobante ya debitado',
   PEND_SIN_OPERACION: 'Pendiente sin operación APPROVED',
-  CREDITO_RELEVANTE: 'Crédito 25031 de importe relevante',
+  CREDITO_RELEVANTE: 'Crédito 25031 sin operación en BankService',
   DEBITO_MANUAL: 'Débito manual',
   SIN_EJECUTAR: 'Transfer sin ejecutar',
   DEBITO_PENDIENTE: 'Débito pendiente',
