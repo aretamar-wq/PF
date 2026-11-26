@@ -80,3 +80,14 @@ test('rechazo del archivo reprocesado otro día: queda "reintentada", no "figura
   assert.strictEqual(r.resumen.rechazadosEnIbs, 0);
   assert.strictEqual(r.rechazados[0].estado, 'reintentada');
 });
+
+test('realizadas sin débito que están bien: se informan y realizadas = OK + estas', () => {
+  const fallida = { ...api[0], id_comprobante: '16320', estado_codigo: 'RECHAZADO', estado_descripcion: 'Rechazado por el banco' };
+  const revertida = { ...api[0], id_comprobante: '16321', estado_codigo: '', estado_descripcion: '' };
+  const ibs = ci.ibsRowsToLines([movIbs({}), movIbs({ comnro: '16321', concod: 'M' }), movIbs({ comnro: '16321', concod: 'C', signo: 1, Importe: '1000.00' })], { conConcod: true });
+  const r = ci.conciliarTransferencias([api[0], fallida, revertida], ibs, { desde: '2026-11-04', hasta: '2026-11-04', hoy: '2026-11-17' });
+  assert.deepStrictEqual(r.diferencias, []);
+  assert.deepStrictEqual([r.resumen.realizadasApicore, r.resumen.transferenciasOk, r.resumen.revertidasOk, r.resumen.acreditacionFallidaSinDebito], [3, 1, 1, 1]);
+  assert.deepStrictEqual(r.sinDebitoCoherentes.map((x) => [x.numeroComprobante, x.motivo]).sort(), [['16320', 'Acreditación fallida, sin débito en IBS'], ['16321', 'Debitada y revertida en IBS (neto cero)']]);
+  assert.ok(cuadran(r));
+});
