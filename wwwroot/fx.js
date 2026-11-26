@@ -528,6 +528,14 @@
   $('fxExcBuscar').addEventListener('input', pintarExcepciones);
   $('fxExcCsvBtn').addEventListener('click', exportarExcepciones);
   $('fxPdfBtn').addEventListener('click', descargarPdf);
+  // El encabezado de la tabla de excepciones se arma acá, con las mismas columnas que
+  // las filas (pintarExcepciones): así no se desalinea si el index.html quedó viejo.
+  const COLUMNAS_EXC = [
+    ['tipo', 'Tipo'], ['lado', 'Operación'], ['comprobante', 'Comprobante', 'num'], ['movcod', 'Movimiento', 'num'], ['titular', 'Titular'],
+    ['cuenta', 'Cuenta', 'num'], ['cuit', 'CUIT'], ['moneda', 'Moneda'], ['fecha', 'Fecha'], ['importe', 'Importe', 'num'],
+    ['usuario', 'Usuario'], ['estadoBs', 'Estado BankService'], ['detalle', 'Detalle'],
+  ];
+  $('fxExc').querySelector('thead').innerHTML = `<tr>${COLUMNAS_EXC.map(([campo, titulo, clase]) => `<th class="ordenable${clase ? ` ${clase}` : ''}" data-orden="${campo}">${titulo}</th>`).join('')}</tr>`;
   document.querySelectorAll('#fxExc th.ordenable').forEach((th) => th.addEventListener('click', () => {
     const campo = th.dataset.orden;
     estado.orden = { campo, asc: estado.orden.campo === campo ? !estado.orden.asc : true };
