@@ -77,9 +77,18 @@ function conciliar({ movimientos, pendientes, ordenes, config }) {
     const r = { ...o, clase: '', faltan: [], pendientesMov: [] };
     const propios = (movsPorComp.get(o.comprobante) || []);
     // Cuenta del cliente: la de un movimiento de cliente (no la de un puente).
-    const deCliente = propios.find((m) => defMov.has(m.movcod) && /cliente/.test(defMov.get(m.movcod).nombre));
-    const base = { comprobante: o.comprobante || o.id, lado: o.side, cuit: o.cuit, cuenta: deCliente ? deCliente.cuecod : '', fecha: o.fecha, estadoBs: o.status, importe: o.ars, moneda: 'ARS' };
     const pends = (pendPorComp.get(o.comprobante) || []);
+    // Cuenta del cliente en una moneda: la de un movimiento de cliente de esa moneda
+    // (no la de un puente) o, si no hay, la de un débito pendiente de esa moneda. El
+    // cliente tiene una cuenta en pesos y otra en dólares: no se mezclan.
+    const esDeCliente = (cod) => defMov.has(cod) && /cliente/.test(defMov.get(cod).nombre);
+    const cuentaCliente = (moneda) => {
+      const m = propios.find((x) => esDeCliente(x.movcod) && defMov.get(x.movcod).moneda === moneda);
+      if (m) return m.cuecod;
+      const p = pends.find((x) => defMov.has(x.movcod) && defMov.get(x.movcod).moneda === moneda);
+      return p ? p.cuecod : '';
+    };
+    const base = { comprobante: o.comprobante || o.id, lado: o.side, cuit: o.cuit, cuenta: cuentaCliente('ARS'), fecha: o.fecha, estadoBs: o.status, importe: o.ars, moneda: 'ARS' };
     const ignorada = (config.estadosIgnorados || []).includes(o.status);
     if (ignorada && propios.length === 0) {
       r.clase = 'ignorada'; // ABANDONED: no se tiene en cuenta
@@ -106,7 +115,7 @@ function conciliar({ movimientos, pendientes, ordenes, config }) {
         else r.faltan.push(def.cod);
         continue;
       }
-      if (lista.length > 1) exc(TIPOS.DUPLICADO, { ...base, moneda: def.moneda, importe: lista.reduce((s, m) => s + m.importe, 0), usuario: lista[0].usuario, detalle: `${lista.length} movimientos ${def.cod} (${def.nombre}): ${lista.map((m) => `${dinero(def.moneda, m.importe)} del ${dmy(m.fecha)}`).join(', ')}.` });
+      if (lista.length > 1) exc(TIPOS.DUPLICADO, { ...base, cuenta: lista[0].cuecod, moneda: def.moneda, importe: lista.reduce((s, m) => s + m.importe, 0), usuario: lista[0].usuario, detalle: `${lista.length} movimientos ${def.cod} (${def.nombre}): ${lista.map((m) => `${dinero(def.moneda, m.importe)} del ${dmy(m.fecha)}`).join(', ')}.` });
       for (const m of lista) {
         if (m.importe !== esperado(def.moneda)) exc(TIPOS.IMPORTE, { ...base, moneda: def.moneda, cuenta: m.cuecod, importe: m.importe, usuario: m.usuario, detalle: `${def.cod} (${def.nombre}) por ${dinero(def.moneda, m.importe)} y la orden es de ${dinero(def.moneda, esperado(def.moneda))}.` });
       }
@@ -137,7 +146,7 @@ function conciliar({ movimientos, pendientes, ordenes, config }) {
         const def = defMov.get(cod);
         exc(TIPOS.FALTAN, {
           ...base,
-          cuenta: /cliente/.test(def.nombre) ? base.cuenta : '',
+          cuenta: esDeCliente(cod) ? cuentaCliente(def.moneda) : '',
           moneda: def.moneda,
           importe: esperado(def.moneda),
           usuario: (propios[0] || {}).usuario || '',
