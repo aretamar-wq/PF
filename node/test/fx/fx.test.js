@@ -216,5 +216,5 @@ test('completarCuentas: busca por CUIT la cuenta en la moneda (una sola consulta
 test('faltan movimientos de Cocos Capital: titular Cocos y su cuenta (la de ese movimiento en IBS)', () => {
   const r = conciliar({ movimientos: [...movsDe('10', 'BUY', 1600000, 1000), ...movsDe('12', 'BUY', 1600000, 1000, { menos: ['25002'] })], pendientes: [], ordenes: [o('10'), o('12')], config });
   const f = r.excepciones.filter((e) => e.tipo === TIPOS.FALTAN);
-  assert.deepStrictEqual(f.map((e) => [e.comprobante, e.movcod, e.titular, e.cuenta, e.cuit]), [['12', '25002', 'Cocos Capital S.A.', '11000525', '']]);
+  assert.deepStrictEqual(f.map((e) => [e.comprobante, e.movcod, e.titular, e.cuenta, e.cuit]), [['12', '25002', 'Cocos Capital S.A.', '11000525', '30708424478']]);
 });

@@ -40,6 +40,8 @@ module.exports = {
   ],
   // Titular de la cuenta de cada movimiento (titular de cada mov de lados).
   titulares: { cliente: 'Customer de BankService', cocos: 'Cocos Capital S.A.' },
+  // CUIT de los titulares fijos (el del cliente viene en cada orden de BankService).
+  cuitTitulares: { cocos: '30708424478' },
   monedas: { ARS: '0', USD: '2' },
   usuariosProceso: ['123123123', '36077255'],
   estadosFinales: ['COMPLETED', 'FAILED'],
