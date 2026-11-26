@@ -1527,8 +1527,8 @@ Panel izquierdo, grupo **Conciliaciones** → **Conciliación FX**. Concilia las
 contra los movimientos 25001 a 25012 de IBS y los débitos pendientes.
 
 - **Carga**: el CSV se sube desde la pantalla. El navegador manda solo las columnas
-  que usa la conciliación (id, status, side, importes, receiptNumber, fechas, CUIT;
-  no los nombres). Se guarda en MariaDB (`fx_ordenes`, con `fx_cargas` y
+  que usa la conciliación (id, status, side, importes, receiptNumber, fechas, CUIT y
+  nombre del cliente, que se muestra en las excepciones). Se guarda en MariaDB (`fx_ordenes`, con `fx_cargas` y
   `fx_auditoria`): un archivo ya cargado (mismo SHA-256) no se procesa de nuevo, se
   actualiza por id de orden solo si cambió y un estado final (COMPLETED / FAILED)
   nunca cambia.
