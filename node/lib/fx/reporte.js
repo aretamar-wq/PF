@@ -160,8 +160,8 @@ function generarReporte({ datos, dia, usuario, ahora = new Date() }) {
     parrafo('Sin excepciones.', 8.5);
   } else {
     const filas = excepciones.slice().sort((a, b) => a.tipo.localeCompare(b.tipo, 'es') || (Number(a.comprobante) || 0) - (Number(b.comprobante) || 0));
-    tabla([{ t: 'Tipo', w: 11 }, { t: 'Oper.', w: 7 }, { t: 'Comprob.', w: 7, der: true }, { t: 'Mov.', w: 6, der: true }, { t: 'Titular', w: 10 }, { t: 'Cuenta', w: 8, der: true }, { t: 'CUIT', w: 11 }, { t: 'Mon.', w: 5 }, { t: 'Fecha', w: 9 }, { t: 'Importe', w: 13, der: true }, { t: 'Usuario', w: 9 }, { t: 'Estado BS', w: 10 }, { t: 'Detalle', w: 19 }],
-      filas.map((e) => [e.tipo, NOMBRE_LADO[e.lado] || e.lado || '—', e.comprobante, e.movcod || '—', e.titular || '—', e.cuenta || '—', e.cuit || '—', e.moneda, dmy(e.fecha), e.importe == null ? '—' : dinero(e.moneda, e.importe), e.usuario || '—', (e.estadoBs || '—').replace(/_/g, '_ '), e.detalle]), 6.5);
+    tabla([{ t: 'Tipo', w: 12 }, { t: 'Oper.', w: 7 }, { t: 'Comprob.', w: 7, der: true }, { t: 'Cuenta', w: 7, der: true }, { t: 'CUIT', w: 11 }, { t: 'Mon.', w: 5 }, { t: 'Fecha', w: 9 }, { t: 'Importe', w: 13, der: true }, { t: 'Usuario', w: 9 }, { t: 'Estado BS', w: 11 }, { t: 'Detalle', w: 21 }],
+      filas.map((e) => [e.tipo, NOMBRE_LADO[e.lado] || e.lado || '—', e.comprobante, e.cuenta || '—', e.cuit || '—', e.moneda, dmy(e.fecha), e.importe == null ? '—' : dinero(e.moneda, e.importe), e.usuario || '—', (e.estadoBs || '—').replace(/_/g, '_ '), e.detalle]), 6.5);
   }
 
   const totalPaginas = pdf.paginas.length;
