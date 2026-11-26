@@ -228,3 +228,16 @@ test('nombre del cliente: se lee del archivo y una recarga lo completa en las ó
   assert.strictEqual(bs.decidir(f, { ...existente, customer_nombre: 'PEREZ, JUAN' }), 'sin-cambios');
   assert.strictEqual(bs.ordenesDesdeFilas([{ ...existente, id: 'x', customer_nombre: 'PEREZ, JUAN' }])[0].nombre, 'PEREZ, JUAN');
 });
+
+test('COMPLETED sin registro en IBS: un renglón por cada pata', () => {
+  const r = conciliar({ movimientos: [...movsDe('10', 'BUY', 1600000, 1000), ...movsDe('20', 'BUY', 100, 1)], pendientes: [], ordenes: [o('10'), o('5', { nombre: 'PEREZ JUAN' })], config });
+  const f = r.excepciones.filter((e) => e.tipo === TIPOS.SIN_REGISTRO);
+  assert.deepStrictEqual(f.map((e) => [e.comprobante, e.movcod, e.titular, e.moneda, e.importe, e.cuenta]), [
+    ['5', '25001', 'PEREZ JUAN', 'ARS', 1600000, ''], ['5', '25002', 'Cocos Capital S.A.', 'ARS', 1600000, '11000525'], ['5', '25003', 'PEREZ JUAN', 'ARS', 1600000, ''],
+    ['5', '25004', 'PEREZ JUAN', 'USD', 1000, ''], ['5', '25005', 'Cocos Capital S.A.', 'USD', 1000, '11000525'], ['5', '25006', 'PEREZ JUAN', 'USD', 1000, ''],
+  ]);
+  assert.match(f[0].detalle, /^Falta el 25001 \(Cliente · pesos\) por \$ 16\.000,00\. IBS no tiene ninguno/);
+  // Los indicadores siguen contando órdenes.
+  const ind = calculo.indicadores({ ...r, lados: config.lados }, '2026-11-04', config.lados[0]);
+  assert.strictEqual(ind.bs.sinRegistro, 1);
+});

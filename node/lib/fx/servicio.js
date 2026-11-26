@@ -51,7 +51,7 @@ order by c.nrodoc, c.moncod, c.cuecod`;
 const movsCliente = new Set(config.lados.flatMap((l) => l.movs.filter((m) => m.titular === 'cliente').map((m) => m.cod)));
 
 async function completarCuentas(querySybase, excepciones, avisos) {
-  const sinCuenta = excepciones.filter((e) => !e.cuenta && /^\d+$/.test(String(e.cuit || '')) && config.monedas[e.moneda] != null && e.tipo === 'Faltan movimientos en IBS' && movsCliente.has(e.movcod));
+  const sinCuenta = excepciones.filter((e) => !e.cuenta && /^\d+$/.test(String(e.cuit || '')) && config.monedas[e.moneda] != null && ['Faltan movimientos en IBS', 'COMPLETED sin registro en IBS'].includes(e.tipo) && movsCliente.has(e.movcod));
   if (sinCuenta.length === 0) return;
   try {
     const cuentas = new Map();
