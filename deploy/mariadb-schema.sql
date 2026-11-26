@@ -449,7 +449,7 @@ CREATE TABLE IF NOT EXISTS transf_ca_cc_dias (
 
 -- --- Conciliación FX -----------------------------------------------------------
 -- Órdenes de compra / venta de dólares de BankService (fx-orders-settlement-*.csv).
--- Se guarda el CUIT del cliente; no se guardan nombres.
+-- Se guardan el CUIT y el nombre del cliente.
 CREATE TABLE IF NOT EXISTS fx_cargas (
   id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
   nombre VARCHAR(255) NOT NULL,
@@ -501,6 +501,9 @@ CREATE TABLE IF NOT EXISTS fx_auditoria (
   PRIMARY KEY (id),
   KEY ix_fx_auditoria_orden (orden_id)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- Nombre del cliente (customerFullName), para mostrarlo en las excepciones.
+ALTER TABLE fx_ordenes ADD COLUMN IF NOT EXISTS customer_nombre VARCHAR(255) NOT NULL DEFAULT '' AFTER customer_cuit;
 
 -- Resultado de cada día conciliado (uno por día y lado: BUY / SELL); se pisa al reconciliar.
 CREATE TABLE IF NOT EXISTS fx_dias (
