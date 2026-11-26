@@ -36,7 +36,7 @@ test('decidir: un estado final no cambia', () => {
 // Movimientos de IBS de una orden (los 6 de su lado), con importes en centavos.
 const movsDe = (comp, lado, ars, usd, { menos = [], fecha = '2026-11-04', usuario = '123123123' } = {}) =>
   config.lados.find((l) => l.lado === lado).movs.filter((m) => !menos.includes(m.cod))
-    .map((m) => ({ usuario, sistcod: '5', moncod: m.moneda === 'USD' ? '2' : '0', cuecod: m.cuentaFija || (m.titular === 'cocos' ? '30000001' : '5000'), fecha, comprobante: comp, movcod: m.cod, signo: 1, importe: m.moneda === 'USD' ? usd : ars }));
+    .map((m) => ({ usuario, sistcod: '5', moncod: m.moneda === 'USD' ? '2' : '0', cuecod: m.cuentaFija || (m.moneda === 'USD' ? '5002' : '5000'), fecha, comprobante: comp, movcod: m.cod, signo: 1, importe: m.moneda === 'USD' ? usd : ars }));
 const o = (comprobante, extra = {}) => ({ id: `fxo_${comprobante}`, comprobante, status: 'COMPLETED', side: 'BUY', ars: 1600000, usd: 1000, creada: '2026-11-04 10:00:00', fecha: '2026-11-04', cuit: '20111111112', failReason: '', ...extra });
 
 function escenario() {
@@ -68,8 +68,8 @@ test('conciliar: clases de órdenes y excepciones', () => {
   ].sort());
   const pend = r.excepciones.find((e) => e.tipo === TIPOS.PENDIENTE);
   assert.deepStrictEqual([pend.cuenta, pend.cuit, pend.lado, pend.moneda], ['5000', '20111111112', 'BUY', 'ARS']);
-  // La cuenta del cliente en pesos no sale del 25001 (cuenta fija 11000524): queda para buscarla por CUIT.
-  assert.strictEqual(r.excepciones.find((e) => e.tipo === TIPOS.FALTAN).cuenta, '');
+  // La cuenta del cliente en pesos sale del 25002 (misma Caja de Ahorro que el 25003).
+  assert.strictEqual(r.excepciones.find((e) => e.tipo === TIPOS.FALTAN).cuenta, '5000');
 });
 
 test('indicadores y semáforo por lado', () => {
@@ -165,8 +165,8 @@ test('órdenes con débito pendiente: cantidad por moneda', () => {
 test('faltan movimientos: una excepción por movimiento, con moneda, importe y cuenta', () => {
   const r = conciliar({ movimientos: movsDe('12', 'BUY', 1600000, 1000, { menos: ['25003', '25006'] }), pendientes: [], ordenes: [o('12', { nombre: 'PEREZ JUAN' })], config });
   const faltan = r.excepciones.filter((e) => e.tipo === TIPOS.FALTAN);
-  assert.deepStrictEqual(faltan.map((e) => [e.movcod, e.titular, e.moneda, e.importe, e.cuenta, e.cuit]), [['25003', 'PEREZ JUAN', 'ARS', 1600000, '', '20111111112'], ['25006', 'PEREZ JUAN', 'USD', 1000, '11000525', '20111111112']]);
-  assert.match(faltan[0].detalle, /^Falta el 25003 \(Cliente · pesos\) por \$ 16\.000,00\. IBS tiene 25001, 25002, 25004, 25005\./);
+  assert.deepStrictEqual(faltan.map((e) => [e.movcod, e.titular, e.moneda, e.importe, e.cuenta, e.cuit]), [['25003', 'PEREZ JUAN', 'ARS', 1600000, '5000', '20111111112'], ['25006', 'Cocos Capital S.A.', 'USD', 1000, '11000525', '30708424478']]);
+  assert.match(faltan[0].detalle, /^Falta el 25003 \(Caja de Ahorro del cliente · pesos\) por \$ 16\.000,00\. IBS tiene 25001, 25002, 25004, 25005\./);
 });
 
 test('faltan movimientos: no incluye ni menciona los que están en débitos pendientes', () => {
@@ -177,7 +177,7 @@ test('faltan movimientos: no incluye ni menciona los que están en débitos pend
     config,
   });
   const faltan = r.excepciones.filter((e) => e.tipo === TIPOS.FALTAN);
-  assert.deepStrictEqual(faltan.map((e) => e.detalle), ['Falta el 25006 (Cliente · USD) por US$ 10,00. IBS tiene 25001, 25002, 25004, 25005.']);
+  assert.deepStrictEqual(faltan.map((e) => e.detalle), ['Falta el 25006 (Cuenta Corriente 11000525 · USD) por US$ 10,00. IBS tiene 25001, 25002, 25004, 25005.']);
   assert.ok(r.excepciones.some((e) => e.tipo === TIPOS.PENDIENTE));
 });
 
@@ -194,9 +194,10 @@ test('órdenes ABANDONED: no se tienen en cuenta (salvo que IBS tenga movimiento
 });
 
 test('cuentas fijas: 25001/25012 en 11000524 y 25006/25007 en 11000525', () => {
-  // Faltan el 25001 y el 25004: el 25001 va con su cuenta fija; el 25004 (cliente, USD) no toma la del 25006.
+  // Faltan el 25001 y el 25004: el 25001 va con su cuenta fija; el 25004 toma la Caja de Ahorro en USD del
+  // 25005 (no la Cuenta Corriente del 25006).
   const r = conciliar({ movimientos: movsDe('12', 'BUY', 1600000, 1000, { menos: ['25001', '25004'] }), pendientes: [], ordenes: [o('12')], config });
-  assert.deepStrictEqual(r.excepciones.filter((e) => e.tipo === TIPOS.FALTAN).map((e) => [e.movcod, e.cuenta]), [['25001', '11000524'], ['25004', '']]);
+  assert.deepStrictEqual(r.excepciones.filter((e) => e.tipo === TIPOS.FALTAN).map((e) => [e.movcod, e.cuenta, e.titular]), [['25001', '11000524', 'Cocos Capital S.A.'], ['25004', '5002', 'Cliente']]);
   // Un 25006 en otra cuenta es "Cuenta distinta".
   const movs = movsDe('13', 'SELL', 1600000, 1000).map((m) => (m.movcod === '25007' ? { ...m, cuecod: '7777' } : m));
   const r2 = conciliar({ movimientos: movs, pendientes: [], ordenes: [o('13', { side: 'SELL' })], config });
@@ -211,14 +212,8 @@ test('completarCuentas: busca por CUIT la cuenta en la moneda (una sola consulta
   const consultas = [];
   await completarCuentas(async (q) => { consultas.push(q); return [{ cuecod: 11111, moncod: 0, nrodoc: '20999999990' }, { cuecod: 99001, moncod: 2, nrodoc: 20999999990 }]; }, r.excepciones, []);
   assert.strictEqual(consultas.length, 1);
-  // Los del cliente (25004, 25006) toman su cuenta en USD; el de Cocos (25005) no se busca por CUIT.
-  assert.deepStrictEqual(r.excepciones.filter((e) => e.tipo === TIPOS.FALTAN).map((e) => e.cuenta), ['99001', '', '11000525']);
-});
-
-test('faltan movimientos de Cocos Capital: titular Cocos y su cuenta (la de ese movimiento en IBS)', () => {
-  const r = conciliar({ movimientos: [...movsDe('10', 'BUY', 1600000, 1000), ...movsDe('12', 'BUY', 1600000, 1000, { menos: ['25002'] })], pendientes: [], ordenes: [o('10'), o('12')], config });
-  const f = r.excepciones.filter((e) => e.tipo === TIPOS.FALTAN);
-  assert.deepStrictEqual(f.map((e) => [e.comprobante, e.movcod, e.titular, e.cuenta, e.cuit]), [['12', '25002', 'Cocos Capital S.A.', '30000001', '30708424478']]);
+  // Los del cliente (25004, 25005) toman su Caja de Ahorro en USD buscada por CUIT; el 25006 su cuenta fija.
+  assert.deepStrictEqual(r.excepciones.filter((e) => e.tipo === TIPOS.FALTAN).map((e) => e.cuenta), ['99001', '99001', '11000525']);
 });
 
 test('nombre del cliente: se lee del archivo y una recarga lo completa en las órdenes ya cargadas', () => {
@@ -235,10 +230,10 @@ test('COMPLETED sin registro en IBS: un renglón por cada pata', () => {
   const r = conciliar({ movimientos: [...movsDe('10', 'BUY', 1600000, 1000), ...movsDe('20', 'BUY', 100, 1)], pendientes: [], ordenes: [o('10'), o('5', { nombre: 'PEREZ JUAN' })], config });
   const f = r.excepciones.filter((e) => e.tipo === TIPOS.SIN_REGISTRO);
   assert.deepStrictEqual(f.map((e) => [e.comprobante, e.movcod, e.titular, e.moneda, e.importe, e.cuenta]), [
-    ['5', '25001', 'PEREZ JUAN', 'ARS', 1600000, '11000524'], ['5', '25002', 'Cocos Capital S.A.', 'ARS', 1600000, '30000001'], ['5', '25003', 'PEREZ JUAN', 'ARS', 1600000, ''],
-    ['5', '25004', 'PEREZ JUAN', 'USD', 1000, ''], ['5', '25005', 'Cocos Capital S.A.', 'USD', 1000, '30000001'], ['5', '25006', 'PEREZ JUAN', 'USD', 1000, '11000525'],
+    ['5', '25001', 'Cocos Capital S.A.', 'ARS', 1600000, '11000524'], ['5', '25002', 'PEREZ JUAN', 'ARS', 1600000, ''], ['5', '25003', 'PEREZ JUAN', 'ARS', 1600000, ''],
+    ['5', '25004', 'PEREZ JUAN', 'USD', 1000, ''], ['5', '25005', 'PEREZ JUAN', 'USD', 1000, ''], ['5', '25006', 'Cocos Capital S.A.', 'USD', 1000, '11000525'],
   ]);
-  assert.match(f[0].detalle, /^Falta el 25001 \(Cliente · pesos\) por \$ 16\.000,00\. IBS no tiene ninguno/);
+  assert.match(f[0].detalle, /^Falta el 25001 \(Cuenta Corriente 11000524 · pesos\) por \$ 16\.000,00\. IBS no tiene ninguno/);
   // Los indicadores siguen contando órdenes.
   const ind = calculo.indicadores({ ...r, lados: config.lados }, '2026-11-04', config.lados[0]);
   assert.strictEqual(ind.bs.sinRegistro, 1);
