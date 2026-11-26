@@ -159,7 +159,20 @@ function conciliar({ movimientos, pendientes, ordenes, config }) {
     if (!conMovs && r.pendientesMov.length === 0) {
       if ((Number(o.comprobante) || 0) < mayorComprobante || (ultimoDiaIbs && o.fecha < ultimoDiaIbs)) {
         r.clase = 'sinRegistro';
-        exc(TIPOS.SIN_REGISTRO, { ...base, detalle: `IBS no tiene ninguno de sus movimientos ni débitos pendientes. Faltan: ${lado.movs.map((m) => `${m.cod} ${m.nombre} ${dinero(m.moneda, esperado(m.moneda))}`).join(', ')}.` });
+        // Un renglón por cada pata (movimiento) que falta, con su titular, cuenta,
+        // moneda e importe.
+        for (const def of lado.movs) {
+          exc(TIPOS.SIN_REGISTRO, {
+            ...base,
+            movcod: def.cod,
+            titular: titularDe(def.cod, o),
+            cuit: cuitDe(def.cod, o),
+            cuenta: esDeCliente(def.cod) ? cuentaCliente(def.moneda) : cuentaCocos.get(def.cod) || '',
+            moneda: def.moneda,
+            importe: esperado(def.moneda),
+            detalle: `Falta el ${def.cod} (${def.nombre}) por ${dinero(def.moneda, esperado(def.moneda))}. IBS no tiene ninguno de los movimientos de la orden ni débitos pendientes.`,
+          });
+        }
       } else {
         r.clase = 'porContabilizar';
         exc(TIPOS.POR_CONTABILIZAR, { ...base, detalle: `Faltan sus movimientos en IBS: el comprobante es posterior al mayor de IBS (${mayorComprobante}), todavía puede contabilizarse.` });
