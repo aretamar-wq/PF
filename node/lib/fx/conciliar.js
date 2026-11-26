@@ -13,6 +13,7 @@ const TIPOS = {
   PENDIENTE_SIN_SALDO: 'Débito pendiente sin saldo',
   DUPLICADO: 'Movimiento duplicado',
   IMPORTE: 'Importe distinto',
+  CUENTA: 'Cuenta distinta',
   SIN_REGISTRO: 'COMPLETED sin registro en IBS',
   POR_CONTABILIZAR: 'Por contabilizar',
   OTRO_LADO: 'Movimiento de otro tipo de operación',
@@ -24,7 +25,7 @@ const TIPOS = {
   MANUAL: 'Movimiento manual',
 };
 // Rojas (diferencias) y amarillas (pendientes / a revisar); el resto es informativo.
-const ROJAS = [TIPOS.FALTAN, TIPOS.DUPLICADO, TIPOS.IMPORTE, TIPOS.SIN_REGISTRO, TIPOS.OTRO_LADO, TIPOS.FAILED_CON_MOV, TIPOS.REVISION_CON_MOV, TIPOS.SIN_OPERACION, TIPOS.PEND_SIN_OPERACION];
+const ROJAS = [TIPOS.FALTAN, TIPOS.DUPLICADO, TIPOS.IMPORTE, TIPOS.CUENTA, TIPOS.SIN_REGISTRO, TIPOS.OTRO_LADO, TIPOS.FAILED_CON_MOV, TIPOS.REVISION_CON_MOV, TIPOS.SIN_OPERACION, TIPOS.PEND_SIN_OPERACION];
 const AMARILLAS = [TIPOS.PENDIENTE, TIPOS.PENDIENTE_CON_SALDO, TIPOS.PENDIENTE_SIN_SALDO, TIPOS.POR_CONTABILIZAR, TIPOS.REVISION];
 
 const pesos = (c) => (c / 100).toLocaleString('es-AR', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
@@ -111,11 +112,14 @@ function conciliar({ movimientos, pendientes, ordenes, config }) {
     // Cuenta del cliente en una moneda: la de un movimiento de cliente de esa moneda
     // (no la de un puente) o, si no hay, la de un débito pendiente de esa moneda. El
     // cliente tiene una cuenta en pesos y otra en dólares: no se mezclan.
+    // Los movimientos con cuenta fija (25001, 25012 en 11000524; 25006, 25007 en
+    // 11000525) no sirven para saber la cuenta del cliente.
     const esDeCliente = (cod) => defMov.has(cod) && defMov.get(cod).titular === 'cliente';
+    const cuentaFija = (cod) => (defMov.has(cod) && defMov.get(cod).cuentaFija) || '';
     const cuentaCliente = (moneda) => {
-      const m = propios.find((x) => esDeCliente(x.movcod) && defMov.get(x.movcod).moneda === moneda);
+      const m = propios.find((x) => esDeCliente(x.movcod) && !cuentaFija(x.movcod) && defMov.get(x.movcod).moneda === moneda);
       if (m) return m.cuecod;
-      const p = pends.find((x) => defMov.has(x.movcod) && defMov.get(x.movcod).moneda === moneda);
+      const p = pends.find((x) => defMov.has(x.movcod) && !cuentaFija(x.movcod) && defMov.get(x.movcod).moneda === moneda);
       return p ? p.cuecod : '';
     };
     const base = { comprobante: o.comprobante || o.id, lado: o.side, titular: o.nombre || '', cuit: o.cuit, cuenta: cuentaCliente('ARS'), fecha: o.fecha, estadoBs: o.status, importe: o.ars, moneda: 'ARS' };
@@ -147,6 +151,9 @@ function conciliar({ movimientos, pendientes, ordenes, config }) {
       }
       if (lista.length > 1) exc(TIPOS.DUPLICADO, { ...base, movcod: def.cod, titular: titularDe(def.cod, o), cuit: cuitDe(def.cod, o), cuenta: lista[0].cuecod, moneda: def.moneda, importe: lista.reduce((s, m) => s + m.importe, 0), usuario: lista[0].usuario, detalle: `${lista.length} movimientos ${def.cod} (${def.nombre}): ${lista.map((m) => `${dinero(def.moneda, m.importe)} del ${dmy(m.fecha)}`).join(', ')}.` });
       for (const m of lista) {
+        if (cuentaFija(def.cod) && String(m.cuecod) !== cuentaFija(def.cod)) {
+          exc(TIPOS.CUENTA, { ...base, movcod: def.cod, titular: titularDe(def.cod, o), cuit: cuitDe(def.cod, o), moneda: def.moneda, cuenta: m.cuecod, importe: m.importe, usuario: m.usuario, detalle: `El ${def.cod} (${def.nombre}) está en la cuenta ${m.cuecod} y tiene que ir en la ${cuentaFija(def.cod)}.` });
+        }
         if (m.importe !== esperado(def.moneda)) exc(TIPOS.IMPORTE, { ...base, movcod: def.cod, titular: titularDe(def.cod, o), cuit: cuitDe(def.cod, o), moneda: def.moneda, cuenta: m.cuecod, importe: m.importe, usuario: m.usuario, detalle: `${def.cod} (${def.nombre}) por ${dinero(def.moneda, m.importe)} y la orden es de ${dinero(def.moneda, esperado(def.moneda))}.` });
       }
     }
@@ -167,7 +174,7 @@ function conciliar({ movimientos, pendientes, ordenes, config }) {
             movcod: def.cod,
             titular: titularDe(def.cod, o),
             cuit: cuitDe(def.cod, o),
-            cuenta: esDeCliente(def.cod) ? cuentaCliente(def.moneda) : cuentaCocos.get(def.cod) || '',
+            cuenta: cuentaFija(def.cod) || (esDeCliente(def.cod) ? cuentaCliente(def.moneda) : cuentaCocos.get(def.cod) || ''),
             moneda: def.moneda,
             importe: esperado(def.moneda),
             detalle: `Falta el ${def.cod} (${def.nombre}) por ${dinero(def.moneda, esperado(def.moneda))}. IBS no tiene ninguno de los movimientos de la orden ni débitos pendientes.`,
@@ -193,7 +200,7 @@ function conciliar({ movimientos, pendientes, ordenes, config }) {
           titular: titularDe(cod, o),
           // Cuenta y CUIT del titular del movimiento: el cliente o Cocos Capital S.A.
           cuit: cuitDe(cod, o),
-          cuenta: esDeCliente(cod) ? cuentaCliente(def.moneda) : cuentaCocos.get(cod) || '',
+          cuenta: cuentaFija(cod) || (esDeCliente(cod) ? cuentaCliente(def.moneda) : cuentaCocos.get(cod) || ''),
           moneda: def.moneda,
           importe: esperado(def.moneda),
           usuario: (propios[0] || {}).usuario || '',
