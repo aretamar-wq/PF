@@ -191,3 +191,24 @@ test('órdenes ABANDONED: no se tienen en cuenta (salvo que IBS tenga movimiento
   assert.deepStrictEqual(r2.excepciones.map((e) => e.tipo), [TIPOS.REVISION_CON_MOV]);
   assert.match(r2.excepciones[0].detalle, /ABANDONED/);
 });
+
+test('faltan movimientos: la cuenta es la del cliente en la moneda del movimiento', () => {
+  // 25004 (Crédito USD cliente) falta; 25005 (Débito USD cliente) está en la cuenta 7777.
+  const movs = movsDe('12', 'BUY', 1600000, 1000, { menos: ['25004'] }).map((m) => (m.movcod === '25005' ? { ...m, cuecod: '7777' } : m));
+  const r = conciliar({ movimientos: movs, pendientes: [], ordenes: [o('12')], config });
+  assert.deepStrictEqual(r.excepciones.filter((e) => e.tipo === TIPOS.FALTAN).map((e) => [e.moneda, e.cuenta]), [['USD', '7777']]);
+  // Sin ningún movimiento en dólares: queda vacía (la completa el servidor buscándola por CUIT).
+  const r2 = conciliar({ movimientos: movsDe('13', 'BUY', 1600000, 1000, { menos: ['25004', '25005', '25006'] }), pendientes: [], ordenes: [o('13')], config });
+  assert.deepStrictEqual(r2.excepciones.filter((e) => e.tipo === TIPOS.FALTAN).map((e) => [e.moneda, e.cuenta]), [['USD', ''], ['USD', ''], ['USD', '']]);
+});
+
+test('completarCuentas: busca por CUIT la cuenta en la moneda (una sola consulta)', async () => {
+  const { completarCuentas, consultaCuentasPorCuit } = require('../../lib/fx/servicio');
+  assert.match(consultaCuentasPorCuit(['20999999990']), /convert\(varchar\(20\), c\.nrodoc\) in \('20999999990'\)/);
+  const r = conciliar({ movimientos: movsDe('13', 'BUY', 1600000, 1000, { menos: ['25004', '25005', '25006'] }), pendientes: [], ordenes: [o('13', { cuit: '20999999990' })], config });
+  const consultas = [];
+  await completarCuentas(async (q) => { consultas.push(q); return [{ cuecod: 11111, moncod: 0, nrodoc: '20999999990' }, { cuecod: 99001, moncod: 2, nrodoc: 20999999990 }]; }, r.excepciones, []);
+  assert.strictEqual(consultas.length, 1);
+  // Los de cliente (25004, 25005) toman la cuenta en USD; el puente (25006) queda vacío.
+  assert.deepStrictEqual(r.excepciones.filter((e) => e.tipo === TIPOS.FALTAN).map((e) => e.cuenta), ['99001', '99001', '']);
+});
