@@ -35,39 +35,6 @@ where a.fecmov >= '${aaaammdd(desde)}' and a.fecmov < '${aaaammdd(hasta)}'
 order by a.comnro`;
 }
 
-// Cuentas del cliente por CUIT y moneda (Caja de Ahorro, tcl_VinculoCli_Cue): para
-// las excepciones de una moneda cuya cuenta no sale de los movimientos de la orden
-// (por ejemplo, falta el crédito en USD y la orden no tiene ningún movimiento en
-// dólares). Una sola consulta para todos los CUIT.
-function consultaCuentasPorCuit(cuits) {
-  if (cuits.some((c) => !/^\d{1,15}$/.test(c))) throw new Error('CUIT inválido.');
-  return `select c.cuecod, c.moncod, convert(varchar(20), c.nrodoc) 'nrodoc'
-from Banksys..tcl_VinculoCli_Cue c
-where c.paiscod = 54 and c.bcocod = 312 and c.sistcod = 5 and c.moncod in (${Object.values(config.monedas).join(', ')})
-  and convert(varchar(20), c.nrodoc) in (${cuits.map((c) => `'${c}'`).join(', ')})
-order by c.nrodoc, c.moncod, c.cuecod`;
-}
-
-async function completarCuentas(querySybase, excepciones, avisos) {
-  const sinCuenta = excepciones.filter((e) => !e.cuenta && /^\d+$/.test(String(e.cuit || '')) && config.monedas[e.moneda] != null && e.tipo === 'Faltan movimientos en IBS' && e.titular === config.titulares.cliente);
-  if (sinCuenta.length === 0) return;
-  try {
-    const cuentas = new Map();
-    for (const f of await querySybase(consultaCuentasPorCuit([...new Set(sinCuenta.map((e) => String(e.cuit)))]))) {
-      const clave = `${String(f.nrodoc).trim().replace(/\.0+$/, '')}|${String(parseInt(f.moncod, 10))}`;
-      const cuenta = String(parseInt(f.cuecod, 10));
-      if (!cuentas.has(clave)) cuentas.set(clave, []);
-      if (!cuentas.get(clave).includes(cuenta)) cuentas.get(clave).push(cuenta);
-    }
-    for (const e of sinCuenta) {
-      const lista = cuentas.get(`${e.cuit}|${config.monedas[e.moneda]}`);
-      if (lista) e.cuenta = lista.join(' / ');
-    }
-  } catch (err) {
-    avisos.push(`No se pudieron buscar en IBS las cuentas en pesos y dólares de los clientes: ${err.message}`);
-  }
-}
-
 async function ultimaCarga(rootDir) {
   const [c] = await db().query(rootDir, 'SELECT id, nombre, cargado_en, cargado_por FROM fx_cargas ORDER BY id DESC LIMIT 1');
   const [m] = await db().query(rootDir, 'SELECT MAX(fecha_operacion) AS corte FROM fx_ordenes');
@@ -179,7 +146,6 @@ async function obtenerDatos({ rootDir, querySybase, desde, hasta, ahora, feriado
   }
 
   const r = conciliar({ movimientos: mov.movimientos, pendientes: pend.pendientes, ordenes, config });
-  await completarCuentas(querySybase, r.excepciones, avisos);
   return { rango: { desde, hasta }, generado: ahora, lados: config.lados, ultimaCarga: await ultimaCarga(rootDir), avisos, ...r };
 }
 
@@ -226,4 +192,4 @@ async function historia(rootDir, desde, hasta) {
   }));
 }
 
-module.exports = { completarCuentas, consultaCuentasPorCuit, obtenerDatos, cargar, ultimaCarga, historialCargas, detalleCarga, resumenPorDia, guardarDias, historia, sumarDias, consultaPosteriores, config };
+module.exports = { obtenerDatos, cargar, ultimaCarga, historialCargas, detalleCarga, resumenPorDia, guardarDias, historia, sumarDias, consultaPosteriores, config };
