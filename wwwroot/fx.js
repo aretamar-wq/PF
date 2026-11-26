@@ -402,7 +402,7 @@
     let filas = lista.filter((e) => (!tipo || e.tipo === tipo) && (!lado || e.lado === lado));
     if (q) filas = filas.filter((e) => [e.comprobante, e.cuit, e.cuenta, e.moneda, dmy(e.fecha), e.fecha, e.detalle].some((v) => String(v || '').toLowerCase().includes(q)));
     const { campo, asc } = estado.orden;
-    const numericos = ['comprobante', 'cuenta', 'importe'];
+    const numericos = ['comprobante', 'movcod', 'cuenta', 'importe'];
     filas.sort((a, b) => {
       let r = numericos.includes(campo) ? (Number(a[campo]) || 0) - (Number(b[campo]) || 0) : String(a[campo] || '').localeCompare(String(b[campo] || ''), 'es');
       if (r === 0) r = (Number(a.comprobante) || 0) - (Number(b.comprobante) || 0);
@@ -418,7 +418,7 @@
     $('fxExcCuenta').textContent = `${fmtNum(filas.length)} de ${fmtNum(total)} excepciones`;
     $('fxExc').querySelector('tbody').innerHTML = filas.slice(0, 5000).map((e) => `<tr>
       <td><span class="tcc-pill" style="background:${colorTipo(e.tipo)}">${esc(e.tipo)}</span></td><td>${esc(NOMBRE_LADO[e.lado] || e.lado || '—')}</td>
-      <td class="num">${esc(e.comprobante)}</td><td class="num">${esc(e.cuenta || '—')}</td><td class="mono">${esc(e.cuit || '—')}</td><td>${esc(e.moneda)}</td>
+      <td class="num">${esc(e.comprobante)}</td><td class="num">${esc(e.movcod || '—')}</td><td>${esc(e.titular || '—')}</td><td class="num">${esc(e.cuenta || '—')}</td><td class="mono">${esc(e.cuit || '—')}</td><td>${esc(e.moneda)}</td>
       <td>${esc(dmy(e.fecha))}</td><td class="num">${e.importe == null ? '—' : esc(dinero(e.moneda, e.importe))}</td>
       <td>${esc(e.usuario || '—')}</td><td>${esc(e.estadoBs || '—')}</td><td class="detalle">${esc(e.detalle)}</td></tr>`).join('');
     document.querySelectorAll('#fxExc th.ordenable').forEach((th) => {
@@ -433,9 +433,9 @@
       alert('No hay excepciones para exportar con los filtros actuales.');
       return;
     }
-    const lineas = [csvExcelLine(['Tipo', 'Operación', 'Comprobante', 'Cuenta', 'CUIT', 'Moneda', 'Fecha', 'Importe', 'Usuario', 'Estado BankService', 'Detalle'])];
+    const lineas = [csvExcelLine(['Tipo', 'Operación', 'Comprobante', 'Movimiento', 'Titular', 'Cuenta', 'CUIT', 'Moneda', 'Fecha', 'Importe', 'Usuario', 'Estado BankService', 'Detalle'])];
     for (const e of filas) {
-      lineas.push(csvExcelLine([e.tipo, NOMBRE_LADO[e.lado] || e.lado, e.comprobante, e.cuenta, e.cuit, e.moneda, dmy(e.fecha), e.importe == null ? '' : (e.importe / 100).toFixed(2).replace('.', ','), e.usuario, e.estadoBs, e.detalle]));
+      lineas.push(csvExcelLine([e.tipo, NOMBRE_LADO[e.lado] || e.lado, e.comprobante, e.movcod, e.titular, e.cuenta, e.cuit, e.moneda, dmy(e.fecha), e.importe == null ? '' : (e.importe / 100).toFixed(2).replace('.', ','), e.usuario, e.estadoBs, e.detalle]));
     }
     downloadCsvExcel(`excepciones-fx-${estado.dia}.csv`, lineas);
   }

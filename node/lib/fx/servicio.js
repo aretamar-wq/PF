@@ -49,7 +49,7 @@ order by c.nrodoc, c.moncod, c.cuecod`;
 }
 
 async function completarCuentas(querySybase, excepciones, avisos) {
-  const sinCuenta = excepciones.filter((e) => !e.cuenta && /^\d+$/.test(String(e.cuit || '')) && config.monedas[e.moneda] != null && e.tipo === 'Faltan movimientos en IBS' && /cliente/.test(e.detalle));
+  const sinCuenta = excepciones.filter((e) => !e.cuenta && /^\d+$/.test(String(e.cuit || '')) && config.monedas[e.moneda] != null && e.tipo === 'Faltan movimientos en IBS' && e.titular === config.titulares.cliente);
   if (sinCuenta.length === 0) return;
   try {
     const cuentas = new Map();
