@@ -69,8 +69,28 @@ function conciliar({ movimientos, pendientes, ordenes, config }) {
     pendPorComp.get(p.comprobante).push(p);
   }
 
+  // Cuenta de Cocos Capital S.A. de cada movimiento: es la misma para todas las
+  // órdenes, se toma la más frecuente de ese movcod en lo traído de IBS.
+  const cuentaCocos = new Map();
+  {
+    const cuenta = new Map();
+    for (const m of movs) {
+      const def = defMov.get(m.movcod);
+      if (!def || def.titular !== 'cocos') continue;
+      const k = `${m.movcod}|${m.cuecod}`;
+      cuenta.set(k, (cuenta.get(k) || 0) + 1);
+    }
+    const mejor = new Map();
+    for (const [k, n] of cuenta) {
+      const [cod, cue] = k.split('|');
+      if (!mejor.has(cod) || n > mejor.get(cod).n) mejor.set(cod, { cue, n });
+    }
+    for (const [cod, x] of mejor) cuentaCocos.set(cod, x.cue);
+  }
+  const titularDe = (cod) => (defMov.has(cod) ? (config.titulares || {})[defMov.get(cod).titular] || '' : '');
+
   const excepciones = [];
-  const exc = (tipo, datos) => excepciones.push({ tipo, comprobante: '', lado: '', cuit: '', cuenta: '', moneda: '', fecha: '', importe: null, usuario: '', estadoBs: '', detalle: '', ...datos });
+  const exc = (tipo, datos) => excepciones.push({ tipo, comprobante: '', lado: '', titular: '', movcod: '', cuit: '', cuenta: '', moneda: '', fecha: '', importe: null, usuario: '', estadoBs: '', detalle: '', ...datos });
 
   const clasificadas = ordenes.map((o) => {
     const lado = ladoDe.get(o.side);
@@ -81,7 +101,7 @@ function conciliar({ movimientos, pendientes, ordenes, config }) {
     // Cuenta del cliente en una moneda: la de un movimiento de cliente de esa moneda
     // (no la de un puente) o, si no hay, la de un débito pendiente de esa moneda. El
     // cliente tiene una cuenta en pesos y otra en dólares: no se mezclan.
-    const esDeCliente = (cod) => defMov.has(cod) && /cliente/.test(defMov.get(cod).nombre);
+    const esDeCliente = (cod) => defMov.has(cod) && defMov.get(cod).titular === 'cliente';
     const cuentaCliente = (moneda) => {
       const m = propios.find((x) => esDeCliente(x.movcod) && defMov.get(x.movcod).moneda === moneda);
       if (m) return m.cuecod;
@@ -115,16 +135,16 @@ function conciliar({ movimientos, pendientes, ordenes, config }) {
         else r.faltan.push(def.cod);
         continue;
       }
-      if (lista.length > 1) exc(TIPOS.DUPLICADO, { ...base, cuenta: lista[0].cuecod, moneda: def.moneda, importe: lista.reduce((s, m) => s + m.importe, 0), usuario: lista[0].usuario, detalle: `${lista.length} movimientos ${def.cod} (${def.nombre}): ${lista.map((m) => `${dinero(def.moneda, m.importe)} del ${dmy(m.fecha)}`).join(', ')}.` });
+      if (lista.length > 1) exc(TIPOS.DUPLICADO, { ...base, movcod: def.cod, titular: titularDe(def.cod), cuit: esDeCliente(def.cod) ? o.cuit : '', cuenta: lista[0].cuecod, moneda: def.moneda, importe: lista.reduce((s, m) => s + m.importe, 0), usuario: lista[0].usuario, detalle: `${lista.length} movimientos ${def.cod} (${def.nombre}): ${lista.map((m) => `${dinero(def.moneda, m.importe)} del ${dmy(m.fecha)}`).join(', ')}.` });
       for (const m of lista) {
-        if (m.importe !== esperado(def.moneda)) exc(TIPOS.IMPORTE, { ...base, moneda: def.moneda, cuenta: m.cuecod, importe: m.importe, usuario: m.usuario, detalle: `${def.cod} (${def.nombre}) por ${dinero(def.moneda, m.importe)} y la orden es de ${dinero(def.moneda, esperado(def.moneda))}.` });
+        if (m.importe !== esperado(def.moneda)) exc(TIPOS.IMPORTE, { ...base, movcod: def.cod, titular: titularDe(def.cod), cuit: esDeCliente(def.cod) ? o.cuit : '', moneda: def.moneda, cuenta: m.cuecod, importe: m.importe, usuario: m.usuario, detalle: `${def.cod} (${def.nombre}) por ${dinero(def.moneda, m.importe)} y la orden es de ${dinero(def.moneda, esperado(def.moneda))}.` });
       }
     }
     const conMovs = propios.some((m) => m.lado === o.side);
     for (const p of r.pendientesMov) {
       // Con el saldo de la cuenta consultado: pendiente con saldo (se puede debitar) o sin saldo.
       const tipoPend = p.saldo ? (p.saldo.conSaldo ? TIPOS.PENDIENTE_CON_SALDO : TIPOS.PENDIENTE_SIN_SALDO) : TIPOS.PENDIENTE;
-      exc(tipoPend, { ...base, cuenta: p.cuecod || base.cuenta, moneda: p.moneda, importe: p.importe, detalle: `Falta el ${p.cod} en IBS: está en débitos pendientes desde el ${dmy(p.fechaOrigen) || 'sin fecha'} por ${dinero(p.moneda, p.importe)} (${p.motivo || 'sin motivo'}).${p.saldo ? ` ${p.saldo.texto}` : ''}` });
+      exc(tipoPend, { ...base, movcod: p.cod, titular: titularDe(p.cod), cuenta: p.cuecod || base.cuenta, moneda: p.moneda, importe: p.importe, detalle: `Falta el ${p.cod} en IBS: está en débitos pendientes desde el ${dmy(p.fechaOrigen) || 'sin fecha'} por ${dinero(p.moneda, p.importe)} (${p.motivo || 'sin motivo'}).${p.saldo ? ` ${p.saldo.texto}` : ''}` });
     }
     if (!conMovs && r.pendientesMov.length === 0) {
       if ((Number(o.comprobante) || 0) < mayorComprobante || (ultimoDiaIbs && o.fecha < ultimoDiaIbs)) {
@@ -146,7 +166,11 @@ function conciliar({ movimientos, pendientes, ordenes, config }) {
         const def = defMov.get(cod);
         exc(TIPOS.FALTAN, {
           ...base,
-          cuenta: esDeCliente(cod) ? cuentaCliente(def.moneda) : '',
+          movcod: cod,
+          titular: titularDe(cod),
+          // Cuenta y CUIT del titular del movimiento: el cliente o Cocos Capital S.A.
+          cuit: esDeCliente(cod) ? o.cuit : '',
+          cuenta: esDeCliente(cod) ? cuentaCliente(def.moneda) : cuentaCocos.get(cod) || '',
           moneda: def.moneda,
           importe: esperado(def.moneda),
           usuario: (propios[0] || {}).usuario || '',
