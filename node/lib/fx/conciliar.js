@@ -87,6 +87,11 @@ function conciliar({ movimientos, pendientes, ordenes, config }) {
     }
     for (const [cod, x] of mejor) cuentaCocos.set(cod, x.cue);
   }
+  // CUIT del titular del movimiento: el del cliente de la orden o el fijo (Cocos Capital S.A.).
+  const cuitDe = (cod, o) => {
+    const t = defMov.has(cod) ? defMov.get(cod).titular : '';
+    return t === 'cliente' ? o.cuit : (config.cuitTitulares || {})[t] || '';
+  };
   const titularDe = (cod) => (defMov.has(cod) ? (config.titulares || {})[defMov.get(cod).titular] || '' : '');
 
   const excepciones = [];
@@ -135,16 +140,16 @@ function conciliar({ movimientos, pendientes, ordenes, config }) {
         else r.faltan.push(def.cod);
         continue;
       }
-      if (lista.length > 1) exc(TIPOS.DUPLICADO, { ...base, movcod: def.cod, titular: titularDe(def.cod), cuit: esDeCliente(def.cod) ? o.cuit : '', cuenta: lista[0].cuecod, moneda: def.moneda, importe: lista.reduce((s, m) => s + m.importe, 0), usuario: lista[0].usuario, detalle: `${lista.length} movimientos ${def.cod} (${def.nombre}): ${lista.map((m) => `${dinero(def.moneda, m.importe)} del ${dmy(m.fecha)}`).join(', ')}.` });
+      if (lista.length > 1) exc(TIPOS.DUPLICADO, { ...base, movcod: def.cod, titular: titularDe(def.cod), cuit: cuitDe(def.cod, o), cuenta: lista[0].cuecod, moneda: def.moneda, importe: lista.reduce((s, m) => s + m.importe, 0), usuario: lista[0].usuario, detalle: `${lista.length} movimientos ${def.cod} (${def.nombre}): ${lista.map((m) => `${dinero(def.moneda, m.importe)} del ${dmy(m.fecha)}`).join(', ')}.` });
       for (const m of lista) {
-        if (m.importe !== esperado(def.moneda)) exc(TIPOS.IMPORTE, { ...base, movcod: def.cod, titular: titularDe(def.cod), cuit: esDeCliente(def.cod) ? o.cuit : '', moneda: def.moneda, cuenta: m.cuecod, importe: m.importe, usuario: m.usuario, detalle: `${def.cod} (${def.nombre}) por ${dinero(def.moneda, m.importe)} y la orden es de ${dinero(def.moneda, esperado(def.moneda))}.` });
+        if (m.importe !== esperado(def.moneda)) exc(TIPOS.IMPORTE, { ...base, movcod: def.cod, titular: titularDe(def.cod), cuit: cuitDe(def.cod, o), moneda: def.moneda, cuenta: m.cuecod, importe: m.importe, usuario: m.usuario, detalle: `${def.cod} (${def.nombre}) por ${dinero(def.moneda, m.importe)} y la orden es de ${dinero(def.moneda, esperado(def.moneda))}.` });
       }
     }
     const conMovs = propios.some((m) => m.lado === o.side);
     for (const p of r.pendientesMov) {
       // Con el saldo de la cuenta consultado: pendiente con saldo (se puede debitar) o sin saldo.
       const tipoPend = p.saldo ? (p.saldo.conSaldo ? TIPOS.PENDIENTE_CON_SALDO : TIPOS.PENDIENTE_SIN_SALDO) : TIPOS.PENDIENTE;
-      exc(tipoPend, { ...base, movcod: p.cod, titular: titularDe(p.cod), cuenta: p.cuecod || base.cuenta, moneda: p.moneda, importe: p.importe, detalle: `Falta el ${p.cod} en IBS: está en débitos pendientes desde el ${dmy(p.fechaOrigen) || 'sin fecha'} por ${dinero(p.moneda, p.importe)} (${p.motivo || 'sin motivo'}).${p.saldo ? ` ${p.saldo.texto}` : ''}` });
+      exc(tipoPend, { ...base, movcod: p.cod, titular: titularDe(p.cod), cuit: cuitDe(p.cod, o), cuenta: p.cuecod || base.cuenta, moneda: p.moneda, importe: p.importe, detalle: `Falta el ${p.cod} en IBS: está en débitos pendientes desde el ${dmy(p.fechaOrigen) || 'sin fecha'} por ${dinero(p.moneda, p.importe)} (${p.motivo || 'sin motivo'}).${p.saldo ? ` ${p.saldo.texto}` : ''}` });
     }
     if (!conMovs && r.pendientesMov.length === 0) {
       if ((Number(o.comprobante) || 0) < mayorComprobante || (ultimoDiaIbs && o.fecha < ultimoDiaIbs)) {
@@ -169,7 +174,7 @@ function conciliar({ movimientos, pendientes, ordenes, config }) {
           movcod: cod,
           titular: titularDe(cod),
           // Cuenta y CUIT del titular del movimiento: el cliente o Cocos Capital S.A.
-          cuit: esDeCliente(cod) ? o.cuit : '',
+          cuit: cuitDe(cod, o),
           cuenta: esDeCliente(cod) ? cuentaCliente(def.moneda) : cuentaCocos.get(cod) || '',
           moneda: def.moneda,
           importe: esperado(def.moneda),
