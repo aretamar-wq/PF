@@ -3280,6 +3280,8 @@ function renderConciliacionIbsTiles(tipo, resumen) {
   document.getElementById('conciliacionIbsTiles').innerHTML = tipo === 'transferencias'
     ? tile('Transferencias realizadas', resumen.realizadasApicore) +
       tile('Conciliadas OK', resumen.transferenciasOk, 'ok') +
+      tile('Revertidas en IBS (neto cero)', resumen.revertidasOk || 0) +
+      tile('Acreditación fallida, sin débito', resumen.acreditacionFallidaSinDebito || 0) +
       tile('Con diferencias', resumen.transferenciasConDiferencias, malo(resumen.transferenciasConDiferencias)) +
       tile('Pendientes de débito (día hábil)', resumen.pendientes) +
       tile('Débito imputado en fecha posterior', resumen.debitosPosteriores || 0, 'ok') +
@@ -3415,6 +3417,37 @@ function renderConciliacionIbsRechazados(data) {
   box.style.display = '';
 }
 
+// Transferencias realizadas que no se debitan y está bien (no son diferencia): las
+// debitadas y revertidas en IBS y las de acreditación fallida sin débito. Se listan
+// para que "realizadas" cierre con "conciliadas OK". La caja se arma acá (no en el
+// index.html) para no depender de que el index.html publicado esté actualizado.
+function renderConciliacionIbsSinDebito(data, despuesDe) {
+  let box = document.getElementById('conciliacionIbsSinDebitoBox');
+  if (!box) {
+    box = document.createElement('div');
+    box.id = 'conciliacionIbsSinDebitoBox';
+    box.innerHTML = `<h3>Transferencias realizadas sin débito en IBS (informativo)</h3><p class="muted"></p>
+      <div class="conciliacion-table-wrap"><table><thead><tr><th>Fecha</th><th>Comprobante</th><th>DEBIN</th><th>CUIT</th><th>Titular</th><th>Importe</th><th>Motivo</th><th>Detalle</th></tr></thead><tbody></tbody></table></div>`;
+    despuesDe.insertAdjacentElement('afterend', box);
+  }
+  const filas = data.tipo === 'transferencias' ? data.sinDebitoCoherentes || [] : [];
+  if (filas.length === 0) {
+    box.style.display = 'none';
+    return;
+  }
+  box.querySelector('p').textContent = `${filas.length} transferencia(s) realizada(s) en ApiCore que no tienen débito vigente en IBS y está bien: no son diferencia.`;
+  box.querySelector('tbody').innerHTML = filas.map((f) => `<tr>
+      <td>${escapeHtml(fechaDMYCorta(f.fecha))}</td>
+      <td class="mono">${escapeHtml(f.numeroComprobante || '—')}</td>
+      <td class="mono operacion">${escapeHtml(f.operacion || '—')}</td>
+      <td class="mono">${escapeHtml(f.cuit || '—')}</td>
+      <td class="titular">${escapeHtml(f.apellidoNombre || '—')}</td>
+      <td class="num">${f.moneda === 'USD' ? 'USD' : '$'} ${formatImporte(f.importe)}</td>
+      <td>${escapeHtml(f.motivo || '—')}</td>
+      <td class="detalle">${escapeHtml(f.detalle || '')}</td></tr>`).join('');
+  box.style.display = '';
+}
+
 function renderConciliacionIbs(data) {
   lastConciliacionIbs = data;
   const esPagos = data.tipo === 'pagos';
@@ -3443,7 +3476,12 @@ function renderConciliacionIbs(data) {
     estado.className = 'conciliacion-estado ' + (motivosRojos.length ? 'error' : motivosAmarillos.length ? 'warn' : 'ok');
     texto = motivosRojos.length || motivosAmarillos.length
       ? `Hay diferencias: ${[...motivosRojos, ...motivosAmarillos].join('; ')} (de ${r.realizadasApicore} realizadas).`
-      : `Concilia: las ${r.realizadasApicore} transferencias realizadas del ${data.fecha} al ${data.hasta} están debitadas en IBS (o pendientes de su día hábil), no hay débitos de más y los totales coinciden.`;
+      : `Concilia: de las ${r.realizadasApicore} transferencias realizadas del ${data.fecha} al ${data.hasta}, ${r.transferenciasOk} están debitadas en IBS` +
+        `${r.debitosPosteriores ? ` (${r.debitosPosteriores} en fecha posterior)` : ''}` +
+        `${r.pendientes ? `, ${r.pendientes} pendiente(s) de su día hábil` : ''}` +
+        `${r.revertidasOk ? `, ${r.revertidasOk} debitada(s) y revertida(s) en IBS` : ''}` +
+        `${r.acreditacionFallidaSinDebito ? `, ${r.acreditacionFallidaSinDebito} con la acreditación fallida y sin débito` : ''}` +
+        '; no hay débitos de más y los totales coinciden.';
   } else if (esPagos) {
     texto = conDiferencias
       ? `Hay diferencias: ${r.pagosConDiferencias} pago(s) de ApiCore con diferencias, ${r.pagadosEnIbsNoApicore} pago(s) que IBS tiene y ApiCore no marcó como pagados, y ${r.soloEnIbs} movimiento(s) de IBS sin su plazo fijo en ApiCore.`
@@ -3512,6 +3550,7 @@ function renderConciliacionIbs(data) {
     pendientesBox.style.display = 'none';
   }
 
+  renderConciliacionIbsSinDebito(data, pendientesBox);
   renderConciliacionIbsRechazados(data);
 
   const otrosBox = document.getElementById('conciliacionIbsOtrosCanalesBox');

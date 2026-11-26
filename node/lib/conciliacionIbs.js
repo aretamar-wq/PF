@@ -975,6 +975,10 @@ function conciliarTransferencias(apiRows, ibsLines, opciones) {
 
   let ok = 0;
   let revertidasOk = 0;
+  let acreditacionFallidaSinDebito = 0;
+  // Realizadas que no se debitan y está bien (no son diferencia): revertidas en IBS o con
+  // la acreditación fallida y sin débito. Se informan para que realizadas = OK + estas.
+  const sinDebitoCoherentes = [];
   let rechazadasRevertidas = 0;
   let realizadas = 0;
   let enviosRealizados = 0;
@@ -1029,6 +1033,7 @@ function conciliarTransferencias(apiRows, ibsLines, opciones) {
     const cuentaEsperada = cuentaDesdeCbu(primero.debito_cbu);
     const esperada = proximoDiaHabil(String(primero.ejecutado_en).slice(0, 10), feriados);
     const errores = [];
+    let acreditacionFallida = false;
     const pendIbs = j === 0 ? buscarPendiente(comprobante, cuentaEsperada) : null;
     const posterior = j === 0 && !pendIbs && !hayReversa ? buscarPosterior(comprobante, cuentaEsperada) : null;
     const pendiente = !pendIbs && j === 0 && !hayReversa && esperada >= hoy && g.envios.some((r) => !esError(r));
@@ -1075,6 +1080,7 @@ function conciliarTransferencias(apiRows, ibsLines, opciones) {
           });
         } else {
           revertidasOk++;
+          sinDebitoCoherentes.push(base(primero, { motivo: 'Debitada y revertida en IBS (neto cero)', detalle: `Acreditación: ${estadoDescripcion(primero) || estadoCodigo(primero) || 'sin estado'}.` }));
         }
       } else if (pendiente) {
         pendientes.push(base(primero, { detalle: `El débito corresponde al ${esperada}.` }));
@@ -1083,8 +1089,13 @@ function conciliarTransferencias(apiRows, ibsLines, opciones) {
           tipo: 'Sin débito en IBS',
           detalle: `Realizada y ${estadoDescripcion(primero) || 'sin estado'}, pero IBS no tiene ningún débito ${movEsperado} para este comprobante (correspondía el ${esperada}; si hubo un feriado, revisá que esté cargado en Parametría).`,
         });
+      } else {
+        // Realizada con error de acreditación y sin ningún movimiento: no se debitó ni
+        // se acreditó, es coherente (no es diferencia), pero se informa.
+        acreditacionFallidaSinDebito++;
+        acreditacionFallida = true;
+        sinDebitoCoherentes.push(base(primero, { motivo: 'Acreditación fallida, sin débito en IBS', detalle: `Acreditación: ${estadoDescripcion(primero) || estadoCodigo(primero)}.` }));
       }
-      // Realizada con error de acreditación y sin ningún movimiento: no se debitó ni se acreditó, es coherente.
     } else {
       if (j > k) errores.push({ tipo: 'Débitos de más en IBS', detalle: `IBS tiene ${j} débitos sin revertir y ApiCore ${k} transferencia(s) realizada(s).` });
       if (j < k) errores.push({ tipo: 'Débitos de menos en IBS', detalle: `IBS tiene ${j} débito(s) sin revertir y ApiCore ${k} transferencia(s) realizadas.` });
@@ -1127,7 +1138,7 @@ function conciliarTransferencias(apiRows, ibsLines, opciones) {
     if (errores.length > 0) {
       comprobantesConDiferencias++;
       for (const err of errores) diferencias.push({ ...base(primero, {}), ...err });
-    } else if (!pendiente && !(j === 0 && hayReversa)) {
+    } else if (!pendiente && !(j === 0 && hayReversa) && !acreditacionFallida) {
       ok++;
     }
 
@@ -1273,6 +1284,7 @@ function conciliarTransferencias(apiRows, ibsLines, opciones) {
       debitosPendientesLeidos: debitosPendientes.length,
       ...resumenRechazados(rechazados),
       revertidasOk,
+      acreditacionFallidaSinDebito,
       transferenciasOk: ok,
       transferenciasConDiferencias: comprobantesConDiferencias,
       pendientes: pendientes.length,
@@ -1286,6 +1298,7 @@ function conciliarTransferencias(apiRows, ibsLines, opciones) {
     diferencias,
     pendientes,
     explicadas,
+    sinDebitoCoherentes,
     rechazados,
     otrosCanales: [],
     avisos,

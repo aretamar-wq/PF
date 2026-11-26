@@ -129,6 +129,7 @@ async function main() {
   for (const d of res.diferencias) agregar(String(d.numeroComprobante), `DIFERENCIA: ${d.tipo} — ${d.detalle}`);
   for (const p of res.pendientes) agregar(String(p.numeroComprobante), `Pendiente de su día hábil — ${p.detalle}`);
   for (const e of res.explicadas) agregar(String(e.numeroComprobante), `Débito de una transferencia de otra fecha (${String(e.fecha).slice(0, 10)})`);
+  for (const x of res.sinDebitoCoherentes || []) agregar(String(x.numeroComprobante), `Sin débito y está bien: ${x.motivo} — ${x.detalle}`);
   for (const r of res.rechazados) agregar(String(r.numeroComprobante), `Rechazada (${r.estado})${r.detalle ? ` — ${r.detalle}` : ''}`);
 
   const { grupos } = ci.leerIbsTransferencias(ibsLines, desde, hastaEsperado);
