@@ -5,13 +5,13 @@
 // Mismas reglas que la carga de BankService de la Conciliación Loop: encabezado
 // obligatorio, rechazo fila por fila, SHA-256 (archivo ya cargado), una transacción por
 // archivo, UPSERT por id de orden solo si cambió, un estado final (COMPLETED / FAILED)
-// nunca cambia y cada cambio de estado queda en la auditoría. Se guarda el CUIT del
-// cliente; no se guardan nombres.
+// nunca cambia y cada cambio de estado queda en la auditoría. Se guardan el CUIT y el
+// nombre del cliente (customerFullName), para mostrarlo en las excepciones.
 
 const { sha256, parseCsv, centavos, parseFechaHora } = require('../transfCaCc/util');
 
 const COLUMNAS = ['id', 'status', 'side', 'currency', 'amount', 'counterCurrency', 'counterAmount', 'price', 'receiptNumber', 'createdAt', 'settlementDate', 'customerCUIT'];
-const OPCIONALES = ['ticketNumber', 'failReason', 'failureCategory', 'confirmedAt'];
+const OPCIONALES = ['ticketNumber', 'failReason', 'failureCategory', 'confirmedAt', 'customerFullName'];
 
 const txt = (v) => String(v == null ? '' : v).trim();
 // "2026-10-30T13:21:39.701Z" (UTC) -> "2026-10-30 10:21:39" (hora de Argentina, UTC-3).
@@ -75,6 +75,7 @@ function leerArchivo(nombre, contenido) {
       confirmada: fechaHoraAr(g('confirmedAt')),
       fechaOperacion,
       cuit: g('customerCUIT').replace(/\D/g, '').slice(0, 20),
+      nombre: g('customerFullName').replace(/\s+/g, ' ').slice(0, 255),
       failReason: g('failReason').slice(0, 500),
       failureCategory: g('failureCategory').slice(0, 50),
       fila: i + 1,
@@ -89,7 +90,7 @@ const dec = (c) => (c / 100).toFixed(2);
 const igual = (a, b) =>
   a.comprobante === String(b.comprobante || '') && a.status === b.status && a.side === b.side && dec(a.ars) === Number(b.ars).toFixed(2) &&
   dec(a.usd) === Number(b.usd).toFixed(2) && a.fechaOperacion === String(b.fecha_operacion).slice(0, 10) && a.cuit === String(b.customer_cuit || '') &&
-  a.failReason === String(b.fail_reason || '');
+  a.failReason === String(b.fail_reason || '') && (a.nombre || '') === String(b.customer_nombre || '');
 
 function decidir(nueva, existente, finales = ['COMPLETED', 'FAILED']) {
   if (!existente) return 'insertar';
@@ -118,18 +119,18 @@ async function cargarArchivo(conn, archivo, usuario, ahora, config) {
     for (let i = 0; i < leido.filas.length; i += 500) {
       const lote = leido.filas.slice(i, i + 500);
       const [existentes] = await conn.query(
-        `SELECT id, comprobante, status, side, ars, usd, fecha_operacion, customer_cuit, fail_reason FROM fx_ordenes WHERE id IN (${lote.map(() => '?').join(', ')}) FOR UPDATE`,
+        `SELECT id, comprobante, status, side, ars, usd, fecha_operacion, customer_cuit, customer_nombre, fail_reason FROM fx_ordenes WHERE id IN (${lote.map(() => '?').join(', ')}) FOR UPDATE`,
         lote.map((f) => f.id)
       );
       const porId = new Map(existentes.map((e) => [String(e.id), e]));
       for (const f of lote) {
         const e = porId.get(f.id);
         const accion = decidir(f, e, config.estadosFinales);
-        const valores = [f.comprobante, f.ticket, f.status, f.side, dec(f.ars), dec(f.usd), f.precio || null, f.creada, f.confirmada, f.fechaOperacion, f.cuit, f.failReason, f.failureCategory, cargaId, ahora];
+        const valores = [f.comprobante, f.ticket, f.status, f.side, dec(f.ars), dec(f.usd), f.precio || null, f.creada, f.confirmada, f.fechaOperacion, f.cuit, f.nombre || '', f.failReason, f.failureCategory, cargaId, ahora];
         if (accion === 'insertar') {
           await conn.query(
-            `INSERT INTO fx_ordenes (id, comprobante, ticket, status, side, ars, usd, precio, creada, confirmada, fecha_operacion, customer_cuit, fail_reason, failure_category, carga_id, cargado_en)
-             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+            `INSERT INTO fx_ordenes (id, comprobante, ticket, status, side, ars, usd, precio, creada, confirmada, fecha_operacion, customer_cuit, customer_nombre, fail_reason, failure_category, carga_id, cargado_en)
+             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
             [f.id, ...valores]
           );
           await conn.query('INSERT INTO fx_auditoria (orden_id, estado_anterior, estado_nuevo, carga_id, fecha) VALUES (?, NULL, ?, ?, ?)', [f.id, f.status, cargaId, ahora]);
@@ -137,7 +138,7 @@ async function cargarArchivo(conn, archivo, usuario, ahora, config) {
         } else if (accion === 'actualizar') {
           await conn.query(
             `UPDATE fx_ordenes SET comprobante = ?, ticket = ?, status = ?, side = ?, ars = ?, usd = ?, precio = ?, creada = ?, confirmada = ?, fecha_operacion = ?,
-               customer_cuit = ?, fail_reason = ?, failure_category = ?, carga_id = ?, cargado_en = ? WHERE id = ?`,
+               customer_cuit = ?, customer_nombre = ?, fail_reason = ?, failure_category = ?, carga_id = ?, cargado_en = ? WHERE id = ?`,
             [...valores, f.id]
           );
           if (e.status !== f.status) {
@@ -175,6 +176,7 @@ function ordenesDesdeFilas(filas) {
     creada: String(f.creada || ''),
     fecha: String(f.fecha_operacion || '').slice(0, 10),
     cuit: String(f.customer_cuit || ''),
+    nombre: String(f.customer_nombre || ''),
     failReason: f.fail_reason || '',
   }));
 }
