@@ -39,3 +39,12 @@ test('generar: con saldo / sin saldo y una sola consulta de saldos', async () =>
   assert.deepStrictEqual(r.filas.map((f) => f.saldo.conSaldo), [true, false, false]);
   assert.deepStrictEqual([r.resumen.total.n, r.resumen.conSaldo.n, r.resumen.sinSaldo.n, r.resumen.conSaldo.ARS, r.resumen.sinSaldo.USD, r.resumen.sinSaldo.nARS], [3, 1, 2, 100000, 5000, 1]);
 });
+
+test('saldo a reclamar: importe - saldo disponible (0 si alcanza; todo el importe sin saldo del día)', () => {
+  assert.strictEqual(ip.saldoAReclamar({ importe: 100000, saldo: { conSaldo: true, sdodiaope: 150000 } }), 0);
+  assert.strictEqual(ip.saldoAReclamar({ importe: 100000, saldo: { conSaldo: false, sdodiaope: 30000 } }), 70000);
+  assert.strictEqual(ip.saldoAReclamar({ importe: 100000, saldo: { conSaldo: false, sdodiaope: null } }), 100000);
+  assert.strictEqual(ip.saldoAReclamar({ importe: 100000, saldo: null }), null);
+  const r = ip.resumir([{ moneda: 'ARS', importe: 100000, saldo: { conSaldo: false }, aReclamar: 70000 }, { moneda: 'USD', importe: 5000, saldo: { conSaldo: true }, aReclamar: 0 }]);
+  assert.deepStrictEqual([r.aReclamar.n, r.aReclamar.ARS, r.aReclamar.USD], [1, 70000, 0]);
+});

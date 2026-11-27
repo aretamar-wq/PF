@@ -73,6 +73,7 @@
       tile('Movimientos pendientes', fmtNum(r.total.n), porMoneda(r.total), r.total.n ? 'warn' : 'ok') +
       tile('Pendientes con saldo', fmtNum(r.conSaldo.n), porMoneda(r.conSaldo), r.conSaldo.n ? 'warn' : 'ok') +
       tile('Pendientes sin saldo', fmtNum(r.sinSaldo.n), porMoneda(r.sinSaldo), r.sinSaldo.n ? 'warn' : 'ok') +
+      (r.aReclamar ? tile('Saldo a reclamar', fmtNum(r.aReclamar.n), porMoneda(r.aReclamar), r.aReclamar.n ? 'warn' : 'ok') : '') +
       (r.sinConsulta.n ? tile('Sin consultar el saldo', fmtNum(r.sinConsulta.n), porMoneda(r.sinConsulta), 'err') : '') +
       '</div>';
     const filas = visibles();
@@ -82,6 +83,7 @@
       <td class="mono">${esc(f.documentos.join(' / ') || '—')}</td><td>${esc(f.movcod)}${f.descripcion ? ` ${esc(f.descripcion)}` : ''}</td>
       <td>${esc(f.descdet || '—')}</td><td class="num">${esc(f.comprobante)}</td><td class="num">${esc(dinero(f.moneda, f.importe))}</td>
       <td class="num">${f.saldo && f.saldo.sdodiaope != null ? esc(dinero(f.moneda, f.saldo.sdodiaope)) : '—'}</td>
+      <td class="num">${f.aReclamar == null ? '—' : esc(dinero(f.moneda, f.aReclamar))}</td>
       <td><span class="tcc-pill" style="background:${!f.saldo ? '#667085' : f.saldo.conSaldo ? '#2e9d6b' : '#d9822b'}">${etiquetaSaldo(f)}</span></td></tr>`).join('');
   }
 
@@ -93,9 +95,9 @@
       return;
     }
     const imp = (c) => (c == null ? '' : (c / 100).toFixed(2).replace('.', ','));
-    const lineas = [csvExcelLine(['Fecha origen', 'Sistema', 'Moneda', 'Cuenta', 'Documento', 'Movimiento', 'Descripción movimiento', 'Descripción IBS', 'Comprobante', 'Importe', 'Saldo disponible', 'Saldo'])];
+    const lineas = [csvExcelLine(['Fecha origen', 'Sistema', 'Moneda', 'Cuenta', 'Documento', 'Movimiento', 'Descripción movimiento', 'Descripción IBS', 'Comprobante', 'Importe', 'Saldo disponible', 'Saldo a Reclamar', 'Saldo'])];
     for (const f of filas) {
-      lineas.push(csvExcelLine([dmy(f.fechaOrigen), f.sistema, f.moneda, f.cuecod, f.documentos.join(' / '), f.movcod, f.descripcion, f.descdet, f.comprobante, imp(f.importe), f.saldo && f.saldo.sdodiaope != null ? imp(f.saldo.sdodiaope) : '', etiquetaSaldo(f)]));
+      lineas.push(csvExcelLine([dmy(f.fechaOrigen), f.sistema, f.moneda, f.cuecod, f.documentos.join(' / '), f.movcod, f.descripcion, f.descdet, f.comprobante, imp(f.importe), f.saldo && f.saldo.sdodiaope != null ? imp(f.saldo.sdodiaope) : '', f.aReclamar == null ? '' : imp(f.aReclamar), etiquetaSaldo(f)]));
     }
     downloadCsvExcel(`movimientos-pendientes-${String(estado.datos.generado).slice(0, 10)}.csv`, lineas);
   }
@@ -148,6 +150,12 @@
       $('ipParamEstado').textContent = 'Error: ' + err.message;
     }
   }
+
+  // El encabezado de la tabla se arma acá, con las mismas columnas que las filas, así
+  // no se desalinea si el index.html publicado quedó de una versión anterior.
+  const COLUMNAS = [['Fecha origen'], ['Sistema'], ['Moneda'], ['Cuenta', 'num'], ['Documento'], ['Movimiento'], ['Descripción IBS'], ['Comprobante', 'num'],
+    ['Importe', 'num'], ['Saldo disponible', 'num'], ['Saldo a Reclamar', 'num'], ['Saldo']];
+  $('ipTabla').querySelector('thead').innerHTML = `<tr>${COLUMNAS.map(([t, c]) => `<th${c ? ` class="${c}"` : ''}>${t}</th>`).join('')}</tr>`;
 
   // --- Eventos ----------------------------------------------------------------------
   $('ipBtn').addEventListener('click', () => showMainSection('informePendientesSection'));
