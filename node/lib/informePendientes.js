@@ -80,9 +80,17 @@ function leerFilas(rows, movimientos) {
   return [...porClave.values()];
 }
 
+// Saldo a reclamar: Importe - Saldo disponible (sdodiaope). Si el saldo alcanza es 0;
+// sin saldo del día de la cuenta se toma 0 de saldo (se reclama todo el importe).
+// Sin consulta de saldos, null.
+function saldoAReclamar(f) {
+  if (!f.saldo) return null;
+  return Math.max(0, f.importe - (f.saldo.sdodiaope == null ? 0 : f.saldo.sdodiaope));
+}
+
 function resumir(filas) {
   const vacio = () => ({ n: 0, ARS: 0, USD: 0, nARS: 0, nUSD: 0 });
-  const r = { total: vacio(), conSaldo: vacio(), sinSaldo: vacio(), sinConsulta: vacio() };
+  const r = { total: vacio(), conSaldo: vacio(), sinSaldo: vacio(), sinConsulta: vacio(), aReclamar: vacio() };
   for (const f of filas) {
     const grupo = !f.saldo ? 'sinConsulta' : f.saldo.conSaldo ? 'conSaldo' : 'sinSaldo';
     for (const g of ['total', grupo]) {
@@ -91,6 +99,11 @@ function resumir(filas) {
         r[g][f.moneda] += f.importe;
         r[g][`n${f.moneda}`]++;
       }
+    }
+    if (f.aReclamar && (f.moneda === 'USD' || f.moneda === 'ARS')) {
+      r.aReclamar.n++;
+      r.aReclamar[f.moneda] += f.aReclamar;
+      r.aReclamar[`n${f.moneda}`]++;
     }
   }
   return r;
@@ -151,7 +164,10 @@ async function generar({ rootDir, querySybase, ahora, movimientos }) {
   if (filas.length > 0) {
     try {
       const saldos = await saldosCuentas.consultarSaldos(querySybase, filas);
-      for (const f of filas) f.saldo = saldosCuentas.evaluarPendiente(saldos, { ...f, cents: f.importe });
+      for (const f of filas) {
+        f.saldo = saldosCuentas.evaluarPendiente(saldos, { ...f, cents: f.importe });
+        f.aReclamar = saldoAReclamar(f);
+      }
     } catch (err) {
       avisos.push(`No se pudo consultar el saldo de las cuentas: ${err.message}`);
     }
@@ -159,4 +175,4 @@ async function generar({ rootDir, querySybase, ahora, movimientos }) {
   return { generado: ahora, movimientos: movs, filas, resumen: resumir(filas), avisos };
 }
 
-module.exports = { buildQuery, leerFilas, resumir, validarMovimientos, getMovimientos, saveMovimientos, generar };
+module.exports = { buildQuery, leerFilas, saldoAReclamar, resumir, validarMovimientos, getMovimientos, saveMovimientos, generar };
